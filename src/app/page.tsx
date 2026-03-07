@@ -38,6 +38,15 @@ type TxItem = {
   timeStamp: string;
 };
 
+type EvmAsset = {
+  key: string;
+  type: "native" | "token";
+  symbol: string;
+  balance: string;
+  decimals: number;
+  address: string;
+};
+
 const STORAGE_KEY = "zumpay_wallet_v1";
 const TOKEN_KEY = "zumpay_tokens_v1";
 const TX_KEY = "zumpay_txs_v1";
@@ -202,7 +211,7 @@ export default function Home() {
   const explorerBase = EXPLORERS[networkKey] ?? EXPLORERS.polygon;
   const isLocked = !premiumPaid;
 
-  const evmAssets = useMemo(() => {
+  const evmAssets = useMemo<EvmAsset[]>(() => {
     const list = [
       {
         key: "native",
