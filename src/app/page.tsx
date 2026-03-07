@@ -838,8 +838,9 @@ export default function Home() {
         if (!address) return;
         const bal = await provider.getBalance(address);
         const feeData = await provider.getFeeData();
-        const gasLimit = 21000n;
-        const gasPrice = feeData.maxFeePerGas ?? feeData.gasPrice ?? 0n;
+        const gasLimit = BigInt(21000);
+        const gasPrice =
+          feeData.maxFeePerGas ?? feeData.gasPrice ?? BigInt(0);
         const fee = gasPrice * gasLimit;
         if (bal <= fee) {
           setStatus("Saldo insuficiente para fee.");
@@ -1275,7 +1276,9 @@ export default function Home() {
                           : ""
                       }`}
                       onClick={handleSend}
-                      disabled={isLocked || (revealedMnemonic && !seedConfirmed)}
+                      disabled={
+                        isLocked || (Boolean(revealedMnemonic) && !seedConfirmed)
+                      }
                     >
                       Enviar {selectedAsset.symbol}
                     </button>
@@ -1368,7 +1371,9 @@ export default function Home() {
                           : ""
                       }`}
                       onClick={handleSendBtc}
-                      disabled={isLocked || (revealedMnemonic && !seedConfirmed)}
+                      disabled={
+                        isLocked || (Boolean(revealedMnemonic) && !seedConfirmed)
+                      }
                     >
                       Enviar BTC
                     </button>
