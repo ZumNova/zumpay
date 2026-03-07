@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 const ZUM_ADDRESS = "0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5";
 const ZUM_OWNER = "0x521125be95c5679539aB07582F55F0040975A047";
-const ZUM_DECIMALS = 18n;
-const ZUM_PRICE = 10n * 10n ** ZUM_DECIMALS;
+const ZUM_DECIMALS = BigInt(18);
+const ZUM_PRICE = BigInt(10) * BigInt(10) ** ZUM_DECIMALS;
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
