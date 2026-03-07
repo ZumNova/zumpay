@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ paid: false, total: "0" });
   }
 
-  let total = 0n;
+  let total = BigInt(0);
   for (const tx of data.result ?? []) {
     if (
       tx?.from?.toLowerCase() === address.toLowerCase() &&
