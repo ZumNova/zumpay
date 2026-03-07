@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generator: Adobe Illustrator 24.0.2, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
+<svg version="1.1" id="Capa_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 viewBox="0 0 600 300" style="enable-background:new 0 0 600 300;" xml:space="preserve">
+<style type="text/css">
+	.st0{fill:url(#SVGID_1_);}
+	.st1{fill:#00E5FF;}
+	.st2{fill:#E5E7EB;}
+	.st3{font-family:'Inter-Regular';}
+	.st4{font-size:42px;}
+	.st5{letter-spacing:3;}
+	.st6{font-size:24px;}
+	.st7{letter-spacing:6;}
+</style>
+<linearGradient id="SVGID_1_" gradientUnits="userSpaceOnUse" x1="100" y1="229.8898" x2="260" y2="69.8898" gradientTransform="matrix(1 0 0 -1 0 299.8898)">
+	<stop  offset="0" style="stop-color:#3B82F6"/>
+	<stop  offset="1" style="stop-color:#2563EB"/>
+</linearGradient>
+<path class="st0" d="M100,70h160l-50,50h-60l110,110H100l50-50h60L100,70z"/>
+<path class="st1" d="M280,70v160h50V130l60,100h50V70h-50v100L330,70H280z"/>
+<text transform="matrix(1 0 0 1 180.4639 262)" class="st2 st3 st4 st5">ZUMNOVA</text>
+<text transform="matrix(1 0 0 1 257.1312 292)" class="st1 st3 st6 st7">LABS</text>
+</svg>
