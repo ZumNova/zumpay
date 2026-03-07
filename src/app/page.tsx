@@ -92,7 +92,7 @@ initEccLib(ecc);
 const bip32 = BIP32Factory(ecc);
 const ECPair = ECPairFactory(ecc);
 
-async function deriveKey(password: string, salt: Uint8Array) {
+async function deriveKey(password: string, salt: ArrayBuffer) {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
@@ -132,22 +132,22 @@ async function encryptMnemonic(mnemonic: string, password: string) {
   const enc = new TextEncoder();
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await deriveKey(password, salt);
+  const key = await deriveKey(password, salt.buffer);
   const cipher = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv },
     key,
     enc.encode(mnemonic)
   );
   return {
-    salt: bufferToBase64(salt),
-    iv: bufferToBase64(iv),
+    salt: bufferToBase64(salt.buffer),
+    iv: bufferToBase64(iv.buffer),
     cipher: bufferToBase64(cipher)
   };
 }
 
 async function decryptMnemonic(payload: StoredWallet, password: string) {
   const dec = new TextDecoder();
-  const salt = new Uint8Array(base64ToBuffer(payload.salt));
+  const salt = base64ToBuffer(payload.salt);
   const iv = new Uint8Array(base64ToBuffer(payload.iv));
   const cipher = base64ToBuffer(payload.cipher);
   const key = await deriveKey(password, salt);
