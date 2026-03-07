@@ -212,7 +212,7 @@ export default function Home() {
   const isLocked = !premiumPaid;
 
   const evmAssets = useMemo<EvmAsset[]>(() => {
-    const list = [
+    const list: EvmAsset[] = [
       {
         key: "native",
         type: "native" as const,
