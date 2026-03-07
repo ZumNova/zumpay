@@ -505,13 +505,13 @@ export default function Home() {
           index: utxo.vout,
           witnessUtxo: {
             script: p2wpkh.output!,
-            value: utxo.value
+            value: BigInt(utxo.value)
           }
         });
       }
-      psbt.addOutput({ address: btcSendTo, value: targetSats });
+      psbt.addOutput({ address: btcSendTo, value: BigInt(targetSats) });
       if (outputs === 2) {
-        psbt.addOutput({ address: btcAddress, value: change });
+        psbt.addOutput({ address: btcAddress, value: BigInt(change) });
       }
 
       const keyPair = ECPair.fromPrivateKey(child.privateKey, {
