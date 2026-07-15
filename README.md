@@ -62,7 +62,7 @@ Integración con MetaMask para comprar ZUM en Polygon usando USDC.
 Agregar tokens ERC‑20 mediante dirección de contrato.
 
 ### ⭐ Modo Premium  
-Desbloqueo de funciones avanzadas mediante pago único de 10 ZUM.
+Desbloqueo de funciones avanzadas mediante pago único de 100 ZUM.
 
 ---
 

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 const ZUM_ADDRESS = "0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5";
 const ZUM_OWNER = "0x521125be95c5679539aB07582F55F0040975A047";
 const ZUM_DECIMALS = BigInt(18);
-const ZUM_PRICE = BigInt(10) * BigInt(10) ** ZUM_DECIMALS;
+const ZUM_PRICE = BigInt(100) * BigInt(10) ** ZUM_DECIMALS;
 const TRANSFER_TOPIC =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
@@ -13,10 +13,6 @@ function normalizeAddress(address: string) {
 
 function topicAddress(address: string) {
   return `0x${normalizeAddress(address).replace(/^0x/, "").padStart(64, "0")}`;
-}
-
-function encodeBalanceOf(owner: string) {
-  return `0x70a08231${normalizeAddress(owner).replace(/^0x/, "").padStart(64, "0")}`;
 }
 
 function safeBigInt(value: unknown) {
@@ -64,14 +60,6 @@ async function rpcCall<T>(method: string, params: unknown[]): Promise<T | null> 
   } catch {
     return null;
   }
-}
-
-async function readZumBalance(address: string) {
-  const result = await rpcCall<string>("eth_call", [
-    { to: ZUM_ADDRESS, data: encodeBalanceOf(address) },
-    "latest"
-  ]);
-  return safeBigInt(result);
 }
 
 async function readPaidByLogs(address: string) {
@@ -136,11 +124,6 @@ export async function GET(request: NextRequest) {
       premiumAllowlist().includes(normalized)
     ) {
       return NextResponse.json({ paid: true, total: ZUM_PRICE.toString() });
-    }
-
-    const balance = await readZumBalance(address);
-    if (balance >= ZUM_PRICE) {
-      return NextResponse.json({ paid: true, total: balance.toString() });
     }
 
     const explorerPaid = await readPaidByExplorer(address);
