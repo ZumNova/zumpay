@@ -646,6 +646,64 @@
   color: var(--green);
 }
 
+.v3MetricGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.v3MetricGrid div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(12, 18, 32, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.v3MetricGrid span {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.v3MetricGrid strong {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.v3ManualGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.v3PositionList {
+  display: grid;
+  gap: 12px;
+}
+
+.v3Position {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(12, 18, 32, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.v3Actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .txRow:hover {
     transform: translateY(-2px);
@@ -744,6 +802,18 @@
   }
 
   .networks {
+    grid-template-columns: 1fr;
+  }
+
+  .v3Position {
+    grid-template-columns: 1fr;
+  }
+
+  .v3Actions {
+    justify-content: flex-start;
+  }
+
+  .v3ManualGrid {
     grid-template-columns: 1fr;
   }
 }

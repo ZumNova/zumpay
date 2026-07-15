@@ -11,23 +11,36 @@ const chainIds: Record<string, number> = {
 };
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const address = searchParams.get("address");
-  const network = searchParams.get("network") ?? "polygon";
-  const chainid = chainIds[network] ?? 137;
+  try {
+    const { searchParams } = new URL(request.url);
+    const address = searchParams.get("address");
+    const network = searchParams.get("network") ?? "polygon";
+    const chainid = chainIds[network] ?? 137;
 
-  if (!address) {
-    return NextResponse.json({ error: "Missing address" }, { status: 400 });
+    if (!address) {
+      return NextResponse.json({ error: "Missing address" }, { status: 400 });
+    }
+
+    const apiKey = process.env.ETHERSCAN_API_KEY ?? process.env.POLYGONSCAN_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({
+        status: "0",
+        message: "Explorer API key not configured",
+        result: []
+      });
+    }
+
+    const url = `${baseUrl}?chainid=${chainid}&module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&sort=desc&apikey=${apiKey}`;
+    const res = await fetch(url, { cache: "no-store" });
+    const data = await res.json();
+
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error("Transaction history check failed", error);
+    return NextResponse.json({
+      status: "0",
+      message: "Transaction history unavailable",
+      result: []
+    });
   }
-
-  const apiKey = process.env.ETHERSCAN_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: "Missing API key" }, { status: 500 });
-  }
-
-  const url = `${baseUrl}?chainid=${chainid}&module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&sort=desc&apikey=${apiKey}`;
-  const res = await fetch(url, { cache: "no-store" });
-  const data = await res.json();
-
-  return NextResponse.json(data);
 }

@@ -47,9 +47,66 @@ type EvmAsset = {
   address: string;
 };
 
+type V3ChainKey = "arbitrum" | "ethereum";
+type V3EntryMode = "single" | "manual";
+
+type V3Pool = {
+  id: string;
+  chain: V3ChainKey;
+  label: string;
+  fee: number;
+  feeLabel: string;
+  token0: string;
+  token1: string;
+  inputToken: string;
+  price: number;
+  tick: number;
+  reserve: string;
+  activity: string;
+};
+
+type V3Position = {
+  tokenId: string;
+  chain: V3ChainKey;
+  label: string;
+  feeLabel: string;
+  tickLower: number;
+  tickUpper: number;
+  liquidity: string;
+  fees0?: string;
+  fees1?: string;
+  token0Symbol?: string;
+  token1Symbol?: string;
+};
+
+type V3EntryEstimate = {
+  amount0: number;
+  amount1: number;
+  swapAmount: number;
+  minAfterSlippage: number;
+};
+
+type V3ScanResult = {
+  status: "Saludable" | "Activa" | "Watch" | "No activa";
+  poolAddress: string;
+  tick: number;
+  price: number;
+  liquidity: string;
+  reserve: string;
+  swaps: number;
+  token0Balance: string;
+  token1Balance: string;
+  checkedAt: string;
+};
+
+type InjectedEthereum = {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+};
+
 const STORAGE_KEY = "zumpay_wallet_v1";
 const TOKEN_KEY = "zumpay_tokens_v1";
 const TX_KEY = "zumpay_txs_v1";
+const V3_POSITION_KEY = "zumpay_v3_positions_v1";
 
 const NETWORKS: Network[] = [
   {
@@ -67,6 +124,15 @@ const NETWORKS: Network[] = [
     rpcUrl:
       process.env.NEXT_PUBLIC_POLYGON_RPC_URL ??
       "https://rpc.ankr.com/polygon"
+  },
+  {
+    key: "arbitrum",
+    name: "Arbitrum",
+    chainId: 42161,
+    symbol: "ETH",
+    rpcUrl:
+      process.env.NEXT_PUBLIC_ARBITRUM_RPC_URL ??
+      "https://arb1.arbitrum.io/rpc"
   }
 ];
 
@@ -84,14 +150,301 @@ const ERC20_ABI = [
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",
   "function balanceOf(address) view returns (uint256)",
+  "function allowance(address owner,address spender) view returns (uint256)",
+  "function approve(address spender,uint256 amount) returns (bool)",
   "function transfer(address to, uint256 amount) returns (bool)"
 ];
 
+const V3_POSITION_MANAGER = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88";
+const V3_FACTORY = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
+const V3_SWAP_ROUTER = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
+const V3_QUOTER = "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6";
+const MAX_UINT128 = (BigInt(1) << BigInt(128)) - BigInt(1);
+const SWAP_TOPIC =
+  "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67";
+const TRANSFER_TOPIC =
+  "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const ZERO_ADDRESS_TOPIC =
+  "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+const V3_CHAIN_IDS: Record<V3ChainKey, number> = {
+  ethereum: 1,
+  arbitrum: 42161
+};
+
+const V3_TOKENS: Record<
+  V3ChainKey,
+  Record<string, { address: string; decimals: number }>
+> = {
+  arbitrum: {
+    USDC: {
+      address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      decimals: 6
+    },
+    WETH: {
+      address: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+      decimals: 18
+    },
+    WBTC: {
+      address: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
+      decimals: 8
+    },
+    LINK: {
+      address: "0xf97f4df75117a78c1A5a0DBb814Af92458539FB4",
+      decimals: 18
+    }
+  },
+  ethereum: {
+    USDT: {
+      address: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+      decimals: 6
+    },
+    USDC: {
+      address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      decimals: 6
+    },
+    WETH: {
+      address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      decimals: 18
+    },
+    WBTC: {
+      address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+      decimals: 8
+    },
+    XAUt: {
+      address: "0x68749665FF8D2d112Fa859AA293F07A622782F38",
+      decimals: 6
+    }
+  }
+};
+
+const V3_POOLS: V3Pool[] = [
+  {
+    id: "arb-weth-usdc-500",
+    chain: "arbitrum",
+    label: "WETH/USDC",
+    fee: 500,
+    feeLabel: "0.05%",
+    token0: "WETH",
+    token1: "USDC",
+    inputToken: "USDC",
+    price: 1785.63,
+    tick: -201445,
+    reserve: "$8.85M",
+    activity: "Activa"
+  },
+  {
+    id: "arb-wbtc-usdc-500",
+    chain: "arbitrum",
+    label: "WBTC/USDC",
+    fee: 500,
+    feeLabel: "0.05%",
+    token0: "WBTC",
+    token1: "USDC",
+    inputToken: "USDC",
+    price: 64276,
+    tick: 64646,
+    reserve: "$3.33M",
+    activity: "Activa baja"
+  },
+  {
+    id: "arb-usdc-link-3000",
+    chain: "arbitrum",
+    label: "USDC/LINK",
+    fee: 3000,
+    feeLabel: "0.30%",
+    token0: "USDC",
+    token1: "LINK",
+    inputToken: "USDC",
+    price: 0.1257,
+    tick: 255619,
+    reserve: "$3.7K",
+    activity: "Watch"
+  },
+  {
+    id: "eth-weth-usdt-500",
+    chain: "ethereum",
+    label: "WETH/USDT",
+    fee: 500,
+    feeLabel: "0.05%",
+    token0: "WETH",
+    token1: "USDT",
+    inputToken: "USDT",
+    price: 1793.69,
+    tick: -201400,
+    reserve: "$6.14M",
+    activity: "Saludable"
+  },
+  {
+    id: "eth-weth-usdt-3000",
+    chain: "ethereum",
+    label: "WETH/USDT",
+    fee: 3000,
+    feeLabel: "0.30%",
+    token0: "WETH",
+    token1: "USDT",
+    inputToken: "USDT",
+    price: 1793.69,
+    tick: -201400,
+    reserve: "Scanner",
+    activity: "Watch"
+  },
+  {
+    id: "eth-wbtc-usdt-500",
+    chain: "ethereum",
+    label: "WBTC/USDT",
+    fee: 500,
+    feeLabel: "0.05%",
+    token0: "WBTC",
+    token1: "USDT",
+    inputToken: "USDT",
+    price: 64051.78,
+    tick: 64626,
+    reserve: "Scanner",
+    activity: "Watch"
+  },
+  {
+    id: "eth-wbtc-usdt-3000",
+    chain: "ethereum",
+    label: "WBTC/USDT",
+    fee: 3000,
+    feeLabel: "0.30%",
+    token0: "WBTC",
+    token1: "USDT",
+    inputToken: "USDT",
+    price: 64051.78,
+    tick: 64626,
+    reserve: "Scanner",
+    activity: "Watch"
+  },
+  {
+    id: "eth-weth-usdc-500",
+    chain: "ethereum",
+    label: "WETH/USDC",
+    fee: 500,
+    feeLabel: "0.05%",
+    token0: "WETH",
+    token1: "USDC",
+    inputToken: "USDC",
+    price: 1793.69,
+    tick: -201400,
+    reserve: "Scanner",
+    activity: "Watch"
+  },
+  {
+    id: "eth-weth-usdc-3000",
+    chain: "ethereum",
+    label: "WETH/USDC",
+    fee: 3000,
+    feeLabel: "0.30%",
+    token0: "WETH",
+    token1: "USDC",
+    inputToken: "USDC",
+    price: 1793.69,
+    tick: -201400,
+    reserve: "Scanner",
+    activity: "Watch"
+  },
+  {
+    id: "eth-wbtc-usdc-500",
+    chain: "ethereum",
+    label: "WBTC/USDC",
+    fee: 500,
+    feeLabel: "0.05%",
+    token0: "WBTC",
+    token1: "USDC",
+    inputToken: "USDC",
+    price: 64051.78,
+    tick: 64626,
+    reserve: "$116K",
+    activity: "Watch"
+  },
+  {
+    id: "eth-wbtc-usdc-3000",
+    chain: "ethereum",
+    label: "WBTC/USDC",
+    fee: 3000,
+    feeLabel: "0.30%",
+    token0: "WBTC",
+    token1: "USDC",
+    inputToken: "USDC",
+    price: 64051.78,
+    tick: 64626,
+    reserve: "Scanner",
+    activity: "Watch"
+  },
+  {
+    id: "eth-xaut-usdt-500",
+    chain: "ethereum",
+    label: "XAUt/USDT",
+    fee: 500,
+    feeLabel: "0.05%",
+    token0: "XAUt",
+    token1: "USDT",
+    inputToken: "USDT",
+    price: 4091.16,
+    tick: 83170,
+    reserve: "$1.27M",
+    activity: "Saludable"
+  }
+];
+
+const V3_PROFILES = {
+  conservative: { label: "Conservador", widthPct: 0.2 },
+  moderate: { label: "Moderado", widthPct: 0.12 },
+  aggressive: { label: "Riesgoso", widthPct: 0.08 }
+};
+
+const V3_POSITION_MANAGER_ABI = [
+  "function ownerOf(uint256 tokenId) view returns (address)",
+  "function positions(uint256 tokenId) view returns (uint96 nonce,address operator,address token0,address token1,uint24 fee,int24 tickLower,int24 tickUpper,uint128 liquidity,uint256 feeGrowthInside0LastX128,uint256 feeGrowthInside1LastX128,uint128 tokensOwed0,uint128 tokensOwed1)",
+  "function collect((uint256 tokenId,address recipient,uint128 amount0Max,uint128 amount1Max)) payable returns (uint256 amount0, uint256 amount1)",
+  "function decreaseLiquidity((uint256 tokenId,uint128 liquidity,uint256 amount0Min,uint256 amount1Min,uint256 deadline)) payable returns (uint256 amount0, uint256 amount1)",
+  "function mint((address token0,address token1,uint24 fee,int24 tickLower,int24 tickUpper,uint256 amount0Desired,uint256 amount1Desired,uint256 amount0Min,uint256 amount1Min,address recipient,uint256 deadline)) payable returns (uint256 tokenId,uint128 liquidity,uint256 amount0,uint256 amount1)"
+];
+
+const V3_FACTORY_ABI = [
+  "function getPool(address tokenA,address tokenB,uint24 fee) view returns (address pool)"
+];
+
+const V3_POOL_ABI = [
+  "function slot0() view returns (uint160 sqrtPriceX96,int24 tick,uint16 observationIndex,uint16 observationCardinality,uint16 observationCardinalityNext,uint8 feeProtocol,bool unlocked)",
+  "function liquidity() view returns (uint128)"
+];
+
+const V3_SWAP_ROUTER_ABI = [
+  "function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 deadline,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96)) payable returns (uint256 amountOut)"
+];
+
+const V3_QUOTER_ABI = [
+  "function quoteExactInputSingle(address tokenIn,address tokenOut,uint24 fee,uint256 amountIn,uint160 sqrtPriceLimitX96) returns (uint256 amountOut)"
+];
+
 const DEFAULT_TOKENS: Record<string, TokenMeta[]> = {
+  ethereum: [
+    {
+      address: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+      symbol: "USDT",
+      decimals: 6
+    }
+  ],
   polygon: [
     {
       address: ZUM_ADDRESS,
       symbol: "ZUM",
+      decimals: 18
+    }
+  ],
+  arbitrum: [
+    {
+      address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      symbol: "USDC",
+      decimals: 6
+    },
+    {
+      address: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+      symbol: "WETH",
       decimals: 18
     }
   ]
@@ -135,6 +488,115 @@ function base64ToBuffer(base64: string) {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes.buffer;
+}
+
+function v3TokenBySymbol(chain: V3ChainKey, symbol: string) {
+  return V3_TOKENS[chain][symbol];
+}
+
+function v3TokenByAddress(chain: V3ChainKey, address: string) {
+  const normalized = address.toLowerCase();
+  const entry = Object.entries(V3_TOKENS[chain]).find(
+    ([, token]) => token.address.toLowerCase() === normalized
+  );
+  if (!entry) {
+    return { symbol: `${address.slice(0, 6)}...${address.slice(-4)}`, decimals: 18 };
+  }
+  return { symbol: entry[0], decimals: entry[1].decimals };
+}
+
+function matchV3Pool(
+  chain: V3ChainKey,
+  token0Address: string,
+  token1Address: string,
+  fee: number
+) {
+  const addresses = [token0Address.toLowerCase(), token1Address.toLowerCase()];
+  return V3_POOLS.find((pool) => {
+    if (pool.chain !== chain || pool.fee !== fee) {
+      return false;
+    }
+    const first = v3TokenBySymbol(chain, pool.token0);
+    const second = v3TokenBySymbol(chain, pool.token1);
+    if (!first || !second) {
+      return false;
+    }
+    return (
+      addresses.includes(first.address.toLowerCase()) &&
+      addresses.includes(second.address.toLowerCase())
+    );
+  });
+}
+
+function formatV3RawAmount(value: bigint, decimals: number) {
+  return Number(ethers.formatUnits(value, decimals)).toLocaleString("en-US", {
+    maximumFractionDigits: decimals <= 8 ? 6 : 8
+  });
+}
+
+function v3Provider(chain: V3ChainKey) {
+  const networkConfig = NETWORKS.find((item) => item.key === chain);
+  return new ethers.JsonRpcProvider(
+    networkConfig?.rpcUrl,
+    V3_CHAIN_IDS[chain]
+  );
+}
+
+function estimateV3ReserveUsd(pool: V3Pool, balance0: number, balance1: number) {
+  if (pool.token0 === "USDC" || pool.token0 === "USDT") {
+    return balance0 * 2;
+  }
+  if (pool.token1 === "USDC" || pool.token1 === "USDT") {
+    return balance1 * 2;
+  }
+  return 0;
+}
+
+function classifyV3Pool(liquidity: bigint, reserveUsd: number, swaps: number) {
+  if (liquidity <= BigInt(0) || reserveUsd < 1000) {
+    return "No activa" as const;
+  }
+  if (reserveUsd >= 100000 && swaps >= 10) {
+    return "Saludable" as const;
+  }
+  if (swaps > 0) {
+    return "Activa" as const;
+  }
+  return "Watch" as const;
+}
+
+function deadlineSeconds() {
+  return BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
+}
+
+function parseV3Amount(value: string, decimals: number) {
+  const normalized = value.trim();
+  if (!/^\d+(\.\d+)?$/.test(normalized)) {
+    throw new Error("Monto inválido.");
+  }
+  return ethers.parseUnits(normalized, decimals);
+}
+
+function topicForAddress(address: string) {
+  return `0x${address.toLowerCase().replace(/^0x/, "").padStart(64, "0")}`;
+}
+
+function extractMintedV3TokenId(
+  receipt: ethers.TransactionReceipt | null,
+  recipient: string
+) {
+  const recipientTopic = topicForAddress(recipient).toLowerCase();
+  const transferLog = receipt?.logs.find((log) => {
+    const topics = log.topics ?? [];
+    return (
+      log.address.toLowerCase() === V3_POSITION_MANAGER.toLowerCase() &&
+      topics[0]?.toLowerCase() === TRANSFER_TOPIC &&
+      topics[1]?.toLowerCase() === ZERO_ADDRESS_TOPIC &&
+      topics[2]?.toLowerCase() === recipientTopic
+    );
+  });
+
+  return transferLog?.topics[3] ? BigInt(transferLog.topics[3]).toString() : "";
 }
 
 async function encryptMnemonic(mnemonic: string, password: string) {
@@ -197,6 +659,22 @@ export default function Home() {
   const [premiumStatus, setPremiumStatus] = useState("");
   const [checkingPremium, setCheckingPremium] = useState(false);
   const [payerAddress, setPayerAddress] = useState<string | null>(null);
+  const [v3Chain, setV3Chain] = useState<V3ChainKey>("arbitrum");
+  const [v3PoolId, setV3PoolId] = useState("arb-weth-usdc-500");
+  const [v3Profile, setV3Profile] =
+    useState<keyof typeof V3_PROFILES>("conservative");
+  const [v3EntryMode, setV3EntryMode] = useState<V3EntryMode>("single");
+  const [v3EntryAmount, setV3EntryAmount] = useState("100");
+  const [v3ManualAmount0, setV3ManualAmount0] = useState("");
+  const [v3ManualAmount1, setV3ManualAmount1] = useState("");
+  const [v3Slippage, setV3Slippage] = useState("1");
+  const [v3Wallet, setV3Wallet] = useState<string | null>(null);
+  const [v3TokenId, setV3TokenId] = useState("");
+  const [v3Positions, setV3Positions] = useState<V3Position[]>([]);
+  const [v3Scans, setV3Scans] = useState<Record<string, V3ScanResult>>({});
+  const [v3Scanning, setV3Scanning] = useState(false);
+  const [v3Executing, setV3Executing] = useState(false);
+  const [v3Status, setV3Status] = useState("");
 
   const network = useMemo(
     () => NETWORKS.find((item) => item.key === networkKey) ?? NETWORKS[0],
@@ -237,6 +715,66 @@ export default function Home() {
 
   const selectedAsset =
     evmAssets.find((asset) => asset.key === evmAssetKey) ?? evmAssets[0];
+  const v3PoolsForChain = useMemo(
+    () => V3_POOLS.filter((pool) => pool.chain === v3Chain),
+    [v3Chain]
+  );
+  const selectedV3Pool =
+    V3_POOLS.find((pool) => pool.id === v3PoolId) ??
+    v3PoolsForChain[0] ??
+    V3_POOLS[0];
+  const selectedV3Scan = v3Scans[selectedV3Pool.id];
+  const effectiveV3Price = selectedV3Scan?.price ?? selectedV3Pool.price;
+  const effectiveV3Tick = selectedV3Scan?.tick ?? selectedV3Pool.tick;
+  const selectedV3Profile = V3_PROFILES[v3Profile];
+  const v3Range = useMemo(() => {
+    const spacing = selectedV3Pool.fee === 500 ? 10 : 60;
+    const lowerMultiplier = 1 - selectedV3Profile.widthPct;
+    const upperMultiplier = 1 + selectedV3Profile.widthPct;
+    const lowerTickRaw =
+      effectiveV3Tick + Math.log(lowerMultiplier) / Math.log(1.0001);
+    const upperTickRaw =
+      effectiveV3Tick + Math.log(upperMultiplier) / Math.log(1.0001);
+    return {
+      lowerPrice: effectiveV3Price * lowerMultiplier,
+      upperPrice: effectiveV3Price * upperMultiplier,
+      lowerTick: Math.floor(lowerTickRaw / spacing) * spacing,
+      upperTick: Math.ceil(upperTickRaw / spacing) * spacing
+    };
+  }, [effectiveV3Price, effectiveV3Tick, selectedV3Pool.fee, selectedV3Profile]);
+  const v3EntryEstimate = useMemo<V3EntryEstimate>(() => {
+    const slippagePct = Math.min(Math.max(Number(v3Slippage) || 0, 0), 5);
+    if (v3EntryMode === "manual") {
+      const manual0 = Math.max(Number(v3ManualAmount0) || 0, 0);
+      const manual1 = Math.max(Number(v3ManualAmount1) || 0, 0);
+      return {
+        amount0: manual0,
+        amount1: manual1,
+        swapAmount: 0,
+        minAfterSlippage: 0
+      };
+    }
+
+    const inputAmount = Math.max(Number(v3EntryAmount) || 0, 0);
+    const swapAmount = inputAmount / 2;
+    const keptAmount = inputAmount - swapAmount;
+    const minAfterSlippage = swapAmount * (1 - slippagePct / 100);
+    const inputIsToken0 = selectedV3Pool.inputToken === selectedV3Pool.token0;
+    return {
+      amount0: inputIsToken0 ? keptAmount : swapAmount / effectiveV3Price,
+      amount1: inputIsToken0 ? swapAmount * effectiveV3Price : keptAmount,
+      swapAmount,
+      minAfterSlippage
+    };
+  }, [
+    effectiveV3Price,
+    selectedV3Pool,
+    v3EntryAmount,
+    v3EntryMode,
+    v3ManualAmount0,
+    v3ManualAmount1,
+    v3Slippage
+  ]);
 
   useEffect(() => {
     if (!evmAssets.some((asset) => asset.key === evmAssetKey)) {
@@ -467,7 +1005,7 @@ export default function Home() {
       });
 
       const targetSats = Math.round(amount * 1e8);
-      let selected: typeof utxos = [];
+      const selected: typeof utxos = [];
       let total = 0;
 
       const estimateFee = (inputs: number, outputs: number) => {
@@ -858,14 +1396,15 @@ export default function Home() {
 
   const connectMetaMask = async () => {
     try {
-      const ethereum = (window as unknown as { ethereum?: any }).ethereum;
+      const ethereum = (window as unknown as { ethereum?: InjectedEthereum })
+        .ethereum;
       if (!ethereum) {
         setPremiumStatus("MetaMask no está instalado.");
         return;
       }
-      const accounts: string[] = await ethereum.request({
+      const accounts = (await ethereum.request({
         method: "eth_requestAccounts"
-      });
+      })) as string[];
       if (accounts?.length) {
         setPayerAddress(accounts[0]);
         setPremiumStatus("Wallet conectada. Verificá el pago.");
@@ -873,6 +1412,598 @@ export default function Home() {
     } catch (error) {
       console.error(error);
       setPremiumStatus("No se pudo conectar MetaMask.");
+    }
+  };
+
+  useEffect(() => {
+    const firstPool = V3_POOLS.find((pool) => pool.chain === v3Chain);
+    if (firstPool && !v3PoolsForChain.some((pool) => pool.id === v3PoolId)) {
+      setV3PoolId(firstPool.id);
+    }
+  }, [v3Chain, v3PoolId, v3PoolsForChain]);
+
+  useEffect(() => {
+    const raw = localStorage.getItem(V3_POSITION_KEY);
+    if (!raw) {
+      setV3Positions([]);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw) as Record<string, V3Position[]>;
+      const owner = v3Wallet?.toLowerCase() ?? "local";
+      setV3Positions(parsed[owner] ?? []);
+    } catch {
+      setV3Positions([]);
+    }
+  }, [v3Wallet]);
+
+  const saveV3Position = (position: V3Position, ownerAddress?: string) => {
+    const owner =
+      ownerAddress?.toLowerCase() ?? v3Wallet?.toLowerCase() ?? "local";
+    const raw = localStorage.getItem(V3_POSITION_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, V3Position[]>) : {};
+    const current = parsed[owner] ?? [];
+    const next = current.some((item) => item.tokenId === position.tokenId)
+      ? current.map((item) =>
+          item.tokenId === position.tokenId ? position : item
+        )
+      : [position, ...current];
+    parsed[owner] = next;
+    localStorage.setItem(V3_POSITION_KEY, JSON.stringify(parsed));
+    setV3Positions(next);
+  };
+
+  const readV3Position = async (
+    manager: ethers.Contract,
+    tokenId: string,
+    chain: V3ChainKey,
+    recipient: string
+  ): Promise<V3Position> => {
+    const position = await manager.positions(tokenId);
+    const token0 = v3TokenByAddress(chain, String(position.token0));
+    const token1 = v3TokenByAddress(chain, String(position.token1));
+    const knownPool = matchV3Pool(
+      chain,
+      String(position.token0),
+      String(position.token1),
+      Number(position.fee)
+    );
+    let collectible0 = BigInt(0);
+    let collectible1 = BigInt(0);
+    try {
+      const collectible = (await manager.collect.staticCall({
+        tokenId,
+        recipient,
+        amount0Max: MAX_UINT128,
+        amount1Max: MAX_UINT128
+      })) as [bigint, bigint];
+      collectible0 = collectible[0];
+      collectible1 = collectible[1];
+    } catch {
+      collectible0 = position.tokensOwed0 as bigint;
+      collectible1 = position.tokensOwed1 as bigint;
+    }
+
+    return {
+      tokenId,
+      chain,
+      label: knownPool?.label ?? `${token0.symbol}/${token1.symbol}`,
+      feeLabel: knownPool?.feeLabel ?? `${Number(position.fee) / 10000}%`,
+      tickLower: Number(position.tickLower),
+      tickUpper: Number(position.tickUpper),
+      liquidity: position.liquidity.toString(),
+      fees0: formatV3RawAmount(collectible0, token0.decimals),
+      fees1: formatV3RawAmount(collectible1, token1.decimals),
+      token0Symbol: token0.symbol,
+      token1Symbol: token1.symbol
+    };
+  };
+
+  const ensureV3Allowance = async (
+    tokenAddress: string,
+    spender: string,
+    amount: bigint,
+    signer: ethers.Signer,
+    label: string
+  ) => {
+    if (amount <= BigInt(0)) {
+      return;
+    }
+    const owner = await signer.getAddress();
+    const token = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+    const current = (await token.allowance(owner, spender)) as bigint;
+    if (current >= amount) {
+      return;
+    }
+    if (current > BigInt(0)) {
+      setV3Status(`Reseteando approve previo de ${label}.`);
+      const resetTx = await token.approve(spender, 0);
+      await resetTx.wait();
+    }
+    setV3Status(`Aprobando ${label}.`);
+    const approveTx = await token.approve(spender, amount);
+    await approveTx.wait();
+  };
+
+  const getV3Signer = async (chain: V3ChainKey = v3Chain) => {
+    const ethereum = (window as unknown as { ethereum?: InjectedEthereum })
+      .ethereum;
+    if (!ethereum) {
+      throw new Error("MetaMask no está instalado.");
+    }
+    const provider = new ethers.BrowserProvider(ethereum);
+    const accounts = await provider.send("eth_requestAccounts", []);
+    const chainId = Number((await provider.getNetwork()).chainId);
+    if (chainId !== V3_CHAIN_IDS[chain]) {
+      const target = `0x${V3_CHAIN_IDS[chain].toString(16)}`;
+      await ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: target }]
+      });
+    }
+    const signer = await provider.getSigner();
+    const signerAddress = accounts?.[0] ?? (await signer.getAddress());
+    setV3Wallet(signerAddress);
+    return signer;
+  };
+
+  const handleV3Connect = async () => {
+    try {
+      const signer = await getV3Signer();
+      setV3Wallet(await signer.getAddress());
+      setV3Status("MetaMask conectada para Pools V3.");
+    } catch (error) {
+      console.error(error);
+      setV3Status(
+        error instanceof Error ? error.message : "No se pudo conectar MetaMask."
+      );
+    }
+  };
+
+  const handleV3ScanPool = async () => {
+    try {
+      setV3Scanning(true);
+      setV3Status(`Escaneando ${selectedV3Pool.label} en ${v3Chain}.`);
+      const token0 = v3TokenBySymbol(v3Chain, selectedV3Pool.token0);
+      const token1 = v3TokenBySymbol(v3Chain, selectedV3Pool.token1);
+      if (!token0 || !token1) {
+        setV3Status("No hay metadata completa para esa pool.");
+        return;
+      }
+
+      const readProvider = v3Provider(v3Chain);
+      const factory = new ethers.Contract(
+        V3_FACTORY,
+        V3_FACTORY_ABI,
+        readProvider
+      );
+      const poolAddress = (await factory.getPool(
+        token0.address,
+        token1.address,
+        selectedV3Pool.fee
+      )) as string;
+
+      if (poolAddress.toLowerCase() === ZERO_ADDRESS) {
+        const result: V3ScanResult = {
+          status: "No activa",
+          poolAddress,
+          tick: selectedV3Pool.tick,
+          price: selectedV3Pool.price,
+          liquidity: "0",
+          reserve: "$0",
+          swaps: 0,
+          token0Balance: `0 ${selectedV3Pool.token0}`,
+          token1Balance: `0 ${selectedV3Pool.token1}`,
+          checkedAt: new Date().toLocaleTimeString()
+        };
+        setV3Scans((prev) => ({ ...prev, [selectedV3Pool.id]: result }));
+        setV3Status("Pool no encontrada para ese par y fee.");
+        return;
+      }
+
+      const poolContract = new ethers.Contract(
+        poolAddress,
+        V3_POOL_ABI,
+        readProvider
+      );
+      const erc20Token0 = new ethers.Contract(
+        token0.address,
+        ERC20_ABI,
+        readProvider
+      );
+      const erc20Token1 = new ethers.Contract(
+        token1.address,
+        ERC20_ABI,
+        readProvider
+      );
+
+      const [slot0, liquidity, rawBalance0, rawBalance1, latestBlock] =
+        await Promise.all([
+          poolContract.slot0(),
+          poolContract.liquidity() as Promise<bigint>,
+          erc20Token0.balanceOf(poolAddress) as Promise<bigint>,
+          erc20Token1.balanceOf(poolAddress) as Promise<bigint>,
+          readProvider.getBlockNumber()
+        ]);
+      const tick = Number(slot0.tick);
+      const price =
+        selectedV3Pool.price * Math.pow(1.0001, tick - selectedV3Pool.tick);
+      const balance0 = Number(ethers.formatUnits(rawBalance0, token0.decimals));
+      const balance1 = Number(ethers.formatUnits(rawBalance1, token1.decimals));
+      const reserveUsd = estimateV3ReserveUsd(
+        selectedV3Pool,
+        balance0,
+        balance1
+      );
+
+      let swaps = 0;
+      try {
+        const fromBlock = Math.max(latestBlock - 10000, 0);
+        const logs = await readProvider.getLogs({
+          address: poolAddress,
+          topics: [SWAP_TOPIC],
+          fromBlock,
+          toBlock: latestBlock
+        });
+        swaps = logs.length;
+      } catch {
+        swaps = 0;
+      }
+
+      const result: V3ScanResult = {
+        status: classifyV3Pool(liquidity, reserveUsd, swaps),
+        poolAddress,
+        tick,
+        price,
+        liquidity: liquidity.toString(),
+        reserve:
+          reserveUsd > 0
+            ? `$${reserveUsd.toLocaleString("en-US", {
+                maximumFractionDigits: 0
+              })}`
+            : "Sin reserva USD",
+        swaps,
+        token0Balance: `${balance0.toLocaleString("en-US", {
+          maximumFractionDigits: 6
+        })} ${selectedV3Pool.token0}`,
+        token1Balance: `${balance1.toLocaleString("en-US", {
+          maximumFractionDigits: 6
+        })} ${selectedV3Pool.token1}`,
+        checkedAt: new Date().toLocaleTimeString()
+      };
+      setV3Scans((prev) => ({ ...prev, [selectedV3Pool.id]: result }));
+      setV3Status(
+        `Scanner ${result.status}: ${selectedV3Pool.label}, ${result.swaps} swaps recientes.`
+      );
+    } catch (error) {
+      console.error(error);
+      setV3Status("No se pudo actualizar el scanner de esa pool.");
+    } finally {
+      setV3Scanning(false);
+    }
+  };
+
+  const handleV3CreatePosition = async () => {
+    try {
+      setV3Executing(true);
+      if (!selectedV3Scan) {
+        setV3Status("Actualizá el scanner antes de operar esta pool.");
+        return;
+      }
+      if (selectedV3Scan.status === "No activa") {
+        setV3Status("Scanner: pool no activa. No se crea posición.");
+        return;
+      }
+
+      const token0 = v3TokenBySymbol(v3Chain, selectedV3Pool.token0);
+      const token1 = v3TokenBySymbol(v3Chain, selectedV3Pool.token1);
+      if (!token0 || !token1) {
+        setV3Status("Token metadata incompleta para crear posición.");
+        return;
+      }
+
+      const signer = await getV3Signer(v3Chain);
+      const owner = await signer.getAddress();
+      const token0Contract = new ethers.Contract(token0.address, ERC20_ABI, signer);
+      const token1Contract = new ethers.Contract(token1.address, ERC20_ABI, signer);
+      const token0Balance = (await token0Contract.balanceOf(owner)) as bigint;
+      const token1Balance = (await token1Contract.balanceOf(owner)) as bigint;
+      let amount0Desired = BigInt(0);
+      let amount1Desired = BigInt(0);
+
+      if (v3EntryMode === "manual") {
+        amount0Desired = parseV3Amount(v3ManualAmount0, token0.decimals);
+        amount1Desired = parseV3Amount(v3ManualAmount1, token1.decimals);
+        if (amount0Desired <= BigInt(0) || amount1Desired <= BigInt(0)) {
+          setV3Status("Ingresá montos mayores a cero para ambos tokens.");
+          return;
+        }
+        if (token0Balance < amount0Desired || token1Balance < amount1Desired) {
+          setV3Status("Saldo insuficiente para los montos manuales.");
+          return;
+        }
+      } else {
+        const inputSymbol = selectedV3Pool.inputToken;
+        const inputToken = v3TokenBySymbol(v3Chain, inputSymbol);
+        if (!inputToken) {
+          setV3Status("Token de entrada no configurado.");
+          return;
+        }
+        const inputIsToken0 = inputSymbol === selectedV3Pool.token0;
+        const inputTokenContract = inputIsToken0 ? token0Contract : token1Contract;
+        const outputToken = inputIsToken0 ? token1 : token0;
+        const outputTokenContract = inputIsToken0 ? token1Contract : token0Contract;
+        const requested = parseV3Amount(v3EntryAmount, inputToken.decimals);
+        const inputBalance = (await inputTokenContract.balanceOf(owner)) as bigint;
+        if (requested <= BigInt(0)) {
+          setV3Status("Ingresá un monto de entrada mayor a cero.");
+          return;
+        }
+        if (inputBalance < requested) {
+          setV3Status(
+            `Saldo insuficiente. Tenés ${formatV3RawAmount(
+              inputBalance,
+              inputToken.decimals
+            )} ${inputSymbol}.`
+          );
+          return;
+        }
+
+        const swapAmount = requested / BigInt(2);
+        const keepAmount = requested - swapAmount;
+        if (swapAmount <= BigInt(0) || keepAmount <= BigInt(0)) {
+          setV3Status("El monto es demasiado chico para dividirlo.");
+          return;
+        }
+
+        const quoter = new ethers.Contract(V3_QUOTER, V3_QUOTER_ABI, signer);
+        const slippagePct = Math.min(Math.max(Number(v3Slippage) || 1, 0.1), 5);
+        setV3Status("Consultando quote de Uniswap.");
+        const quotedOutput = (await quoter.quoteExactInputSingle.staticCall(
+          inputToken.address,
+          outputToken.address,
+          selectedV3Pool.fee,
+          swapAmount,
+          0
+        )) as bigint;
+        const minOutput =
+          (quotedOutput * BigInt(10000 - Math.round(slippagePct * 100))) /
+          BigInt(10000);
+
+        await ensureV3Allowance(
+          inputToken.address,
+          V3_SWAP_ROUTER,
+          swapAmount,
+          signer,
+          `${inputSymbol} para swap`
+        );
+
+        const outputBalanceBefore = (await outputTokenContract.balanceOf(
+          owner
+        )) as bigint;
+        const router = new ethers.Contract(
+          V3_SWAP_ROUTER,
+          V3_SWAP_ROUTER_ABI,
+          signer
+        );
+        setV3Status(`Ejecutando swap interno ${inputSymbol}.`);
+        const swapTx = await router.exactInputSingle({
+          tokenIn: inputToken.address,
+          tokenOut: outputToken.address,
+          fee: selectedV3Pool.fee,
+          recipient: owner,
+          deadline: deadlineSeconds(),
+          amountIn: swapAmount,
+          amountOutMinimum: minOutput,
+          sqrtPriceLimitX96: 0
+        });
+        await swapTx.wait();
+
+        const outputBalanceAfter = (await outputTokenContract.balanceOf(
+          owner
+        )) as bigint;
+        const outputReceived = outputBalanceAfter - outputBalanceBefore;
+        if (outputReceived <= BigInt(0)) {
+          setV3Status("El swap no dejó saldo nuevo para el segundo token.");
+          return;
+        }
+        amount0Desired = inputIsToken0 ? keepAmount : outputReceived;
+        amount1Desired = inputIsToken0 ? outputReceived : keepAmount;
+      }
+
+      await ensureV3Allowance(
+        token0.address,
+        V3_POSITION_MANAGER,
+        amount0Desired,
+        signer,
+        `${selectedV3Pool.token0} para mint`
+      );
+      await ensureV3Allowance(
+        token1.address,
+        V3_POSITION_MANAGER,
+        amount1Desired,
+        signer,
+        `${selectedV3Pool.token1} para mint`
+      );
+
+      const manager = new ethers.Contract(
+        V3_POSITION_MANAGER,
+        V3_POSITION_MANAGER_ABI,
+        signer
+      );
+      setV3Status("Enviando mint al Position Manager.");
+      const mintTx = await manager.mint({
+        token0: token0.address,
+        token1: token1.address,
+        fee: selectedV3Pool.fee,
+        tickLower: v3Range.lowerTick,
+        tickUpper: v3Range.upperTick,
+        amount0Desired,
+        amount1Desired,
+        amount0Min: 0,
+        amount1Min: 0,
+        recipient: owner,
+        deadline: deadlineSeconds()
+      });
+      const receipt = await mintTx.wait();
+      const mintedTokenId = extractMintedV3TokenId(receipt, owner);
+      if (mintedTokenId) {
+        const position = await readV3Position(
+          manager,
+          mintedTokenId,
+          v3Chain,
+          owner
+        );
+        saveV3Position(position, owner);
+      }
+      setV3Status(
+        mintedTokenId
+          ? `NFT #${mintedTokenId} creado. Mint: ${mintTx.hash.slice(0, 10)}...`
+          : `Mint confirmado: ${mintTx.hash.slice(0, 10)}...`
+      );
+    } catch (error) {
+      console.error(error);
+      setV3Status(
+        error instanceof Error
+          ? `No se pudo crear la posición: ${error.message}`
+          : "No se pudo crear la posición."
+      );
+    } finally {
+      setV3Executing(false);
+    }
+  };
+
+  const handleV3ImportPosition = async () => {
+    try {
+      const tokenId = v3TokenId.trim();
+      if (!tokenId) {
+        setV3Status("Ingresá el tokenId del NFT.");
+        return;
+      }
+      const signer = await getV3Signer();
+      const owner = await signer.getAddress();
+      const manager = new ethers.Contract(
+        V3_POSITION_MANAGER,
+        V3_POSITION_MANAGER_ABI,
+        signer
+      );
+      const nftOwner = await manager.ownerOf(tokenId);
+      if (String(nftOwner).toLowerCase() !== owner.toLowerCase()) {
+        setV3Status("Ese NFT no pertenece a la wallet conectada.");
+        return;
+      }
+      const saved = await readV3Position(manager, tokenId, v3Chain, owner);
+      saveV3Position(saved, owner);
+      setV3Status(`NFT #${tokenId} agregado a tus posiciones.`);
+      setV3TokenId("");
+    } catch (error) {
+      console.error(error);
+      setV3Status("No se pudo leer ese NFT en la red seleccionada.");
+    }
+  };
+
+  const handleV3RefreshPositions = async () => {
+    try {
+      const signer = await getV3Signer();
+      const owner = await signer.getAddress();
+      const manager = new ethers.Contract(
+        V3_POSITION_MANAGER,
+        V3_POSITION_MANAGER_ABI,
+        signer
+      );
+      const refreshed: V3Position[] = [];
+      for (const item of v3Positions) {
+        if (item.chain !== v3Chain) {
+          refreshed.push(item);
+          continue;
+        }
+        refreshed.push(
+          await readV3Position(manager, item.tokenId, item.chain, owner)
+        );
+      }
+      const ownerKey = owner.toLowerCase();
+      const raw = localStorage.getItem(V3_POSITION_KEY);
+      const parsed = raw ? (JSON.parse(raw) as Record<string, V3Position[]>) : {};
+      parsed[ownerKey] = refreshed;
+      localStorage.setItem(V3_POSITION_KEY, JSON.stringify(parsed));
+      setV3Positions(refreshed);
+      setV3Status("Posiciones actualizadas.");
+    } catch (error) {
+      console.error(error);
+      setV3Status("No se pudieron actualizar las posiciones.");
+    }
+  };
+
+  const handleV3Collect = async (position: V3Position) => {
+    try {
+      setV3Chain(position.chain);
+      const signer = await getV3Signer(position.chain);
+      const recipient = await signer.getAddress();
+      const manager = new ethers.Contract(
+        V3_POSITION_MANAGER,
+        V3_POSITION_MANAGER_ABI,
+        signer
+      );
+      const tx = await manager.collect({
+        tokenId: position.tokenId,
+        recipient,
+        amount0Max: MAX_UINT128,
+        amount1Max: MAX_UINT128
+      });
+      setV3Status(`Collect enviado: ${tx.hash.slice(0, 10)}...`);
+      await tx.wait();
+      saveV3Position(
+        await readV3Position(manager, position.tokenId, position.chain, recipient),
+        recipient
+      );
+      setV3Status(`Fees cobradas del NFT #${position.tokenId}.`);
+    } catch (error) {
+      console.error(error);
+      setV3Status("No se pudieron cobrar las fees.");
+    }
+  };
+
+  const handleV3Withdraw = async (position: V3Position) => {
+    try {
+      setV3Chain(position.chain);
+      const signer = await getV3Signer(position.chain);
+      const recipient = await signer.getAddress();
+      const manager = new ethers.Contract(
+        V3_POSITION_MANAGER,
+        V3_POSITION_MANAGER_ABI,
+        signer
+      );
+      const live = await manager.positions(position.tokenId);
+      const liquidity = live.liquidity;
+      if (liquidity <= BigInt(0)) {
+        setV3Status("La posición ya no tiene liquidez activa.");
+        return;
+      }
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
+      const removeTx = await manager.decreaseLiquidity({
+        tokenId: position.tokenId,
+        liquidity,
+        amount0Min: 0,
+        amount1Min: 0,
+        deadline
+      });
+      setV3Status(`Retiro enviado: ${removeTx.hash.slice(0, 10)}...`);
+      await removeTx.wait();
+      const collectTx = await manager.collect({
+        tokenId: position.tokenId,
+        recipient,
+        amount0Max: MAX_UINT128,
+        amount1Max: MAX_UINT128
+      });
+      await collectTx.wait();
+      saveV3Position(
+        await readV3Position(manager, position.tokenId, position.chain, recipient),
+        recipient
+      );
+      setV3Status(`Posición NFT #${position.tokenId} retirada y cobrada.`);
+    } catch (error) {
+      console.error(error);
+      setV3Status("No se pudo retirar la posición.");
     }
   };
 
@@ -1388,6 +2519,323 @@ export default function Home() {
           </div>
         </section>
 
+        <section
+          className={`${styles.sectionBlock} ${
+            isLocked ? styles.sectionLocked : ""
+          }`}
+        >
+          <div>
+            <h2>Pools V3</h2>
+            <p className={styles.subtitle}>
+              Seguimiento y gestión de posiciones Uniswap V3 con MetaMask.
+            </p>
+          </div>
+          {isLocked ? (
+            <div className={styles.lockOverlay}>
+              <p>Wallet bloqueada. Pagá 10 ZUM para desbloquear.</p>
+            </div>
+          ) : null}
+          <div className={styles.sectionGrid}>
+            <div className={styles.walletCard}>
+              <h3>Preparar rango</h3>
+              <div className={styles.field}>
+                <label>Red</label>
+                <select
+                  value={v3Chain}
+                  onChange={(event) => setV3Chain(event.target.value as V3ChainKey)}
+                >
+                  <option value="arbitrum">Arbitrum</option>
+                  <option value="ethereum">Ethereum</option>
+                </select>
+              </div>
+              <div className={styles.field}>
+                <label>Pool</label>
+                <select
+                  value={selectedV3Pool.id}
+                  onChange={(event) => setV3PoolId(event.target.value)}
+                >
+                  {v3PoolsForChain.map((pool) => (
+                    <option key={pool.id} value={pool.id}>
+                      {pool.label} · {pool.feeLabel} · {pool.activity} ·{" "}
+                      {pool.reserve}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className={styles.field}>
+                <label>Perfil</label>
+                <select
+                  value={v3Profile}
+                  onChange={(event) =>
+                    setV3Profile(event.target.value as keyof typeof V3_PROFILES)
+                  }
+                >
+                  {Object.entries(V3_PROFILES).map(([key, profile]) => (
+                    <option key={key} value={key}>
+                      {profile.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className={styles.field}>
+                <label>Modo de entrada</label>
+                <select
+                  value={v3EntryMode}
+                  onChange={(event) =>
+                    setV3EntryMode(event.target.value as V3EntryMode)
+                  }
+                >
+                  <option value="single">Un token + swap interno</option>
+                  <option value="manual">Manual dos tokens</option>
+                </select>
+              </div>
+              {v3EntryMode === "single" ? (
+                <div className={styles.field}>
+                  <label>Monto de entrada ({selectedV3Pool.inputToken})</label>
+                  <input
+                    value={v3EntryAmount}
+                    onChange={(event) => setV3EntryAmount(event.target.value)}
+                    placeholder={`Monto en ${selectedV3Pool.inputToken}`}
+                    inputMode="decimal"
+                  />
+                </div>
+              ) : (
+                <div className={styles.v3ManualGrid}>
+                  <div className={styles.field}>
+                    <label>Monto {selectedV3Pool.token0}</label>
+                    <input
+                      value={v3ManualAmount0}
+                      onChange={(event) =>
+                        setV3ManualAmount0(event.target.value)
+                      }
+                      placeholder={`Monto en ${selectedV3Pool.token0}`}
+                      inputMode="decimal"
+                    />
+                  </div>
+                  <div className={styles.field}>
+                    <label>Monto {selectedV3Pool.token1}</label>
+                    <input
+                      value={v3ManualAmount1}
+                      onChange={(event) =>
+                        setV3ManualAmount1(event.target.value)
+                      }
+                      placeholder={`Monto en ${selectedV3Pool.token1}`}
+                      inputMode="decimal"
+                    />
+                  </div>
+                </div>
+              )}
+              <div className={styles.field}>
+                <label>Slippage máximo (%)</label>
+                <input
+                  value={v3Slippage}
+                  onChange={(event) => setV3Slippage(event.target.value)}
+                  placeholder="1"
+                  inputMode="decimal"
+                />
+              </div>
+              <div className={styles.ctas}>
+                <button
+                  className={styles.outline}
+                  onClick={handleV3ScanPool}
+                  disabled={isLocked || v3Scanning}
+                >
+                  {v3Scanning ? "Actualizando..." : "Actualizar scanner"}
+                </button>
+                <button
+                  className={styles.primary}
+                  onClick={handleV3CreatePosition}
+                  disabled={
+                    isLocked ||
+                    v3Executing ||
+                    !selectedV3Scan ||
+                    selectedV3Scan.status === "No activa"
+                  }
+                >
+                  {v3Executing ? "Operando..." : "Operar / Crear posición"}
+                </button>
+              </div>
+              <div className={styles.v3MetricGrid}>
+                <div>
+                  <span>Precio actual</span>
+                  <strong>
+                    {effectiveV3Price.toLocaleString("en-US", {
+                      maximumFractionDigits: 4
+                    })}
+                  </strong>
+                </div>
+                <div>
+                  <span>Rango precio</span>
+                  <strong>
+                    {v3Range.lowerPrice.toLocaleString("en-US", {
+                      maximumFractionDigits: 2
+                    })}{" "}
+                    /{" "}
+                    {v3Range.upperPrice.toLocaleString("en-US", {
+                      maximumFractionDigits: 2
+                    })}
+                  </strong>
+                </div>
+                <div>
+                  <span>Ticks</span>
+                  <strong>
+                    {v3Range.lowerTick} / {v3Range.upperTick}
+                  </strong>
+                </div>
+                <div>
+                  <span>Scanner</span>
+                  <strong>
+                    {selectedV3Scan
+                      ? `${selectedV3Scan.status} · ${selectedV3Scan.reserve}`
+                      : `${selectedV3Pool.reserve} · ${selectedV3Pool.activity}`}
+                  </strong>
+                </div>
+                <div>
+                  <span>Swaps recientes</span>
+                  <strong>
+                    {selectedV3Scan
+                      ? `${selectedV3Scan.swaps} · ${selectedV3Scan.checkedAt}`
+                      : "Sin actualizar"}
+                  </strong>
+                </div>
+                <div>
+                  <span>Balances pool</span>
+                  <strong>
+                    {selectedV3Scan
+                      ? `${selectedV3Scan.token0Balance} / ${selectedV3Scan.token1Balance}`
+                      : "Pendiente"}
+                  </strong>
+                </div>
+                <div>
+                  <span>Entrada estimada</span>
+                  <strong>
+                    {v3EntryEstimate.amount0.toLocaleString("en-US", {
+                      maximumFractionDigits: 8
+                    })}{" "}
+                    {selectedV3Pool.token0} +{" "}
+                    {v3EntryEstimate.amount1.toLocaleString("en-US", {
+                      maximumFractionDigits: 6
+                    })}{" "}
+                    {selectedV3Pool.token1}
+                  </strong>
+                </div>
+                <div>
+                  <span>Swap interno</span>
+                  <strong>
+                    {v3EntryMode === "single"
+                      ? `${v3EntryEstimate.swapAmount.toLocaleString("en-US", {
+                          maximumFractionDigits: 6
+                        })} ${selectedV3Pool.inputToken}`
+                      : "Sin swap"}
+                  </strong>
+                </div>
+                <div>
+                  <span>Mínimo con slippage</span>
+                  <strong>
+                    {v3EntryMode === "single"
+                      ? `${v3EntryEstimate.minAfterSlippage.toLocaleString(
+                          "en-US",
+                          { maximumFractionDigits: 6 }
+                        )} ${selectedV3Pool.inputToken}`
+                      : "No aplica"}
+                  </strong>
+                </div>
+              </div>
+              <p className={styles.muted}>
+                Entrada pensada: {selectedV3Pool.inputToken}. Estos campos
+                dejan preparada la ejecución; el mint real queda para conectar
+                approvals, swap y NonfungiblePositionManager en la siguiente
+                fase.
+              </p>
+            </div>
+
+            <div className={styles.walletCard}>
+              <h3>Mis posiciones V3</h3>
+              <div className={styles.field}>
+                <label>Wallet MetaMask</label>
+                <div className={styles.address}>{v3Wallet ?? "—"}</div>
+              </div>
+              <div className={styles.ctas}>
+                <button
+                  className={styles.outline}
+                  onClick={handleV3Connect}
+                  disabled={isLocked}
+                >
+                  Conectar MetaMask
+                </button>
+                <button
+                  className={styles.outline}
+                  onClick={handleV3RefreshPositions}
+                  disabled={isLocked || v3Positions.length === 0}
+                >
+                  Leer estado
+                </button>
+              </div>
+              <div className={styles.field}>
+                <label>Agregar NFT existente</label>
+                <input
+                  value={v3TokenId}
+                  onChange={(event) => setV3TokenId(event.target.value)}
+                  placeholder="TokenId NFT"
+                />
+                <button
+                  className={styles.primary}
+                  onClick={handleV3ImportPosition}
+                  disabled={isLocked}
+                >
+                  Agregar NFT
+                </button>
+              </div>
+              <div className={styles.v3PositionList}>
+                {v3Positions.length === 0 ? (
+                  <p className={styles.muted}>
+                    Todavía no hay NFTs guardados para esta MetaMask.
+                  </p>
+                ) : (
+                  v3Positions.map((position) => (
+                    <div key={`${position.chain}-${position.tokenId}`} className={styles.v3Position}>
+                      <div>
+                        <p className={styles.txHash}>NFT #{position.tokenId}</p>
+                        <p className={styles.txMeta}>
+                          {position.label} · {position.feeLabel} ·{" "}
+                          {position.chain}
+                        </p>
+                        <p className={styles.txTime}>
+                          Liquidez: {position.liquidity} · Rango:{" "}
+                          {position.tickLower} / {position.tickUpper}
+                        </p>
+                        <p className={styles.txTime}>
+                          Fees cobrables: {position.fees0 ?? "0"}{" "}
+                          {position.token0Symbol ?? "token0"} /{" "}
+                          {position.fees1 ?? "0"}{" "}
+                          {position.token1Symbol ?? "token1"}
+                        </p>
+                      </div>
+                      <div className={styles.v3Actions}>
+                        <button
+                          className={styles.outline}
+                          onClick={() => handleV3Collect(position)}
+                          disabled={isLocked}
+                        >
+                          Collect fees
+                        </button>
+                        <button
+                          className={styles.outline}
+                          onClick={() => handleV3Withdraw(position)}
+                          disabled={isLocked || position.liquidity === "0"}
+                        >
+                          Retirar
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              {v3Status ? <p className={styles.status}>{v3Status}</p> : null}
+            </div>
+          </div>
+        </section>
+
         <section className={styles.networks}>
           <div>
             <h2>Redes soportadas</h2>
@@ -1442,27 +2890,3 @@ export default function Home() {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
