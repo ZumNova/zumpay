@@ -2508,7 +2508,7 @@ export default function Home() {
                         isLocked || (Boolean(revealedMnemonic) && !seedConfirmed)
                       }
                     >
-                      Enviar {selectedAsset.symbol}
+                      ENVIAR
                     </button>
                   </div>
                 </div>
