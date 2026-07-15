@@ -88,6 +88,24 @@
   color: var(--ink);
 }
 
+.softButton {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 10px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--muted);
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.softButton:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--ink);
+}
+
 .disabled {
   opacity: 0.55;
   pointer-events: none;
@@ -392,7 +410,7 @@
   grid-template-columns: 22px 1fr;
   gap: 10px;
   align-items: center;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-radius: 12px;
   background: rgba(12, 18, 32, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -402,17 +420,57 @@
   width: 22px;
   height: 22px;
   border-radius: 999px;
-  background: rgba(39, 213, 244, 0.35);
+  background: rgba(39, 213, 244, 0.24);
   color: #041018;
   display: grid;
   place-items: center;
   font-size: 12px;
   font-weight: 700;
+  box-shadow: 0 0 0 1px rgba(39, 213, 244, 0.24);
 }
 
 .stepList p {
   font-size: 13px;
+  color: #d6f7ff;
+  line-height: 1.45;
+}
+
+.stepList div:nth-child(2) p {
+  color: #bdf7d8;
+}
+
+.stepList div:nth-child(3) p {
+  color: #f4e7b8;
+}
+
+.paymentMeta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(12, 18, 32, 0.92);
+  border: 1px solid rgba(52, 211, 153, 0.28);
+}
+
+.paymentMeta div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.paymentMeta span {
+  font-size: 11px;
   color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+
+.paymentMeta strong {
+  color: var(--ink);
+  font-size: 13px;
+  word-break: break-word;
 }
 
 .walletCard {

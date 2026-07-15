@@ -2250,7 +2250,7 @@ export default function Home() {
               </div>
               <div className={styles.ctas}>
                 <button
-                  className={styles.primary}
+                  className={styles.softButton}
                   onClick={() =>
                     copyToClipboard(ZUM_OWNER, "Dirección del owner copiada.")
                   }
@@ -2258,7 +2258,7 @@ export default function Home() {
                   Copiar dirección de pago
                 </button>
                 <button
-                  className={styles.outline}
+                  className={styles.softButton}
                   onClick={() =>
                     copyToClipboard(ZUM_ADDRESS, "Contrato ZUM copiado.")
                   }
@@ -2266,10 +2266,22 @@ export default function Home() {
                   Copiar contrato ZUM
                 </button>
               </div>
-              <p className={styles.muted}>
-                Red: Polygon. Wallet destino: {ZUM_OWNER.slice(0, 6)}...
-                {ZUM_OWNER.slice(-4)}.
-              </p>
+              <div className={styles.paymentMeta}>
+                <div>
+                  <span>Red</span>
+                  <strong>Polygon</strong>
+                </div>
+                <div>
+                  <span>Destino</span>
+                  <strong>
+                    {ZUM_OWNER.slice(0, 6)}...{ZUM_OWNER.slice(-4)}
+                  </strong>
+                </div>
+                <div>
+                  <span>Token</span>
+                  <strong>ZUM</strong>
+                </div>
+              </div>
             </div>
           </div>
         </section>
