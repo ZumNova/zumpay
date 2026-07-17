@@ -94,13 +94,64 @@ Factores que pueden mejorar la reputacion:
 - Textos de UI transparentes sobre red, token, monto y destino.
 - Mayor historial on-chain del token y del dominio.
 
-## Propuesta futura: ZumpayPremiumAccess
+## Contrato premium: ZumpayPremiumAccess
 
-Para una version mas formal del premium, conviene crear un contrato verificado en Polygon.
+Se agrego un primer contrato auditable para formalizar el acceso premium.
 
-Idea de contrato:
+Archivos:
 
-- Nombre sugerido: `ZumpayPremiumAccess`.
+- `contracts/ZumpayPremiumAccess.sol`
+- `test/ZumpayPremiumAccess.t.sol`
+- `script/DeployZumpayPremiumAccess.s.sol`
+- `foundry.toml`
+
+Caracteristicas:
+
+- Recibe pagos en ZUM mediante `transferFrom`.
+- Expone una funcion clara `payPremium()`.
+- Emite `PremiumPaid(address user, uint256 amount)`.
+- Guarda acceso premium en `hasPremium(user)`.
+- Evita doble pago del mismo usuario.
+- Permite `grantPremium` y `revokePremium` desde owner.
+- Permite actualizar `premiumPrice`.
+- Usa retiro owner-only de los ZUM acumulados.
+- Usa transferencia de ownership en dos pasos.
+- Usa guardia simple contra reentrancy.
+
+Validacion local:
+
+```bash
+forge test
+```
+
+Resultado:
+
+- 4 tests pasados.
+- 0 fallos.
+
+Objetivo:
+
+- Reducir la apariencia de transferencia directa a una wallet personal.
+- Hacer el flujo premium mas auditable.
+- Dejar un contrato verificable en Polygonscan.
+- Permitir que la app verifique `PremiumPaid` o `hasPremium`.
+
+Flujo futuro recomendado:
+
+1. Deploy en Polygon con:
+   - `ZUM_ADDRESS=0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5`
+   - `PREMIUM_OWNER=0x521125be95c5679539aB07582F55F0040975A047`
+   - `PREMIUM_PRICE=100000000000000000000`
+2. Verificar contrato en Polygonscan.
+3. Actualizar la app para hacer `approve` de 100 ZUM al contrato.
+4. Ejecutar `payPremium()`.
+5. Verificar `hasPremium(user)` o eventos `PremiumPaid`.
+
+## Propuesta futura: reputacion MetaMask
+
+Para seguir bajando alertas, conviene completar el flujo formal:
+
+- Deploy y verificacion de `ZumpayPremiumAccess` en Polygon.
 - Recibe pagos en ZUM mediante `transferFrom`.
 - Expone una funcion clara `payPremium()`.
 - Emite un evento `PremiumPaid(address user, uint256 amount)`.
@@ -123,4 +174,4 @@ Flujo futuro recomendado:
 4. El contrato recibe ZUM y emite `PremiumPaid`.
 5. La app verifica el evento y desbloquea premium.
 
-Para uso personal, el flujo actual es suficiente. Para usuarios reales, el contrato premium verificado seria el siguiente paso tecnico.
+Para uso personal, el flujo actual sigue siendo suficiente. Para usuarios reales, el contrato premium verificado es el siguiente paso tecnico.

@@ -64,6 +64,9 @@ Agregar tokens ERC‑20 mediante dirección de contrato.
 ### ⭐ Modo Premium  
 Desbloqueo de funciones avanzadas mediante pago único de 100 ZUM.
 
+### 🧾 Contrato Premium
+Contrato `ZumpayPremiumAccess` preparado con Foundry para formalizar el pago premium mediante `approve + payPremium()` en Polygon.
+
 ---
 
 ## 🏗️ Arquitectura y tecnologías
