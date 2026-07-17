@@ -147,6 +147,7 @@ const EXPLORERS: Record<string, string> = {
 
 const ZUM_ADDRESS = "0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5";
 const ZUM_OWNER = "0x521125be95c5679539aB07582F55F0040975A047";
+const POLYGON_USDC_ADDRESS = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
 const ZUM_PREMIUM_AMOUNT = "100";
 const ZUM_PREMIUM_AMOUNT_RAW = ethers.parseUnits(ZUM_PREMIUM_AMOUNT, 18);
 const POLYGON_CHAIN_ID = 137;
@@ -224,7 +225,7 @@ const V3_TOKENS: Record<
   },
   polygon: {
     USDC: {
-      address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      address: POLYGON_USDC_ADDRESS,
       decimals: 6
     },
     ZUM: {
@@ -467,7 +468,7 @@ const DEFAULT_TOKENS: Record<string, TokenMeta[]> = {
       decimals: 18
     },
     {
-      address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      address: POLYGON_USDC_ADDRESS,
       symbol: "USDC",
       decimals: 6
     }
@@ -1338,6 +1339,35 @@ export default function Home() {
       setStatus(message);
     } catch {
       setStatus("No se pudo copiar.");
+    }
+  };
+
+  const addZumToMetaMask = async () => {
+    try {
+      const ethereum = (window as unknown as { ethereum?: InjectedEthereum })
+        .ethereum;
+      if (!ethereum) {
+        setStatus("MetaMask no está instalado.");
+        return;
+      }
+      await ensurePolygonNetwork(ethereum);
+      await ethereum.request({
+        method: "wallet_watchAsset",
+        params: [
+          {
+            type: "ERC20",
+            options: {
+              address: ZUM_ADDRESS,
+              symbol: "ZUM",
+              decimals: 18
+            }
+          }
+        ]
+      });
+      setStatus("ZUM enviado a MetaMask para agregar.");
+    } catch (error) {
+      console.error(error);
+      setStatus("No se pudo agregar ZUM a MetaMask.");
     }
   };
 
@@ -2216,6 +2246,85 @@ export default function Home() {
             <div className={styles.heroLogo}>
               <span>ZUM</span>
               <span className={styles.heroLogoAccent}>PAY</span>
+            </div>
+          </div>
+        </section>
+
+        <section className={styles.zumPublic}>
+          <div className={styles.zumIntro}>
+            <p className={styles.kicker}>ZUM Token</p>
+            <h2>Token oficial de Zumpay en Polygon</h2>
+            <p className={styles.subtitle}>
+              ZUM opera en Polygon con contrato verificado y pool pública
+              ZUM/USDC. Usá siempre el contrato oficial y USDC nativo de
+              Polygon para evitar confusiones.
+            </p>
+          </div>
+          <div className={styles.zumGrid}>
+            <div className={styles.zumCard}>
+              <span>Contrato ZUM</span>
+              <strong>ZUM · Polygon</strong>
+              <code>{ZUM_ADDRESS}</code>
+              <div className={styles.zumActions}>
+                <button
+                  className={styles.softButton}
+                  onClick={() =>
+                    copyToClipboard(ZUM_ADDRESS, "Contrato ZUM copiado.")
+                  }
+                >
+                  Copiar ZUM
+                </button>
+                <a
+                  className={styles.softLink}
+                  href={`https://polygonscan.com/token/${ZUM_ADDRESS}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Polygonscan
+                </a>
+              </div>
+            </div>
+            <div className={styles.zumCard}>
+              <span>Pool oficial</span>
+              <strong>ZUM/USDC · Uniswap V3</strong>
+              <p>
+                Usar USDC nativo en Polygon. Precio inicial de referencia:
+                0.10 USDC por ZUM.
+              </p>
+              <div className={styles.zumActions}>
+                <button
+                  className={styles.softButton}
+                  onClick={() =>
+                    copyToClipboard(
+                      POLYGON_USDC_ADDRESS,
+                      "Contrato USDC Polygon copiado."
+                    )
+                  }
+                >
+                  Copiar USDC
+                </button>
+                <a
+                  className={styles.softLink}
+                  href={`https://app.uniswap.org/explore/tokens/polygon/${ZUM_ADDRESS}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Uniswap
+                </a>
+              </div>
+            </div>
+            <div className={styles.zumCard}>
+              <span>Seguridad</span>
+              <strong>Verificá antes de operar</strong>
+              <p>
+                Red: Polygon. Token: ZUM. Par recomendado: ZUM/USDC con USDC
+                nativo. No uses contratos copiados de fuentes no oficiales.
+              </p>
+              <div className={styles.zumActions}>
+                <button className={styles.softButton} onClick={addZumToMetaMask}>
+                  Agregar ZUM
+                </button>
+              </div>
             </div>
           </div>
         </section>
