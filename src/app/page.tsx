@@ -47,7 +47,7 @@ type EvmAsset = {
   address: string;
 };
 
-type V3ChainKey = "arbitrum" | "ethereum";
+type V3ChainKey = "arbitrum" | "ethereum" | "polygon";
 type V3EntryMode = "single" | "manual";
 
 type V3Pool = {
@@ -63,6 +63,7 @@ type V3Pool = {
   tick: number;
   reserve: string;
   activity: string;
+  allowCreate?: boolean;
 };
 
 type V3Position = {
@@ -173,7 +174,8 @@ const ZERO_ADDRESS_TOPIC =
 
 const V3_CHAIN_IDS: Record<V3ChainKey, number> = {
   ethereum: 1,
-  arbitrum: 42161
+  arbitrum: 42161,
+  polygon: 137
 };
 
 const V3_TOKENS: Record<
@@ -219,10 +221,35 @@ const V3_TOKENS: Record<
       address: "0x68749665FF8D2d112Fa859AA293F07A622782F38",
       decimals: 6
     }
+  },
+  polygon: {
+    USDC: {
+      address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      decimals: 6
+    },
+    ZUM: {
+      address: ZUM_ADDRESS,
+      decimals: 18
+    }
   }
 };
 
 const V3_POOLS: V3Pool[] = [
+  {
+    id: "poly-usdc-zum-10000",
+    chain: "polygon",
+    label: "ZUM/USDC",
+    fee: 10000,
+    feeLabel: "1.00%",
+    token0: "USDC",
+    token1: "ZUM",
+    inputToken: "USDC",
+    price: 10,
+    tick: 299351,
+    reserve: "Semilla 50 USDC + 500 ZUM",
+    activity: "Seed",
+    allowCreate: true
+  },
   {
     id: "arb-weth-usdc-500",
     chain: "arbitrum",
@@ -402,6 +429,7 @@ const V3_PROFILES = {
 const V3_POSITION_MANAGER_ABI = [
   "function ownerOf(uint256 tokenId) view returns (address)",
   "function positions(uint256 tokenId) view returns (uint96 nonce,address operator,address token0,address token1,uint24 fee,int24 tickLower,int24 tickUpper,uint128 liquidity,uint256 feeGrowthInside0LastX128,uint256 feeGrowthInside1LastX128,uint128 tokensOwed0,uint128 tokensOwed1)",
+  "function createAndInitializePoolIfNecessary(address token0,address token1,uint24 fee,uint160 sqrtPriceX96) payable returns (address pool)",
   "function collect((uint256 tokenId,address recipient,uint128 amount0Max,uint128 amount1Max)) payable returns (uint256 amount0, uint256 amount1)",
   "function decreaseLiquidity((uint256 tokenId,uint128 liquidity,uint256 amount0Min,uint256 amount1Min,uint256 deadline)) payable returns (uint256 amount0, uint256 amount1)",
   "function mint((address token0,address token1,uint24 fee,int24 tickLower,int24 tickUpper,uint256 amount0Desired,uint256 amount1Desired,uint256 amount0Min,uint256 amount1Min,address recipient,uint256 deadline)) payable returns (uint256 tokenId,uint128 liquidity,uint256 amount0,uint256 amount1)"
@@ -437,6 +465,11 @@ const DEFAULT_TOKENS: Record<string, TokenMeta[]> = {
       address: ZUM_ADDRESS,
       symbol: "ZUM",
       decimals: 18
+    },
+    {
+      address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      symbol: "USDC",
+      decimals: 6
     }
   ],
   arbitrum: [
@@ -535,6 +568,29 @@ function formatV3RawAmount(value: bigint, decimals: number) {
   return Number(ethers.formatUnits(value, decimals)).toLocaleString("en-US", {
     maximumFractionDigits: decimals <= 8 ? 6 : 8
   });
+}
+
+function sqrtBigInt(value: bigint) {
+  if (value < BigInt(0)) {
+    throw new Error("sqrt only works on positive values");
+  }
+  if (value < BigInt(2)) {
+    return value;
+  }
+  let x0 = value / BigInt(2);
+  let x1 = (x0 + value / x0) / BigInt(2);
+  while (x1 < x0) {
+    x0 = x1;
+    x1 = (x0 + value / x0) / BigInt(2);
+  }
+  return x0;
+}
+
+function initialSqrtPriceX96(amount0: bigint, amount1: bigint) {
+  if (amount0 <= BigInt(0) || amount1 <= BigInt(0)) {
+    throw new Error("Montos invalidos para inicializar la pool.");
+  }
+  return sqrtBigInt((amount1 << BigInt(192)) / amount0);
 }
 
 function v3Provider(chain: V3ChainKey) {
@@ -728,11 +784,22 @@ export default function Home() {
     v3PoolsForChain[0] ??
     V3_POOLS[0];
   const selectedV3Scan = v3Scans[selectedV3Pool.id];
+  const canOperateV3 =
+    Boolean(selectedV3Scan) &&
+    (selectedV3Scan?.status !== "No activa" ||
+      (selectedV3Pool.allowCreate && v3EntryMode === "manual"));
   const effectiveV3Price = selectedV3Scan?.price ?? selectedV3Pool.price;
   const effectiveV3Tick = selectedV3Scan?.tick ?? selectedV3Pool.tick;
   const selectedV3Profile = V3_PROFILES[v3Profile];
   const v3Range = useMemo(() => {
-    const spacing = selectedV3Pool.fee === 500 ? 10 : 60;
+    const spacing =
+      selectedV3Pool.fee === 100
+        ? 1
+        : selectedV3Pool.fee === 500
+          ? 10
+          : selectedV3Pool.fee === 10000
+            ? 200
+            : 60;
     const lowerMultiplier = 1 - selectedV3Profile.widthPct;
     const upperMultiplier = 1 + selectedV3Profile.widthPct;
     const lowerTickRaw =
@@ -1767,8 +1834,14 @@ export default function Home() {
         setV3Status("Actualizá el scanner antes de operar esta pool.");
         return;
       }
-      if (selectedV3Scan.status === "No activa") {
+      const canInitializeSeedPool =
+        selectedV3Pool.allowCreate && v3EntryMode === "manual";
+      if (selectedV3Scan.status === "No activa" && !canInitializeSeedPool) {
         setV3Status("Scanner: pool no activa. No se crea posición.");
+        return;
+      }
+      if (selectedV3Scan.status === "No activa" && v3EntryMode !== "manual") {
+        setV3Status("Para crear una pool nueva usá modo manual dos tokens.");
         return;
       }
 
@@ -1888,6 +1961,29 @@ export default function Home() {
         amount1Desired = inputIsToken0 ? outputReceived : keepAmount;
       }
 
+      const manager = new ethers.Contract(
+        V3_POSITION_MANAGER,
+        V3_POSITION_MANAGER_ABI,
+        signer
+      );
+
+      if (canInitializeSeedPool) {
+        const sqrtPriceX96 = initialSqrtPriceX96(
+          amount0Desired,
+          amount1Desired
+        );
+        setV3Status(
+          `Inicializando pool ${selectedV3Pool.label} si es necesario.`
+        );
+        const initTx = await manager.createAndInitializePoolIfNecessary(
+          token0.address,
+          token1.address,
+          selectedV3Pool.fee,
+          sqrtPriceX96
+        );
+        await initTx.wait();
+      }
+
       await ensureV3Allowance(
         token0.address,
         V3_POSITION_MANAGER,
@@ -1903,11 +1999,6 @@ export default function Home() {
         `${selectedV3Pool.token1} para mint`
       );
 
-      const manager = new ethers.Contract(
-        V3_POSITION_MANAGER,
-        V3_POSITION_MANAGER_ABI,
-        signer
-      );
       setV3Status("Enviando mint al Position Manager.");
       const mintTx = await manager.mint({
         token0: token0.address,
@@ -2643,6 +2734,7 @@ export default function Home() {
                 >
                   <option value="arbitrum">Arbitrum</option>
                   <option value="ethereum">Ethereum</option>
+                  <option value="polygon">Polygon</option>
                 </select>
               </div>
               <div className={styles.field}>
@@ -2745,8 +2837,7 @@ export default function Home() {
                   disabled={
                     isLocked ||
                     v3Executing ||
-                    !selectedV3Scan ||
-                    selectedV3Scan.status === "No activa"
+                    !canOperateV3
                   }
                 >
                   {v3Executing ? "Operando..." : "Operar / Crear posición"}
