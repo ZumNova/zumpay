@@ -150,6 +150,8 @@ const ZUM_OWNER = "0x521125be95c5679539aB07582F55F0040975A047";
 const POLYGON_USDC_ADDRESS = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
 const ZUM_PREMIUM_AMOUNT = "100";
 const ZUM_PREMIUM_AMOUNT_RAW = ethers.parseUnits(ZUM_PREMIUM_AMOUNT, 18);
+const ZUM_PREMIUM_CONTRACT =
+  process.env.NEXT_PUBLIC_ZUM_PREMIUM_CONTRACT ?? "";
 const POLYGON_CHAIN_ID = 137;
 const ERC20_ABI = [
   "function symbol() view returns (string)",
@@ -158,6 +160,10 @@ const ERC20_ABI = [
   "function allowance(address owner,address spender) view returns (uint256)",
   "function approve(address spender,uint256 amount) returns (bool)",
   "function transfer(address to, uint256 amount) returns (bool)"
+];
+const PREMIUM_ACCESS_ABI = [
+  "function premiumPrice() view returns (uint256)",
+  "function payPremium()"
 ];
 
 const V3_POSITION_MANAGER = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88";
@@ -571,6 +577,13 @@ function formatV3RawAmount(value: bigint, decimals: number) {
   });
 }
 
+function formatZumAmount(value: bigint) {
+  return ethers
+    .formatUnits(value, 18)
+    .replace(/(\.\d*?[1-9])0+$/, "$1")
+    .replace(/\.0+$/, "");
+}
+
 function sqrtBigInt(value: bigint) {
   if (value < BigInt(0)) {
     throw new Error("sqrt only works on positive values");
@@ -720,6 +733,10 @@ export default function Home() {
   const [checkingPremium, setCheckingPremium] = useState(false);
   const [payingPremium, setPayingPremium] = useState(false);
   const [payerAddress, setPayerAddress] = useState<string | null>(null);
+  const [premiumAmount, setPremiumAmount] = useState(ZUM_PREMIUM_AMOUNT);
+  const [premiumAmountRaw, setPremiumAmountRaw] = useState(
+    ZUM_PREMIUM_AMOUNT_RAW
+  );
   const [v3Chain, setV3Chain] = useState<V3ChainKey>("arbitrum");
   const [v3PoolId, setV3PoolId] = useState("arb-weth-usdc-500");
   const [v3Profile, setV3Profile] =
@@ -747,8 +764,39 @@ export default function Home() {
     [network]
   );
 
+  useEffect(() => {
+    if (!ZUM_PREMIUM_CONTRACT) {
+      return;
+    }
+
+    const loadPremiumPrice = async () => {
+      try {
+        const polygonRpc =
+          process.env.NEXT_PUBLIC_POLYGON_RPC_URL ?? "https://polygon-rpc.com";
+        const polygonProvider = new ethers.JsonRpcProvider(
+          polygonRpc,
+          POLYGON_CHAIN_ID
+        );
+        const premium = new ethers.Contract(
+          ZUM_PREMIUM_CONTRACT,
+          PREMIUM_ACCESS_ABI,
+          polygonProvider
+        );
+        const price = (await premium.premiumPrice()) as bigint;
+        setPremiumAmountRaw(price);
+        setPremiumAmount(formatZumAmount(price));
+      } catch {
+        setPremiumAmount(ZUM_PREMIUM_AMOUNT);
+        setPremiumAmountRaw(ZUM_PREMIUM_AMOUNT_RAW);
+      }
+    };
+
+    loadPremiumPrice();
+  }, []);
+
   const explorerBase = EXPLORERS[networkKey] ?? EXPLORERS.polygon;
   const isLocked = !premiumPaid;
+  const premiumDestination = ZUM_PREMIUM_CONTRACT || ZUM_OWNER;
 
   const evmAssets = useMemo<EvmAsset[]>(() => {
     const list: EvmAsset[] = [
@@ -999,7 +1047,7 @@ export default function Home() {
         setPremiumStatus("Premium activo.");
       } else {
         setPremiumPaid(false);
-        setPremiumStatus(`Bloqueado: requiere pago de ${ZUM_PREMIUM_AMOUNT} ZUM.`);
+        setPremiumStatus(`Bloqueado: requiere pago de ${premiumAmount} ZUM.`);
       }
     } catch {
       setPremiumPaid(false);
@@ -1569,16 +1617,41 @@ export default function Home() {
 
       const zum = new ethers.Contract(ZUM_ADDRESS, ERC20_ABI, signer);
       const balance = (await zum.balanceOf(signerAddress)) as bigint;
-      if (balance < ZUM_PREMIUM_AMOUNT_RAW) {
+      if (balance < premiumAmountRaw) {
         setPremiumStatus(
-          `Saldo insuficiente: necesitás ${ZUM_PREMIUM_AMOUNT} ZUM en Polygon.`
+          `Saldo insuficiente: necesitás ${premiumAmount} ZUM en Polygon.`
         );
         return;
       }
 
-      setPremiumStatus(`Enviando ${ZUM_PREMIUM_AMOUNT} ZUM al owner.`);
-      const tx = await zum.transfer(ZUM_OWNER, ZUM_PREMIUM_AMOUNT_RAW);
-      await tx.wait();
+      if (ZUM_PREMIUM_CONTRACT) {
+        const allowance = (await zum.allowance(
+          signerAddress,
+          ZUM_PREMIUM_CONTRACT
+        )) as bigint;
+        if (allowance < premiumAmountRaw) {
+          setPremiumStatus("Aprobando ZUM para el contrato premium.");
+          const approveTx = await zum.approve(
+            ZUM_PREMIUM_CONTRACT,
+            premiumAmountRaw
+          );
+          await approveTx.wait();
+        }
+
+        setPremiumStatus("Activando premium en el contrato.");
+        const premium = new ethers.Contract(
+          ZUM_PREMIUM_CONTRACT,
+          PREMIUM_ACCESS_ABI,
+          signer
+        );
+        const tx = await premium.payPremium();
+        await tx.wait();
+      } else {
+        setPremiumStatus(`Enviando ${premiumAmount} ZUM al owner.`);
+        const tx = await zum.transfer(ZUM_OWNER, premiumAmountRaw);
+        await tx.wait();
+      }
+
       setPremiumStatus("Pago confirmado. Verificando premium.");
       await checkPremium(signerAddress);
     } catch (error) {
@@ -2343,7 +2416,7 @@ export default function Home() {
           </div>
           {isLocked ? (
             <div className={styles.lockOverlay}>
-              <p>Wallet bloqueada. Pagá {ZUM_PREMIUM_AMOUNT} ZUM para desbloquear.</p>
+              <p>Wallet bloqueada. Pagá {premiumAmount} ZUM para desbloquear.</p>
             </div>
           ) : null}
           <div className={styles.sectionGrid}>
@@ -2404,7 +2477,7 @@ export default function Home() {
             <h2>Activar premium</h2>
             <p className={styles.subtitle}>
               Para usar la wallet necesitás pagar una única vez{" "}
-              <strong>{ZUM_PREMIUM_AMOUNT} ZUM</strong>.
+              <strong>{premiumAmount} ZUM</strong>.
             </p>
           </div>
           <div className={styles.sectionGrid}>
@@ -2428,7 +2501,7 @@ export default function Home() {
                   onClick={payPremium}
                   disabled={payingPremium || checkingPremium}
                 >
-                  {payingPremium ? "Pagando..." : `Pagar ${ZUM_PREMIUM_AMOUNT} ZUM`}
+                  {payingPremium ? "Pagando..." : `Pagar ${premiumAmount} ZUM`}
                 </button>
                 <button className={styles.outline} onClick={() => checkPremium()}>
                   Verificar pago
@@ -2441,7 +2514,9 @@ export default function Home() {
                 </div>
                 <div>
                   <span>2</span>
-                  <p>Pagá {ZUM_PREMIUM_AMOUNT} ZUM al owner desde Polygon.</p>
+                  <p>
+                    Pagá {premiumAmount} ZUM desde Polygon.
+                  </p>
                 </div>
                 <div>
                   <span>3</span>
@@ -2452,7 +2527,10 @@ export default function Home() {
                 <button
                   className={styles.softButton}
                   onClick={() =>
-                    copyToClipboard(ZUM_OWNER, "Dirección del owner copiada.")
+                    copyToClipboard(
+                      premiumDestination,
+                      "Dirección de pago copiada."
+                    )
                   }
                 >
                   Copiar dirección de pago
@@ -2474,7 +2552,8 @@ export default function Home() {
                 <div>
                   <span>Destino</span>
                   <strong>
-                    {ZUM_OWNER.slice(0, 6)}...{ZUM_OWNER.slice(-4)}
+                    {premiumDestination.slice(0, 6)}...
+                    {premiumDestination.slice(-4)}
                   </strong>
                 </div>
                 <div>
@@ -2572,7 +2651,7 @@ export default function Home() {
           </div>
           {isLocked ? (
             <div className={styles.lockOverlay}>
-              <p>Wallet bloqueada. Pagá {ZUM_PREMIUM_AMOUNT} ZUM para desbloquear.</p>
+              <p>Wallet bloqueada. Pagá {premiumAmount} ZUM para desbloquear.</p>
             </div>
           ) : null}
 
@@ -2829,7 +2908,7 @@ export default function Home() {
           </div>
           {isLocked ? (
             <div className={styles.lockOverlay}>
-              <p>Wallet bloqueada. Pagá {ZUM_PREMIUM_AMOUNT} ZUM para desbloquear.</p>
+              <p>Wallet bloqueada. Pagá {premiumAmount} ZUM para desbloquear.</p>
             </div>
           ) : null}
           <div className={styles.sectionGrid}>

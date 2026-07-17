@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ethers } from "ethers";
 
 const ZUM_ADDRESS = "0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5";
 const ZUM_OWNER = "0x521125be95c5679539aB07582F55F0040975A047";
+const ZUM_PREMIUM_CONTRACT =
+  process.env.ZUM_PREMIUM_CONTRACT ??
+  process.env.NEXT_PUBLIC_ZUM_PREMIUM_CONTRACT ??
+  "";
 const ZUM_DECIMALS = BigInt(18);
 const ZUM_PRICE = BigInt(100) * BigInt(10) ** ZUM_DECIMALS;
 const TRANSFER_TOPIC =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+const PREMIUM_ACCESS_ABI = [
+  "function hasPremium(address user) view returns (bool)",
+  "function premiumPrice() view returns (uint256)"
+];
+const premiumAccessInterface = new ethers.Interface(PREMIUM_ACCESS_ABI);
 
 function normalizeAddress(address: string) {
   return address.trim().toLowerCase();
@@ -79,6 +89,62 @@ async function readPaidByLogs(address: string) {
   return logs.reduce((sum, log) => sum + safeBigInt(log.data), BigInt(0));
 }
 
+async function readPremiumByContract(address: string) {
+  if (!ZUM_PREMIUM_CONTRACT) {
+    return null;
+  }
+
+  const result = await rpcCall<string>("eth_call", [
+    {
+      to: ZUM_PREMIUM_CONTRACT,
+      data: premiumAccessInterface.encodeFunctionData("hasPremium", [address])
+    },
+    "latest"
+  ]);
+
+  if (!result) {
+    return null;
+  }
+
+  try {
+    const [hasPremium] = premiumAccessInterface.decodeFunctionResult(
+      "hasPremium",
+      result
+    );
+    return Boolean(hasPremium);
+  } catch {
+    return null;
+  }
+}
+
+async function readPremiumPrice() {
+  if (!ZUM_PREMIUM_CONTRACT) {
+    return ZUM_PRICE;
+  }
+
+  const result = await rpcCall<string>("eth_call", [
+    {
+      to: ZUM_PREMIUM_CONTRACT,
+      data: premiumAccessInterface.encodeFunctionData("premiumPrice", [])
+    },
+    "latest"
+  ]);
+
+  if (!result) {
+    return ZUM_PRICE;
+  }
+
+  try {
+    const [premiumPrice] = premiumAccessInterface.decodeFunctionResult(
+      "premiumPrice",
+      result
+    );
+    return premiumPrice as bigint;
+  } catch {
+    return ZUM_PRICE;
+  }
+}
+
 async function readPaidByExplorer(address: string) {
   const apiKey = process.env.ETHERSCAN_API_KEY ?? process.env.POLYGONSCAN_API_KEY;
   if (!apiKey) {
@@ -119,11 +185,26 @@ export async function GET(request: NextRequest) {
     }
 
     const normalized = normalizeAddress(address);
+    const premiumPrice = await readPremiumPrice();
     if (
       normalized === normalizeAddress(ZUM_OWNER) ||
       premiumAllowlist().includes(normalized)
     ) {
-      return NextResponse.json({ paid: true, total: ZUM_PRICE.toString() });
+      return NextResponse.json({
+        paid: true,
+        total: premiumPrice.toString(),
+        source: "allowlist"
+      });
+    }
+
+    const contractPaid = await readPremiumByContract(address);
+    if (contractPaid === true) {
+      return NextResponse.json({
+        paid: true,
+        total: premiumPrice.toString(),
+        source: "contract",
+        contract: ZUM_PREMIUM_CONTRACT
+      });
     }
 
     const explorerPaid = await readPaidByExplorer(address);
