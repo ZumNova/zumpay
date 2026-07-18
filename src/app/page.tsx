@@ -2421,17 +2421,6 @@ export default function Home() {
                 0.10 USDC por ZUM.
               </p>
               <div className={styles.zumActions}>
-                <button
-                  className={styles.softButton}
-                  onClick={() =>
-                    copyToClipboard(
-                      POLYGON_USDC_ADDRESS,
-                      "Contrato USDC Polygon copiado."
-                    )
-                  }
-                >
-                  Copiar USDC
-                </button>
                 <a
                   className={styles.softLink}
                   href={ZUM_SWAP_URL}
@@ -2455,11 +2444,12 @@ export default function Home() {
               <strong>Verificá antes de operar</strong>
               <p>
                 Red: Polygon. Token: ZUM. Par recomendado: ZUM/USDC con USDC
-                nativo. No uses contratos copiados de fuentes no oficiales.
+                nativo. No transfieras ZUM manualmente al contrato premium:
+                usá el botón de pago de la app.
               </p>
               <div className={styles.zumActions}>
                 <button className={styles.softButton} onClick={addZumToMetaMask}>
-                  Agregar ZUM
+                  Agregar ZUM a MetaMask
                 </button>
               </div>
             </div>
