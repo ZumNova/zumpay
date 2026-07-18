@@ -835,6 +835,13 @@
   gap: 12px;
 }
 
+.v3ManualHint {
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .v3PositionList {
   display: grid;
   gap: 12px;

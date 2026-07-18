@@ -896,6 +896,61 @@ export default function Home() {
     v3ManualAmount1,
     v3Slippage
   ]);
+  const v3ManualRatioHint = useMemo(() => {
+    if (v3EntryMode !== "manual") {
+      return "";
+    }
+
+    const manual0 = Math.max(Number(v3ManualAmount0) || 0, 0);
+    const manual1 = Math.max(Number(v3ManualAmount1) || 0, 0);
+    const price = Math.max(effectiveV3Price || 0, 0);
+
+    if (price <= 0) {
+      return "Actualizá el scanner para estimar la proporción entre tokens.";
+    }
+
+    if (manual0 > 0 && manual1 <= 0) {
+      const suggested1 = manual0 * price;
+      return `Con ${manual0.toLocaleString("en-US", {
+        maximumFractionDigits: 8
+      })} ${selectedV3Pool.token0}, el otro lado sugerido es ${suggested1.toLocaleString(
+        "en-US",
+        { maximumFractionDigits: 8 }
+      )} ${selectedV3Pool.token1}.`;
+    }
+
+    if (manual1 > 0 && manual0 <= 0) {
+      const suggested0 = manual1 / price;
+      return `Con ${manual1.toLocaleString("en-US", {
+        maximumFractionDigits: 8
+      })} ${selectedV3Pool.token1}, el otro lado sugerido es ${suggested0.toLocaleString(
+        "en-US",
+        { maximumFractionDigits: 8 }
+      )} ${selectedV3Pool.token0}.`;
+    }
+
+    if (manual0 > 0 && manual1 > 0) {
+      const currentRatio = manual1 / manual0;
+      const diffPct = Math.abs(currentRatio / price - 1) * 100;
+      return `Relación cargada: ${currentRatio.toLocaleString("en-US", {
+        maximumFractionDigits: 8
+      })} ${selectedV3Pool.token1} por ${selectedV3Pool.token0}. Diferencia contra precio estimado: ${diffPct.toLocaleString(
+        "en-US",
+        { maximumFractionDigits: 2 }
+      )}%.`;
+    }
+
+    return `Precio estimado: 1 ${selectedV3Pool.token0} ≈ ${price.toLocaleString(
+      "en-US",
+      { maximumFractionDigits: 8 }
+    )} ${selectedV3Pool.token1}.`;
+  }, [
+    effectiveV3Price,
+    selectedV3Pool,
+    v3EntryMode,
+    v3ManualAmount0,
+    v3ManualAmount1
+  ]);
 
   useEffect(() => {
     if (!evmAssets.some((asset) => asset.key === evmAssetKey)) {
@@ -2994,30 +3049,33 @@ export default function Home() {
                   />
                 </div>
               ) : (
-                <div className={styles.v3ManualGrid}>
-                  <div className={styles.field}>
-                    <label>Monto {selectedV3Pool.token0}</label>
-                    <input
-                      value={v3ManualAmount0}
-                      onChange={(event) =>
-                        setV3ManualAmount0(event.target.value)
-                      }
-                      placeholder={`Monto en ${selectedV3Pool.token0}`}
-                      inputMode="decimal"
-                    />
+                <>
+                  <div className={styles.v3ManualGrid}>
+                    <div className={styles.field}>
+                      <label>Monto {selectedV3Pool.token0}</label>
+                      <input
+                        value={v3ManualAmount0}
+                        onChange={(event) =>
+                          setV3ManualAmount0(event.target.value)
+                        }
+                        placeholder={`Monto en ${selectedV3Pool.token0}`}
+                        inputMode="decimal"
+                      />
+                    </div>
+                    <div className={styles.field}>
+                      <label>Monto {selectedV3Pool.token1}</label>
+                      <input
+                        value={v3ManualAmount1}
+                        onChange={(event) =>
+                          setV3ManualAmount1(event.target.value)
+                        }
+                        placeholder={`Monto en ${selectedV3Pool.token1}`}
+                        inputMode="decimal"
+                      />
+                    </div>
                   </div>
-                  <div className={styles.field}>
-                    <label>Monto {selectedV3Pool.token1}</label>
-                    <input
-                      value={v3ManualAmount1}
-                      onChange={(event) =>
-                        setV3ManualAmount1(event.target.value)
-                      }
-                      placeholder={`Monto en ${selectedV3Pool.token1}`}
-                      inputMode="decimal"
-                    />
-                  </div>
-                </div>
+                  <p className={styles.v3ManualHint}>{v3ManualRatioHint}</p>
+                </>
               )}
               <div className={styles.field}>
                 <label>Slippage máximo (%)</label>
