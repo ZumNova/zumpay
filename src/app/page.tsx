@@ -152,6 +152,7 @@ const ZUM_PREMIUM_AMOUNT = "100";
 const ZUM_PREMIUM_AMOUNT_RAW = ethers.parseUnits(ZUM_PREMIUM_AMOUNT, 18);
 const ZUM_PREMIUM_CONTRACT =
   process.env.NEXT_PUBLIC_ZUM_PREMIUM_CONTRACT ?? "";
+const ZUM_SWAP_URL = `https://app.uniswap.org/swap?chain=polygon&inputCurrency=${POLYGON_USDC_ADDRESS}&outputCurrency=${ZUM_ADDRESS}`;
 const POLYGON_CHAIN_ID = 137;
 const ERC20_ABI = [
   "function symbol() view returns (string)",
@@ -2378,11 +2379,19 @@ export default function Home() {
                 </button>
                 <a
                   className={styles.softLink}
+                  href={ZUM_SWAP_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Comprar ZUM
+                </a>
+                <a
+                  className={styles.softLink}
                   href={`https://app.uniswap.org/explore/tokens/polygon/${ZUM_ADDRESS}`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Uniswap
+                  Ver mercado
                 </a>
               </div>
             </div>
@@ -2496,6 +2505,14 @@ export default function Home() {
                 <button className={styles.outline} onClick={connectMetaMask}>
                   Conectar MetaMask
                 </button>
+                <a
+                  className={styles.outline}
+                  href={ZUM_SWAP_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Comprar ZUM
+                </a>
                 <button
                   className={styles.primary}
                   onClick={payPremium}
