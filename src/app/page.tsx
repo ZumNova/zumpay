@@ -3077,15 +3077,22 @@ export default function Home() {
                   <p className={styles.v3ManualHint}>{v3ManualRatioHint}</p>
                 </>
               )}
-              <div className={styles.field}>
-                <label>Slippage máximo (%)</label>
-                <input
-                  value={v3Slippage}
-                  onChange={(event) => setV3Slippage(event.target.value)}
-                  placeholder="1"
-                  inputMode="decimal"
-                />
-              </div>
+              {v3EntryMode === "single" ? (
+                <div className={styles.field}>
+                  <label>Slippage máximo (%)</label>
+                  <input
+                    value={v3Slippage}
+                    onChange={(event) => setV3Slippage(event.target.value)}
+                    placeholder="1"
+                    inputMode="decimal"
+                  />
+                </div>
+              ) : (
+                <p className={styles.v3ManualHint}>
+                  En manual no hay swap interno: el slippage no aplica. La
+                  posición usa los dos montos que cargás.
+                </p>
+              )}
               <div className={styles.ctas}>
                 <button
                   className={styles.outline}
@@ -3181,14 +3188,18 @@ export default function Home() {
                   </strong>
                 </div>
                 <div>
-                  <span>Mínimo con slippage</span>
+                  <span>
+                    {v3EntryMode === "single"
+                      ? "Mínimo con slippage"
+                      : "Control manual"}
+                  </span>
                   <strong>
                     {v3EntryMode === "single"
                       ? `${v3EntryEstimate.minAfterSlippage.toLocaleString(
                           "en-US",
                           { maximumFractionDigits: 6 }
                         )} ${selectedV3Pool.inputToken}`
-                      : "No aplica"}
+                      : "Sin swap interno"}
                   </strong>
                 </div>
               </div>
