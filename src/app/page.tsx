@@ -101,7 +101,10 @@ type V3ScanResult = {
 };
 
 type InjectedEthereum = {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  request: (args: {
+    method: string;
+    params?: unknown[] | object;
+  }) => Promise<unknown>;
 };
 
 const STORAGE_KEY = "zumpay_wallet_v1";
@@ -1454,19 +1457,18 @@ export default function Home() {
         setStatus("MetaMask no está instalado.");
         return;
       }
+      await ethereum.request({ method: "eth_requestAccounts" });
       await ensurePolygonNetwork(ethereum);
       await ethereum.request({
         method: "wallet_watchAsset",
-        params: [
-          {
-            type: "ERC20",
-            options: {
-              address: ZUM_ADDRESS,
-              symbol: "ZUM",
-              decimals: 18
-            }
+        params: {
+          type: "ERC20",
+          options: {
+            address: ZUM_ADDRESS,
+            symbol: "ZUM",
+            decimals: 18
           }
-        ]
+        }
       });
       setStatus("ZUM enviado a MetaMask para agregar.");
     } catch (error) {
