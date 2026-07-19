@@ -438,7 +438,9 @@ const V3_PROFILES = {
 };
 
 const V3_POSITION_MANAGER_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
   "function ownerOf(uint256 tokenId) view returns (address)",
+  "function tokenOfOwnerByIndex(address owner,uint256 index) view returns (uint256)",
   "function positions(uint256 tokenId) view returns (uint96 nonce,address operator,address token0,address token1,uint24 fee,int24 tickLower,int24 tickUpper,uint128 liquidity,uint256 feeGrowthInside0LastX128,uint256 feeGrowthInside1LastX128,uint128 tokensOwed0,uint128 tokensOwed1)",
   "function createAndInitializePoolIfNecessary(address token0,address token1,uint24 fee,uint160 sqrtPriceX96) payable returns (address pool)",
   "function collect((uint256 tokenId,address recipient,uint128 amount0Max,uint128 amount1Max)) payable returns (uint256 amount0, uint256 amount1)",
@@ -586,6 +588,10 @@ function formatZumAmount(value: bigint) {
     .formatUnits(value, 18)
     .replace(/(\.\d*?[1-9])0+$/, "$1")
     .replace(/\.0+$/, "");
+}
+
+function shortAddress(value: string) {
+  return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
 
 function sqrtBigInt(value: bigint) {
@@ -755,6 +761,7 @@ export default function Home() {
   const [v3Positions, setV3Positions] = useState<V3Position[]>([]);
   const [v3Scans, setV3Scans] = useState<Record<string, V3ScanResult>>({});
   const [v3Scanning, setV3Scanning] = useState(false);
+  const [v3Discovering, setV3Discovering] = useState(false);
   const [v3Executing, setV3Executing] = useState(false);
   const [v3Status, setV3Status] = useState("");
 
@@ -2263,6 +2270,61 @@ export default function Home() {
     }
   };
 
+  const handleV3DiscoverPositions = async () => {
+    try {
+      setV3Discovering(true);
+      const signer = await getV3Signer();
+      const owner = await signer.getAddress();
+      setV3Wallet(owner);
+      const manager = new ethers.Contract(
+        V3_POSITION_MANAGER,
+        V3_POSITION_MANAGER_ABI,
+        signer
+      );
+      const balance = (await manager.balanceOf(owner)) as bigint;
+      if (balance === BigInt(0)) {
+        const ownerKey = owner.toLowerCase();
+        const raw = localStorage.getItem(V3_POSITION_KEY);
+        const parsed = raw ? (JSON.parse(raw) as Record<string, V3Position[]>) : {};
+        const remaining = (parsed[ownerKey] ?? []).filter(
+          (item) => item.chain !== v3Chain
+        );
+        parsed[ownerKey] = remaining;
+        localStorage.setItem(V3_POSITION_KEY, JSON.stringify(parsed));
+        setV3Positions(remaining);
+        setV3Status(`No hay NFTs V3 para ${shortAddress(owner)} en ${v3Chain}.`);
+        return;
+      }
+
+      setV3Status(`Buscando ${balance.toString()} NFT(s) V3 en ${v3Chain}.`);
+      const discovered: V3Position[] = [];
+      for (let index = BigInt(0); index < balance; index += BigInt(1)) {
+        const tokenId = await manager.tokenOfOwnerByIndex(owner, index);
+        discovered.push(
+          await readV3Position(manager, tokenId.toString(), v3Chain, owner)
+        );
+      }
+
+      const ownerKey = owner.toLowerCase();
+      const raw = localStorage.getItem(V3_POSITION_KEY);
+      const parsed = raw ? (JSON.parse(raw) as Record<string, V3Position[]>) : {};
+      const existing = parsed[ownerKey] ?? [];
+      const otherChains = existing.filter((item) => item.chain !== v3Chain);
+      const merged = [...discovered, ...otherChains];
+      parsed[ownerKey] = merged;
+      localStorage.setItem(V3_POSITION_KEY, JSON.stringify(parsed));
+      setV3Positions(merged);
+      setV3Status(
+        `Encontrados ${discovered.length} NFT(s) V3 en ${v3Chain}.`
+      );
+    } catch (error) {
+      console.error(error);
+      setV3Status("No se pudieron buscar los NFTs V3 de esta wallet.");
+    } finally {
+      setV3Discovering(false);
+    }
+  };
+
   const handleV3Collect = async (position: V3Position) => {
     try {
       setV3Chain(position.chain);
@@ -3223,6 +3285,13 @@ export default function Home() {
                   disabled={isLocked || v3Positions.length === 0}
                 >
                   Leer estado
+                </button>
+                <button
+                  className={styles.outline}
+                  onClick={handleV3DiscoverPositions}
+                  disabled={isLocked || v3Discovering}
+                >
+                  {v3Discovering ? "Buscando..." : "Buscar mis NFTs V3"}
                 </button>
               </div>
               <div className={styles.field}>
