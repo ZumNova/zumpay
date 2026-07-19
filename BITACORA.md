@@ -175,3 +175,141 @@ Flujo futuro recomendado:
 5. La app verifica el evento y desbloquea premium.
 
 Para uso personal, el flujo actual sigue siendo suficiente. Para usuarios reales, el contrato premium verificado es el siguiente paso tecnico.
+
+## Propuesta futura: administrador privado de granjas
+
+Decision actual:
+
+- Mantener `zumpay` estable como app publica/premium.
+- Crear primero un modulo o repo separado para el administrador privado.
+- Conectarlo a Zumpay despues, cuando el flujo este probado.
+
+Motivo:
+
+- La app actual ya funciona bien para wallet, premium, token ZUM y posiciones V3.
+- El administrador tiene otro publico: operador/tesorero, no usuario final.
+- Conviene evitar mezclar controles internos con la experiencia simple de un amigo o usuario premium.
+- Si el administrador falla o cambia mucho, no rompe la app publica.
+
+Arbol de trabajo propuesto:
+
+```text
+zumpay
+├── app publica
+│   ├── wallet simple
+│   ├── acceso premium por 100 ZUM
+│   ├── token ZUM en Polygon
+│   └── modulo V3 para usuarios avanzados
+│
+└── zumpay-admin (repo o modulo separado)
+    ├── panel privado
+    │   ├── participantes
+    │   ├── aportes fiat/crypto
+    │   ├── tesoreria
+    │   ├── granjas V3
+    │   ├── asignaciones por usuario
+    │   └── retiros
+    │
+    ├── vista simple para amigos
+    │   ├── aporte realizado
+    │   ├── fecha de entrada
+    │   ├── granja asignada
+    │   ├── NFT o posicion asociada
+    │   ├── estado activo/inactivo
+    │   └── valor estimado
+    │
+    └── integraciones futuras
+        ├── lectura on-chain de NFTs V3
+        ├── lectura de fees acumuladas
+        ├── grant/revoke premium
+        ├── Pix / Mercado Pago manual primero
+        └── automatizacion parcial con permisos del usuario
+```
+
+Primer MVP del administrador:
+
+1. Crear `zumpay-admin` con datos locales o mock.
+2. Registrar participantes: nombre, alias, pais, wallet opcional y estado.
+3. Registrar aportes: monto fiat, moneda, fecha, medio de pago, conversion a USDC/USDT y notas.
+4. Registrar granjas: red, par, riesgo, tokenId NFT, rango, estado y observaciones.
+5. Asignar aportes a granjas: quien participa, cuanto capital tiene asignado y en que posicion.
+6. Mostrar una vista simple para el amigo: aporte, fecha, granja, estado, valor estimado y solicitud de salida.
+
+Modelo de datos inicial:
+
+```ts
+type Participant = {
+  id: string;
+  name: string;
+  country: "AR" | "BR" | "OTHER";
+  contactAlias: string;
+  wallet?: string;
+  status: "active" | "paused";
+};
+
+type Contribution = {
+  id: string;
+  participantId: string;
+  fiatAmount: string;
+  fiatCurrency: "ARS" | "BRL" | "USD";
+  receivedAt: string;
+  paymentRail: "pix" | "mercado_pago" | "cash" | "crypto";
+  stableAmount: string;
+  stableSymbol: "USDC" | "USDT";
+  exchangeRate: string;
+  status: "received" | "converted" | "allocated" | "returned";
+};
+
+type Farm = {
+  id: string;
+  label: string;
+  chain: "polygon" | "arbitrum" | "ethereum";
+  pair: string;
+  risk: "conservador" | "moderado" | "riesgoso";
+  nftIds: string[];
+  status: "active" | "out_of_range" | "closed";
+  notes: string;
+};
+
+type Allocation = {
+  id: string;
+  contributionId: string;
+  farmId: string;
+  nftId?: string;
+  allocatedStableAmount: string;
+  status: "active" | "pending_exit" | "closed";
+};
+
+type WithdrawalRequest = {
+  id: string;
+  participantId: string;
+  contributionId?: string;
+  requestedAt: string;
+  status: "requested" | "processing" | "paid";
+  estimatedAmount: string;
+  paidAmount?: string;
+  paidCurrency?: "ARS" | "BRL" | "USD" | "USDC" | "USDT";
+};
+```
+
+Reglas de control:
+
+- No prometer rendimiento fijo.
+- Mostrar siempre que el valor es estimado y puede variar.
+- Separar dinero fiat recibido, stablecoins compradas, NFTs V3 y deuda/participacion del usuario.
+- Mantenerlo privado o por invitacion.
+- Registrar cada movimiento con fecha, red, tx hash si existe y nota humana.
+- Respetar un limite operativo mensual definido por tesoreria.
+
+Fases sugeridas:
+
+1. Administrador local sin blockchain: carga manual y vista clara.
+2. Conexion con lectura V3: NFTs, rango, token0/token1, liquidez y fees.
+3. Conexion con premium: otorgar o revocar acceso desde el panel.
+4. Vista de amigo: solo informacion simple, sin controles delicados.
+5. Integracion fiat: primero manual, luego Pix/Mercado Pago si conviene.
+6. Automatizacion avanzada: solo con permisos explicitos y limites por usuario.
+
+Conclusion:
+
+El camino mas sano es construir el administrador aparte, validarlo con datos reales pero controlados, y despues decidir si se conecta como modulo privado de Zumpay o queda como repo independiente.
