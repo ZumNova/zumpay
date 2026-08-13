@@ -1978,8 +1978,10 @@ export default function Home() {
     if (!ethereum) {
       throw new Error("MetaMask no está instalado.");
     }
-    const provider = new ethers.BrowserProvider(ethereum);
-    const accounts = await provider.send("eth_requestAccounts", []);
+    const accounts = (await ethereum.request({
+      method: "eth_requestAccounts"
+    })) as string[];
+    let provider = new ethers.BrowserProvider(ethereum);
     const chainId = Number((await provider.getNetwork()).chainId);
     if (chainId !== V3_CHAIN_IDS[chain]) {
       const target = `0x${V3_CHAIN_IDS[chain].toString(16)}`;
@@ -2009,6 +2011,13 @@ export default function Home() {
             }
           ]
         });
+      }
+      provider = new ethers.BrowserProvider(ethereum);
+      const nextChainId = Number((await provider.getNetwork()).chainId);
+      if (nextChainId !== V3_CHAIN_IDS[chain]) {
+        throw new Error(
+          `MetaMask quedó en ${nextChainId}. Cambiá a ${chain} antes de operar.`
+        );
       }
     }
     const signer = await provider.getSigner();
