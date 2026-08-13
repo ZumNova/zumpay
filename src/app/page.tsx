@@ -779,6 +779,16 @@ function deadlineSeconds() {
   return BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
 }
 
+async function waitForV3Receipt(txHash: string, chain: V3ChainKey) {
+  const receipt = await v3Provider(chain).waitForTransaction(txHash, 1, 90000);
+  if (!receipt) {
+    throw new Error(
+      `La transacción ${txHash.slice(0, 10)}... no confirmó dentro del tiempo esperado.`
+    );
+  }
+  return receipt;
+}
+
 function parseV3Amount(value: string, decimals: number) {
   const normalized = value.trim();
   if (!/^\d+(\.\d+)?$/.test(normalized)) {
@@ -1963,13 +1973,13 @@ export default function Home() {
       const resetGas = (await token.approve.estimateGas(spender, 0)) as bigint;
       assertReasonableV3Gas(resetGas, chain, `Approve reset ${label}`);
       const resetTx = await token.approve(spender, 0);
-      await resetTx.wait();
+      await waitForV3Receipt(resetTx.hash, chain);
     }
     setV3Status(`Aprobando ${label}.`);
     const approveGas = (await token.approve.estimateGas(spender, amount)) as bigint;
     assertReasonableV3Gas(approveGas, chain, `Approve ${label}`);
     const approveTx = await token.approve(spender, amount);
-    await approveTx.wait();
+    await waitForV3Receipt(approveTx.hash, chain);
   };
 
   const getV3Signer = async (chain: V3ChainKey = v3Chain) => {
@@ -2292,7 +2302,8 @@ export default function Home() {
           amountOutMinimum: minOutput,
           sqrtPriceLimitX96: 0
         });
-        await swapTx.wait();
+        setV3Status(`Swap enviado: ${swapTx.hash.slice(0, 10)}...`);
+        await waitForV3Receipt(swapTx.hash, v3Chain);
 
         const outputBalanceAfter = (await outputTokenContract.balanceOf(
           owner
@@ -2306,13 +2317,16 @@ export default function Home() {
         amount1Desired = inputIsToken0 ? outputReceived : keepAmount;
       }
 
+      const contracts = v3Contracts(v3Chain);
       const manager = new ethers.Contract(
-        v3Contracts(v3Chain).positionManager,
+        contracts.positionManager,
         V3_POSITION_MANAGER_ABI,
         signer
       );
+      const poolAlreadyExists =
+        selectedV3Scan?.poolAddress?.toLowerCase() !== ZERO_ADDRESS;
 
-      if (canInitializeSeedPool) {
+      if (canInitializeSeedPool && !poolAlreadyExists) {
         const sqrtPriceX96 = initialSqrtPriceX96(
           amount0Desired,
           amount1Desired
@@ -2326,12 +2340,16 @@ export default function Home() {
           selectedV3Pool.fee,
           sqrtPriceX96
         );
-        await initTx.wait();
+        setV3Status(`Inicialización enviada: ${initTx.hash.slice(0, 10)}...`);
+        await waitForV3Receipt(initTx.hash, v3Chain);
+        setV3Status("Pool inicializada. Preparando approvals para mint.");
+      } else if (canInitializeSeedPool) {
+        setV3Status("Pool existente. Preparando approvals para mint.");
       }
 
       await ensureV3Allowance(
         token0.address,
-        v3Contracts(v3Chain).positionManager,
+        contracts.positionManager,
         amount0Desired,
         signer,
         `${selectedV3Pool.token0} para mint`,
@@ -2339,7 +2357,7 @@ export default function Home() {
       );
       await ensureV3Allowance(
         token1.address,
-        v3Contracts(v3Chain).positionManager,
+        contracts.positionManager,
         amount1Desired,
         signer,
         `${selectedV3Pool.token1} para mint`,
@@ -2347,7 +2365,7 @@ export default function Home() {
       );
 
       setV3Status("Enviando mint al Position Manager.");
-      const mintTx = await manager.mint({
+      const mintParams = {
         token0: token0.address,
         token1: token1.address,
         fee: selectedV3Pool.fee,
@@ -2359,12 +2377,16 @@ export default function Home() {
         amount1Min: 0,
         recipient: owner,
         deadline: deadlineSeconds()
-      });
-      const receipt = await mintTx.wait();
+      };
+      const mintGas = (await manager.mint.estimateGas(mintParams)) as bigint;
+      assertReasonableV3Gas(mintGas, v3Chain, `Mint ${selectedV3Pool.label}`);
+      const mintTx = await manager.mint(mintParams);
+      setV3Status(`Mint enviado: ${mintTx.hash.slice(0, 10)}...`);
+      const receipt = await waitForV3Receipt(mintTx.hash, v3Chain);
       const mintedTokenId = extractMintedV3TokenId(
         receipt,
         owner,
-        v3Contracts(v3Chain).positionManager
+        contracts.positionManager
       );
       if (mintedTokenId) {
         const position = await readV3Position(
