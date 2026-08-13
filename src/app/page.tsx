@@ -108,6 +108,21 @@ type V3Contracts = {
   maxTxGasLimit?: bigint;
 };
 
+type V4ScanResult = {
+  status: "Activa" | "No activa";
+  poolId: string;
+  currency0: string;
+  currency1: string;
+  token0Symbol: string;
+  token1Symbol: string;
+  tick: number;
+  price: number;
+  liquidity: string;
+  lpFee: string;
+  protocolFee: string;
+  checkedAt: string;
+};
+
 type InjectedEthereum = {
   request: (args: {
     method: string;
@@ -213,6 +228,14 @@ const V3_CONTRACTS: Record<V3ChainKey, V3Contracts> = {
     quoter: "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
     maxTxGasLimit: BigInt(25000000)
   }
+};
+const V4_ROBINHOOD_CONTRACTS = {
+  poolManager: "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+  positionManager: "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+  quoter: "0x8dc178efb8111bb0973dd9d722ebeff267c98f94",
+  stateView: "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
+  universalRouter: "0x8876789976decbfcbbbe364623c63652db8c0904",
+  permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3"
 };
 const MAX_UINT128 = (BigInt(1) << BigInt(128)) - BigInt(1);
 const SWAP_TOPIC =
@@ -549,6 +572,11 @@ const V3_QUOTER_ABI = [
   "function quoteExactInputSingle(address tokenIn,address tokenOut,uint24 fee,uint256 amountIn,uint160 sqrtPriceLimitX96) returns (uint256 amountOut)"
 ];
 
+const V4_STATE_VIEW_ABI = [
+  "function getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96,int24 tick,uint24 protocolFee,uint24 lpFee)",
+  "function getLiquidity(bytes32 poolId) view returns (uint128 liquidity)"
+];
+
 const DEFAULT_TOKENS: Record<string, TokenMeta[]> = {
   ethereum: [
     {
@@ -731,6 +759,60 @@ function priceFromSqrtPriceX96(
   return sqrtRatio * sqrtRatio * 10 ** (token0Decimals - token1Decimals);
 }
 
+function normalizeV4Currency(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toLowerCase() === "eth") {
+    return ZERO_ADDRESS;
+  }
+  return ethers.getAddress(trimmed);
+}
+
+function sortV4Currencies(currencyA: string, currencyB: string) {
+  const normalizedA = normalizeV4Currency(currencyA);
+  const normalizedB = normalizeV4Currency(currencyB);
+  if (normalizedA.toLowerCase() === normalizedB.toLowerCase()) {
+    throw new Error("Las monedas de la pool no pueden ser iguales.");
+  }
+  return BigInt(normalizedA) < BigInt(normalizedB)
+    ? [normalizedA, normalizedB]
+    : [normalizedB, normalizedA];
+}
+
+function v4PoolId(
+  currency0: string,
+  currency1: string,
+  fee: number,
+  tickSpacing: number,
+  hooks: string
+) {
+  return ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["tuple(address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)"],
+      [[currency0, currency1, fee, tickSpacing, hooks]]
+    )
+  );
+}
+
+async function readV4CurrencyMeta(
+  provider: ethers.Provider,
+  address: string,
+  fallbackSymbol: string
+) {
+  if (address.toLowerCase() === ZERO_ADDRESS) {
+    return { symbol: "ETH", decimals: 18 };
+  }
+  const token = new ethers.Contract(address, ERC20_ABI, provider);
+  try {
+    const [symbol, decimals] = await Promise.all([
+      token.symbol() as Promise<string>,
+      token.decimals() as Promise<number>
+    ]);
+    return { symbol, decimals: Number(decimals) };
+  } catch {
+    return { symbol: fallbackSymbol, decimals: 18 };
+  }
+}
+
 function v3Provider(chain: V3ChainKey) {
   const networkConfig = NETWORKS.find((item) => item.key === chain);
   return new ethers.JsonRpcProvider(
@@ -902,6 +984,18 @@ export default function Home() {
   const [v3Discovering, setV3Discovering] = useState(false);
   const [v3Executing, setV3Executing] = useState(false);
   const [v3Status, setV3Status] = useState("");
+  const [v4CurrencyA, setV4CurrencyA] = useState(
+    V3_TOKENS.robinhood.WETH.address
+  );
+  const [v4CurrencyB, setV4CurrencyB] = useState(
+    V3_TOKENS.robinhood.USDG.address
+  );
+  const [v4Fee, setV4Fee] = useState("500");
+  const [v4TickSpacing, setV4TickSpacing] = useState("10");
+  const [v4Hooks, setV4Hooks] = useState(ZERO_ADDRESS);
+  const [v4Result, setV4Result] = useState<V4ScanResult | null>(null);
+  const [v4Scanning, setV4Scanning] = useState(false);
+  const [v4Status, setV4Status] = useState("");
 
   const network = useMemo(
     () => NETWORKS.find((item) => item.key === networkKey) ?? NETWORKS[0],
@@ -2173,6 +2267,78 @@ export default function Home() {
       setV3Status("No se pudo actualizar el scanner de esa pool.");
     } finally {
       setV3Scanning(false);
+    }
+  };
+
+  const handleV4ScanPool = async () => {
+    try {
+      setV4Scanning(true);
+      setV4Status("Escaneando pool V4 en Robinhood.");
+      const fee = Number(v4Fee);
+      const tickSpacing = Number(v4TickSpacing);
+      if (!Number.isInteger(fee) || fee <= 0) {
+        setV4Status("Fee inválida. Ejemplo: 500, 3000 o 10000.");
+        return;
+      }
+      if (!Number.isInteger(tickSpacing) || tickSpacing <= 0) {
+        setV4Status("Tick spacing inválido. Ejemplo: 10, 60 o 200.");
+        return;
+      }
+
+      const hooks = normalizeV4Currency(v4Hooks || ZERO_ADDRESS);
+      const [currency0, currency1] = sortV4Currencies(v4CurrencyA, v4CurrencyB);
+      const poolId = v4PoolId(currency0, currency1, fee, tickSpacing, hooks);
+      const readProvider = v3Provider("robinhood");
+      const stateView = new ethers.Contract(
+        V4_ROBINHOOD_CONTRACTS.stateView,
+        V4_STATE_VIEW_ABI,
+        readProvider
+      );
+
+      const [meta0, meta1, slot0, liquidity] = await Promise.all([
+        readV4CurrencyMeta(readProvider, currency0, "TOKEN0"),
+        readV4CurrencyMeta(readProvider, currency1, "TOKEN1"),
+        stateView.getSlot0(poolId) as Promise<[bigint, bigint, bigint, bigint]>,
+        stateView.getLiquidity(poolId) as Promise<bigint>
+      ]);
+      const sqrtPriceX96 = slot0[0];
+      const tick = Number(slot0[1]);
+      const protocolFee = slot0[2];
+      const lpFee = slot0[3];
+      const active = sqrtPriceX96 > BigInt(0) && liquidity > BigInt(0);
+
+      const result: V4ScanResult = {
+        status: active ? "Activa" : "No activa",
+        poolId,
+        currency0,
+        currency1,
+        token0Symbol: meta0.symbol,
+        token1Symbol: meta1.symbol,
+        tick,
+        price: priceFromSqrtPriceX96(
+          sqrtPriceX96,
+          meta0.decimals,
+          meta1.decimals
+        ),
+        liquidity: liquidity.toString(),
+        lpFee: `${Number(lpFee) / 10000}%`,
+        protocolFee: protocolFee.toString(),
+        checkedAt: new Date().toLocaleTimeString()
+      };
+      setV4Result(result);
+      setV4Status(
+        `V4 ${result.status}: ${result.token0Symbol}/${result.token1Symbol}.`
+      );
+    } catch (error) {
+      console.error(error);
+      setV4Result(null);
+      setV4Status(
+        error instanceof Error
+          ? `No se pudo leer la pool V4: ${error.message}`
+          : "No se pudo leer la pool V4."
+      );
+    } finally {
+      setV4Scanning(false);
     }
   };
 
@@ -3572,6 +3738,165 @@ export default function Home() {
           </div>
         </section>
 
+        <section
+          className={`${styles.sectionBlock} ${
+            isLocked ? styles.sectionLocked : ""
+          }`}
+        >
+          <div>
+            <h2>Pools V4 Robinhood</h2>
+            <p className={styles.subtitle}>
+              Scanner read-only para oportunidades V4. No firma ni mueve fondos.
+            </p>
+          </div>
+          {isLocked ? (
+            <div className={styles.lockOverlay}>
+              <p>Wallet bloqueada. Pagá {premiumAmount} ZUM para desbloquear.</p>
+            </div>
+          ) : null}
+          <div className={styles.sectionGrid}>
+            <div className={styles.walletCard}>
+              <h3>Scanner V4</h3>
+              <div className={styles.ctas}>
+                <button
+                  className={styles.outline}
+                  onClick={() => {
+                    setV4CurrencyA(V3_TOKENS.robinhood.WETH.address);
+                    setV4CurrencyB(V3_TOKENS.robinhood.USDG.address);
+                    setV4Fee("500");
+                    setV4TickSpacing("10");
+                    setV4Hooks(ZERO_ADDRESS);
+                    setV4Status("Preset WETH/USDG cargado.");
+                  }}
+                  disabled={isLocked}
+                >
+                  WETH/USDG
+                </button>
+                <button
+                  className={styles.outline}
+                  onClick={() => {
+                    setV4CurrencyA("");
+                    setV4CurrencyB(V3_TOKENS.robinhood.USDG.address);
+                    setV4Fee("3000");
+                    setV4TickSpacing("60");
+                    setV4Hooks(ZERO_ADDRESS);
+                    setV4Status("Pegá el contrato del token contra USDG.");
+                  }}
+                  disabled={isLocked}
+                >
+                  Token/USDG
+                </button>
+              </div>
+              <div className={styles.v3ManualGrid}>
+                <div className={styles.field}>
+                  <label>Token A</label>
+                  <input
+                    value={v4CurrencyA}
+                    onChange={(event) => setV4CurrencyA(event.target.value)}
+                    placeholder="0x... o ETH"
+                  />
+                </div>
+                <div className={styles.field}>
+                  <label>Token B</label>
+                  <input
+                    value={v4CurrencyB}
+                    onChange={(event) => setV4CurrencyB(event.target.value)}
+                    placeholder="0x..."
+                  />
+                </div>
+              </div>
+              <div className={styles.v3ManualGrid}>
+                <div className={styles.field}>
+                  <label>Fee</label>
+                  <input
+                    value={v4Fee}
+                    onChange={(event) => setV4Fee(event.target.value)}
+                    placeholder="500 / 3000 / 10000"
+                    inputMode="numeric"
+                  />
+                </div>
+                <div className={styles.field}>
+                  <label>Tick spacing</label>
+                  <input
+                    value={v4TickSpacing}
+                    onChange={(event) => setV4TickSpacing(event.target.value)}
+                    placeholder="10 / 60 / 200"
+                    inputMode="numeric"
+                  />
+                </div>
+              </div>
+              <div className={styles.field}>
+                <label>Hooks</label>
+                <input
+                  value={v4Hooks}
+                  onChange={(event) => setV4Hooks(event.target.value)}
+                  placeholder="0x000... si no tiene hooks"
+                />
+              </div>
+              <div className={styles.ctas}>
+                <button
+                  className={styles.primary}
+                  onClick={handleV4ScanPool}
+                  disabled={isLocked || v4Scanning}
+                >
+                  {v4Scanning ? "Escaneando..." : "Escanear V4"}
+                </button>
+              </div>
+              <p className={styles.v3ManualHint}>
+                En V4 el pool depende de token0, token1, fee, tick spacing y
+                hooks. Si cualquiera de esos datos cambia, el poolId cambia.
+              </p>
+            </div>
+
+            <div className={styles.walletCard}>
+              <h3>Resultado V4</h3>
+              <div className={styles.v3MetricGrid}>
+                <div>
+                  <span>Estado</span>
+                  <strong>{v4Result ? v4Result.status : "Pendiente"}</strong>
+                </div>
+                <div>
+                  <span>Par</span>
+                  <strong>
+                    {v4Result
+                      ? `${v4Result.token0Symbol}/${v4Result.token1Symbol}`
+                      : "Sin escanear"}
+                  </strong>
+                </div>
+                <div>
+                  <span>Precio</span>
+                  <strong>
+                    {v4Result
+                      ? v4Result.price.toLocaleString("en-US", {
+                          maximumFractionDigits: 8
+                        })
+                      : "—"}
+                  </strong>
+                </div>
+                <div>
+                  <span>Tick</span>
+                  <strong>{v4Result ? v4Result.tick : "—"}</strong>
+                </div>
+                <div>
+                  <span>Liquidez</span>
+                  <strong>{v4Result ? v4Result.liquidity : "—"}</strong>
+                </div>
+                <div>
+                  <span>LP fee</span>
+                  <strong>{v4Result ? v4Result.lpFee : "—"}</strong>
+                </div>
+              </div>
+              {v4Result ? (
+                <div className={styles.field}>
+                  <label>PoolId</label>
+                  <div className={styles.address}>{v4Result.poolId}</div>
+                </div>
+              ) : null}
+              {v4Status ? <p className={styles.status}>{v4Status}</p> : null}
+            </div>
+          </div>
+        </section>
+
         <section className={styles.networks}>
           <div>
             <h2>Redes soportadas</h2>
@@ -3584,6 +3909,7 @@ export default function Home() {
             <span>Ethereum</span>
             <span>Polygon</span>
             <span>Arbitrum</span>
+            <span>Robinhood</span>
             <span>Optimism</span>
             <span>Base</span>
             <span>BTC Native</span>
