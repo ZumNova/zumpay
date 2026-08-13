@@ -47,7 +47,7 @@ type EvmAsset = {
   address: string;
 };
 
-type V3ChainKey = "arbitrum" | "ethereum" | "polygon";
+type V3ChainKey = "arbitrum" | "ethereum" | "polygon" | "robinhood";
 type V3EntryMode = "single" | "manual";
 
 type V3Pool = {
@@ -100,6 +100,14 @@ type V3ScanResult = {
   checkedAt: string;
 };
 
+type V3Contracts = {
+  factory: string;
+  positionManager: string;
+  swapRouter: string;
+  quoter?: string;
+  maxTxGasLimit?: bigint;
+};
+
 type InjectedEthereum = {
   request: (args: {
     method: string;
@@ -137,6 +145,15 @@ const NETWORKS: Network[] = [
     rpcUrl:
       process.env.NEXT_PUBLIC_ARBITRUM_RPC_URL ??
       "https://arb1.arbitrum.io/rpc"
+  },
+  {
+    key: "robinhood",
+    name: "Robinhood Chain",
+    chainId: 4663,
+    symbol: "ETH",
+    rpcUrl:
+      process.env.NEXT_PUBLIC_ROBINHOOD_RPC_URL ??
+      "https://rpc.mainnet.chain.robinhood.com"
   }
 ];
 
@@ -144,8 +161,16 @@ const EXPLORERS: Record<string, string> = {
   ethereum: "https://etherscan.io/tx/",
   polygon: "https://polygonscan.com/tx/",
   arbitrum: "https://arbiscan.io/tx/",
+  robinhood: "https://robinhoodchain.blockscout.com/tx/",
   optimism: "https://optimistic.etherscan.io/tx/",
   base: "https://basescan.org/tx/"
+};
+
+const EXPLORER_ROOTS: Record<string, string> = {
+  ethereum: "https://etherscan.io",
+  polygon: "https://polygonscan.com",
+  arbitrum: "https://arbiscan.io",
+  robinhood: "https://robinhoodchain.blockscout.com"
 };
 
 const ZUM_ADDRESS = "0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5";
@@ -170,10 +195,25 @@ const PREMIUM_ACCESS_ABI = [
   "function payPremium()"
 ];
 
-const V3_POSITION_MANAGER = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88";
-const V3_FACTORY = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
-const V3_SWAP_ROUTER = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
-const V3_QUOTER = "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6";
+const LEGACY_V3_CONTRACTS: V3Contracts = {
+  positionManager: "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+  factory: "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+  swapRouter: "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+  quoter: "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6"
+};
+
+const V3_CONTRACTS: Record<V3ChainKey, V3Contracts> = {
+  ethereum: LEGACY_V3_CONTRACTS,
+  polygon: LEGACY_V3_CONTRACTS,
+  arbitrum: LEGACY_V3_CONTRACTS,
+  robinhood: {
+    factory: "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
+    positionManager: "0x73991a25c818bf1f1128deaab1492d45638de0d3",
+    swapRouter: "0xcaf681a66d020601342297493863e78c959e5cb2",
+    quoter: "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
+    maxTxGasLimit: BigInt(25000000)
+  }
+};
 const MAX_UINT128 = (BigInt(1) << BigInt(128)) - BigInt(1);
 const SWAP_TOPIC =
   "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67";
@@ -186,7 +226,8 @@ const ZERO_ADDRESS_TOPIC =
 const V3_CHAIN_IDS: Record<V3ChainKey, number> = {
   ethereum: 1,
   arbitrum: 42161,
-  polygon: 137
+  polygon: 137,
+  robinhood: 4663
 };
 
 const V3_TOKENS: Record<
@@ -240,6 +281,20 @@ const V3_TOKENS: Record<
     },
     ZUM: {
       address: ZUM_ADDRESS,
+      decimals: 18
+    }
+  },
+  robinhood: {
+    WETH: {
+      address: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      decimals: 18
+    },
+    USDG: {
+      address: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      decimals: 6
+    },
+    SPCX: {
+      address: "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
       decimals: 18
     }
   }
@@ -428,6 +483,35 @@ const V3_POOLS: V3Pool[] = [
     tick: 83170,
     reserve: "$1.27M",
     activity: "Saludable"
+  },
+  {
+    id: "rh-spcx-usdg-10000",
+    chain: "robinhood",
+    label: "SPCX/USDG",
+    fee: 10000,
+    feeLabel: "1.00%",
+    token0: "SPCX",
+    token1: "USDG",
+    inputToken: "USDG",
+    price: 33.5,
+    tick: 0,
+    reserve: "Robinhood experimental",
+    activity: "Diagnóstico",
+    allowCreate: true
+  },
+  {
+    id: "rh-weth-usdg-500",
+    chain: "robinhood",
+    label: "WETH/USDG",
+    fee: 500,
+    feeLabel: "0.05%",
+    token0: "WETH",
+    token1: "USDG",
+    inputToken: "USDG",
+    price: 4500,
+    tick: 0,
+    reserve: "Robinhood experimental",
+    activity: "Diagnóstico"
   }
 ];
 
@@ -496,6 +580,23 @@ const DEFAULT_TOKENS: Record<string, TokenMeta[]> = {
       symbol: "WETH",
       decimals: 18
     }
+  ],
+  robinhood: [
+    {
+      address: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      symbol: "USDG",
+      decimals: 6
+    },
+    {
+      address: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      symbol: "WETH",
+      decimals: 18
+    },
+    {
+      address: "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
+      symbol: "SPCX",
+      decimals: 18
+    }
   ]
 };
 
@@ -541,6 +642,10 @@ function base64ToBuffer(base64: string) {
 
 function v3TokenBySymbol(chain: V3ChainKey, symbol: string) {
   return V3_TOKENS[chain][symbol];
+}
+
+function v3Contracts(chain: V3ChainKey) {
+  return V3_CONTRACTS[chain];
 }
 
 function v3TokenByAddress(chain: V3ChainKey, address: string) {
@@ -617,12 +722,34 @@ function initialSqrtPriceX96(amount0: bigint, amount1: bigint) {
   return sqrtBigInt((amount1 << BigInt(192)) / amount0);
 }
 
+function priceFromSqrtPriceX96(
+  sqrtPriceX96: bigint,
+  token0Decimals: number,
+  token1Decimals: number
+) {
+  const sqrtRatio = Number(sqrtPriceX96) / 2 ** 96;
+  return sqrtRatio * sqrtRatio * 10 ** (token0Decimals - token1Decimals);
+}
+
 function v3Provider(chain: V3ChainKey) {
   const networkConfig = NETWORKS.find((item) => item.key === chain);
   return new ethers.JsonRpcProvider(
     networkConfig?.rpcUrl,
     V3_CHAIN_IDS[chain]
   );
+}
+
+function assertReasonableV3Gas(
+  gasEstimate: bigint,
+  chain: V3ChainKey,
+  action: string
+) {
+  const limit = v3Contracts(chain).maxTxGasLimit;
+  if (limit && gasEstimate > limit) {
+    throw new Error(
+      `${action}: gas estimado anormal (${gasEstimate.toString()} > ${limit.toString()}). No firmes esta operación en ${chain}.`
+    );
+  }
 }
 
 function estimateV3ReserveUsd(pool: V3Pool, balance0: number, balance1: number) {
@@ -666,13 +793,14 @@ function topicForAddress(address: string) {
 
 function extractMintedV3TokenId(
   receipt: ethers.TransactionReceipt | null,
-  recipient: string
+  recipient: string,
+  positionManager: string
 ) {
   const recipientTopic = topicForAddress(recipient).toLowerCase();
   const transferLog = receipt?.logs.find((log) => {
     const topics = log.topics ?? [];
     return (
-      log.address.toLowerCase() === V3_POSITION_MANAGER.toLowerCase() &&
+      log.address.toLowerCase() === positionManager.toLowerCase() &&
       topics[0]?.toLowerCase() === TRANSFER_TOPIC &&
       topics[1]?.toLowerCase() === ZERO_ADDRESS_TOPIC &&
       topics[2]?.toLowerCase() === recipientTopic
@@ -844,8 +972,10 @@ export default function Home() {
     v3PoolsForChain[0] ??
     V3_POOLS[0];
   const selectedV3Scan = v3Scans[selectedV3Pool.id];
+  const v3RequiresManualEntry = v3Chain === "robinhood";
   const canOperateV3 =
     Boolean(selectedV3Scan) &&
+    (!v3RequiresManualEntry || v3EntryMode === "manual") &&
     (selectedV3Scan?.status !== "No activa" ||
       (selectedV3Pool.allowCreate && v3EntryMode === "manual"));
   const effectiveV3Price = selectedV3Scan?.price ?? selectedV3Pool.price;
@@ -1816,7 +1946,8 @@ export default function Home() {
     spender: string,
     amount: bigint,
     signer: ethers.Signer,
-    label: string
+    label: string,
+    chain: V3ChainKey
   ) => {
     if (amount <= BigInt(0)) {
       return;
@@ -1829,10 +1960,14 @@ export default function Home() {
     }
     if (current > BigInt(0)) {
       setV3Status(`Reseteando approve previo de ${label}.`);
+      const resetGas = (await token.approve.estimateGas(spender, 0)) as bigint;
+      assertReasonableV3Gas(resetGas, chain, `Approve reset ${label}`);
       const resetTx = await token.approve(spender, 0);
       await resetTx.wait();
     }
     setV3Status(`Aprobando ${label}.`);
+    const approveGas = (await token.approve.estimateGas(spender, amount)) as bigint;
+    assertReasonableV3Gas(approveGas, chain, `Approve ${label}`);
     const approveTx = await token.approve(spender, amount);
     await approveTx.wait();
   };
@@ -1848,10 +1983,33 @@ export default function Home() {
     const chainId = Number((await provider.getNetwork()).chainId);
     if (chainId !== V3_CHAIN_IDS[chain]) {
       const target = `0x${V3_CHAIN_IDS[chain].toString(16)}`;
-      await ethereum.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: target }]
-      });
+      try {
+        await ethereum.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: target }]
+        });
+      } catch (switchError) {
+        const networkConfig = NETWORKS.find((item) => item.key === chain);
+        if (!networkConfig) {
+          throw switchError;
+        }
+        await ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [
+            {
+              chainId: target,
+              chainName: networkConfig.name,
+              nativeCurrency: {
+                name: networkConfig.symbol,
+                symbol: networkConfig.symbol,
+                decimals: 18
+              },
+              rpcUrls: [networkConfig.rpcUrl],
+              blockExplorerUrls: [EXPLORER_ROOTS[chain]]
+            }
+          ]
+        });
+      }
     }
     const signer = await provider.getSigner();
     const signerAddress = accounts?.[0] ?? (await signer.getAddress());
@@ -1884,8 +2042,9 @@ export default function Home() {
       }
 
       const readProvider = v3Provider(v3Chain);
+      const contracts = v3Contracts(v3Chain);
       const factory = new ethers.Contract(
-        V3_FACTORY,
+        contracts.factory,
         V3_FACTORY_ABI,
         readProvider
       );
@@ -1938,8 +2097,11 @@ export default function Home() {
           readProvider.getBlockNumber()
         ]);
       const tick = Number(slot0.tick);
-      const price =
-        selectedV3Pool.price * Math.pow(1.0001, tick - selectedV3Pool.tick);
+      const price = priceFromSqrtPriceX96(
+        slot0.sqrtPriceX96,
+        token0.decimals,
+        token1.decimals
+      );
       const balance0 = Number(ethers.formatUnits(rawBalance0, token0.decimals));
       const balance1 = Number(ethers.formatUnits(rawBalance1, token1.decimals));
       const reserveUsd = estimateV3ReserveUsd(
@@ -2074,7 +2236,12 @@ export default function Home() {
           return;
         }
 
-        const quoter = new ethers.Contract(V3_QUOTER, V3_QUOTER_ABI, signer);
+        const contracts = v3Contracts(v3Chain);
+        if (!contracts.quoter) {
+          setV3Status("Esta red no tiene quoter V3 configurado para swap interno.");
+          return;
+        }
+        const quoter = new ethers.Contract(contracts.quoter, V3_QUOTER_ABI, signer);
         const slippagePct = Math.min(Math.max(Number(v3Slippage) || 1, 0.1), 5);
         setV3Status("Consultando quote de Uniswap.");
         const quotedOutput = (await quoter.quoteExactInputSingle.staticCall(
@@ -2090,17 +2257,18 @@ export default function Home() {
 
         await ensureV3Allowance(
           inputToken.address,
-          V3_SWAP_ROUTER,
+          contracts.swapRouter,
           swapAmount,
           signer,
-          `${inputSymbol} para swap`
+          `${inputSymbol} para swap`,
+          v3Chain
         );
 
         const outputBalanceBefore = (await outputTokenContract.balanceOf(
           owner
         )) as bigint;
         const router = new ethers.Contract(
-          V3_SWAP_ROUTER,
+          contracts.swapRouter,
           V3_SWAP_ROUTER_ABI,
           signer
         );
@@ -2130,7 +2298,7 @@ export default function Home() {
       }
 
       const manager = new ethers.Contract(
-        V3_POSITION_MANAGER,
+        v3Contracts(v3Chain).positionManager,
         V3_POSITION_MANAGER_ABI,
         signer
       );
@@ -2154,17 +2322,19 @@ export default function Home() {
 
       await ensureV3Allowance(
         token0.address,
-        V3_POSITION_MANAGER,
+        v3Contracts(v3Chain).positionManager,
         amount0Desired,
         signer,
-        `${selectedV3Pool.token0} para mint`
+        `${selectedV3Pool.token0} para mint`,
+        v3Chain
       );
       await ensureV3Allowance(
         token1.address,
-        V3_POSITION_MANAGER,
+        v3Contracts(v3Chain).positionManager,
         amount1Desired,
         signer,
-        `${selectedV3Pool.token1} para mint`
+        `${selectedV3Pool.token1} para mint`,
+        v3Chain
       );
 
       setV3Status("Enviando mint al Position Manager.");
@@ -2182,7 +2352,11 @@ export default function Home() {
         deadline: deadlineSeconds()
       });
       const receipt = await mintTx.wait();
-      const mintedTokenId = extractMintedV3TokenId(receipt, owner);
+      const mintedTokenId = extractMintedV3TokenId(
+        receipt,
+        owner,
+        v3Contracts(v3Chain).positionManager
+      );
       if (mintedTokenId) {
         const position = await readV3Position(
           manager,
@@ -2219,7 +2393,7 @@ export default function Home() {
       const signer = await getV3Signer();
       const owner = await signer.getAddress();
       const manager = new ethers.Contract(
-        V3_POSITION_MANAGER,
+        v3Contracts(v3Chain).positionManager,
         V3_POSITION_MANAGER_ABI,
         signer
       );
@@ -2243,7 +2417,7 @@ export default function Home() {
       const signer = await getV3Signer();
       const owner = await signer.getAddress();
       const manager = new ethers.Contract(
-        V3_POSITION_MANAGER,
+        v3Contracts(v3Chain).positionManager,
         V3_POSITION_MANAGER_ABI,
         signer
       );
@@ -2277,7 +2451,7 @@ export default function Home() {
       const owner = await signer.getAddress();
       setV3Wallet(owner);
       const manager = new ethers.Contract(
-        V3_POSITION_MANAGER,
+        v3Contracts(v3Chain).positionManager,
         V3_POSITION_MANAGER_ABI,
         signer
       );
@@ -2331,7 +2505,7 @@ export default function Home() {
       const signer = await getV3Signer(position.chain);
       const recipient = await signer.getAddress();
       const manager = new ethers.Contract(
-        V3_POSITION_MANAGER,
+        v3Contracts(position.chain).positionManager,
         V3_POSITION_MANAGER_ABI,
         signer
       );
@@ -2360,7 +2534,7 @@ export default function Home() {
       const signer = await getV3Signer(position.chain);
       const recipient = await signer.getAddress();
       const manager = new ethers.Contract(
-        V3_POSITION_MANAGER,
+        v3Contracts(position.chain).positionManager,
         V3_POSITION_MANAGER_ABI,
         signer
       );
@@ -3049,6 +3223,7 @@ export default function Home() {
                   <option value="arbitrum">Arbitrum</option>
                   <option value="ethereum">Ethereum</option>
                   <option value="polygon">Polygon</option>
+                  <option value="robinhood">Robinhood Chain</option>
                 </select>
               </div>
               <div className={styles.field}>
@@ -3167,6 +3342,13 @@ export default function Home() {
                   {v3Executing ? "Operando..." : "Operar / Crear posición"}
                 </button>
               </div>
+              {v3Chain === "robinhood" ? (
+                <p className={styles.v3ManualHint}>
+                  Robinhood está en modo experimental: usá modo manual dos
+                  tokens. Antes de aprobar o mintear, la app corta si el gas
+                  estimado supera el límite de la red.
+                </p>
+              ) : null}
               <div className={styles.v3MetricGrid}>
                 <div>
                   <span>Precio actual</span>
