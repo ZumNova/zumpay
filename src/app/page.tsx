@@ -154,6 +154,12 @@ type V4PreflightCheck = {
   ok: boolean;
 };
 
+type V4GasEstimate = {
+  status: "ok" | "warn" | "error";
+  title: string;
+  detail: string;
+};
+
 type InjectedEthereum = {
   request: (args: {
     method: string;
@@ -611,8 +617,14 @@ const V4_STATE_VIEW_ABI = [
 const V4_POSITION_MANAGER_VIEW_ABI = [
   "function ownerOf(uint256 tokenId) view returns (address)",
   "function getPoolAndPositionInfo(uint256 tokenId) view returns ((address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) poolKey,uint256 info)",
-  "function getPositionLiquidity(uint256 tokenId) view returns (uint128 liquidity)"
+  "function getPositionLiquidity(uint256 tokenId) view returns (uint128 liquidity)",
+  "function modifyLiquidities(bytes unlockData,uint256 deadline) payable"
 ];
+
+const V4_ACTION_INCREASE_LIQUIDITY = "0x00";
+const V4_ACTION_SETTLE_PAIR = "0x0d";
+const V4_MAX_REASONABLE_GAS = BigInt(5_000_000);
+const V4_DANGER_GAS = BigInt(25_000_000);
 
 const DEFAULT_TOKENS: Record<string, TokenMeta[]> = {
   ethereum: [
@@ -768,6 +780,12 @@ function formatV4Price(value: number, token0Symbol: string, token1Symbol: string
     maximumFractionDigits: 2,
     minimumFractionDigits: 2
   })} ${token1Symbol} por ${token0Symbol}`;
+}
+
+function formatGasUnits(value: bigint) {
+  return Number(value).toLocaleString("en-US", {
+    maximumFractionDigits: 0
+  });
 }
 
 function parseHumanAmount(value: string) {
@@ -996,6 +1014,54 @@ function estimateV4CounterpartAmount(
   const targetRaw =
     (liquidity * (sqrtUpper - sqrtCurrent)) / (sqrtCurrent * sqrtUpper);
   return targetRaw / targetScale;
+}
+
+function estimatedV4LiquidityRaw(simulation: V4LiquiditySimulation | null) {
+  if (!simulation || simulation.liquidityToAdd <= 0) {
+    return BigInt(0);
+  }
+
+  return BigInt(Math.floor(simulation.liquidityToAdd));
+}
+
+function encodeV4IncreaseLiquidityData(
+  position: V4PositionView,
+  liquidity: bigint,
+  amount0Max: bigint,
+  amount1Max: bigint
+) {
+  const coder = ethers.AbiCoder.defaultAbiCoder();
+  const actions = ethers.concat([
+    V4_ACTION_INCREASE_LIQUIDITY,
+    V4_ACTION_SETTLE_PAIR
+  ]);
+  const increaseParams = coder.encode(
+    ["uint256", "uint256", "uint128", "uint128", "bytes"],
+    [BigInt(position.tokenId), liquidity, amount0Max, amount1Max, "0x"]
+  );
+  const settlePairParams = coder.encode(
+    ["address", "address"],
+    [position.currency0, position.currency1]
+  );
+
+  return coder.encode(
+    ["bytes", "bytes[]"],
+    [actions, [increaseParams, settlePairParams]]
+  );
+}
+
+function v4NativeValue(
+  position: V4PositionView,
+  amount0Raw: bigint,
+  amount1Raw: bigint
+) {
+  if (position.currency0.toLowerCase() === ZERO_ADDRESS) {
+    return amount0Raw;
+  }
+  if (position.currency1.toLowerCase() === ZERO_ADDRESS) {
+    return amount1Raw;
+  }
+  return BigInt(0);
 }
 
 function normalizeV4Currency(value: string) {
@@ -1244,6 +1310,10 @@ export default function Home() {
   const [v4PreflightChecks, setV4PreflightChecks] = useState<
     V4PreflightCheck[]
   >([]);
+  const [v4EstimatingGas, setV4EstimatingGas] = useState(false);
+  const [v4GasEstimate, setV4GasEstimate] = useState<V4GasEstimate | null>(
+    null
+  );
 
   const network = useMemo(
     () => NETWORKS.find((item) => item.key === networkKey) ?? NETWORKS[0],
@@ -2659,6 +2729,7 @@ export default function Home() {
       setV4ReadingPosition(true);
       setV4Status("Leyendo NFT V4 en Robinhood.");
       setV4PreflightChecks([]);
+      setV4GasEstimate(null);
       const tokenId = v4TokenId.trim();
       if (!/^\d+$/.test(tokenId)) {
         setV4Status("Ingresá un tokenId V4 válido.");
@@ -2780,6 +2851,7 @@ export default function Home() {
     try {
       setV4Preflighting(true);
       setV4PreflightChecks([]);
+      setV4GasEstimate(null);
       if (!v4Position) {
         setV4Status("Primero leé el NFT V4.");
         return;
@@ -2822,7 +2894,7 @@ export default function Home() {
         decimals: number
       ): Promise<{ raw: bigint; label: string }> => {
         if (currency.toLowerCase() === ZERO_ADDRESS) {
-          return { raw: amount0Raw + amount1Raw, label: "No requiere approve" };
+          return { raw: ethers.MaxUint256, label: "No requiere approve" };
         }
         const token = new ethers.Contract(currency, ERC20_ABI, signerProvider);
         const allowance = (await token.allowance(
@@ -2909,6 +2981,110 @@ export default function Home() {
       );
     } finally {
       setV4Preflighting(false);
+    }
+  };
+
+  const handleV4EstimateGas = async () => {
+    try {
+      setV4EstimatingGas(true);
+      setV4GasEstimate(null);
+      if (!v4Position) {
+        setV4Status("Primero leé el NFT V4.");
+        return;
+      }
+
+      const amount0Raw = parseTokenUnits(
+        v4AddAmount0,
+        v4Position.token0Decimals
+      );
+      const amount1Raw = parseTokenUnits(
+        v4AddAmount1,
+        v4Position.token1Decimals
+      );
+      const liquidityRaw = estimatedV4LiquidityRaw(v4LiquiditySimulation);
+      if (
+        amount0Raw <= BigInt(0) ||
+        amount1Raw <= BigInt(0) ||
+        liquidityRaw <= BigInt(0)
+      ) {
+        setV4Status("Ingresá montos válidos antes de estimar gas.");
+        return;
+      }
+
+      setV4Status("Estimando gas V4. No se firma ni se envía transacción.");
+      const signer = await getV3Signer("robinhood");
+      const manager = new ethers.Contract(
+        V4_ROBINHOOD_CONTRACTS.positionManager,
+        V4_POSITION_MANAGER_VIEW_ABI,
+        signer
+      );
+      const unlockData = encodeV4IncreaseLiquidityData(
+        v4Position,
+        liquidityRaw,
+        amount0Raw,
+        amount1Raw
+      );
+      const value = v4NativeValue(v4Position, amount0Raw, amount1Raw);
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
+      const gas = (await manager.modifyLiquidities.estimateGas(
+        unlockData,
+        deadline,
+        { value }
+      )) as bigint;
+      const feeData = await signer.provider.getFeeData();
+      const gasPrice =
+        feeData.maxFeePerGas ?? feeData.gasPrice ?? BigInt(0);
+      const estimatedCost = gasPrice > BigInt(0) ? gas * gasPrice : BigInt(0);
+      const costText =
+        estimatedCost > BigInt(0)
+          ? `Costo estimado: ${ethers.formatEther(estimatedCost)} ETH.`
+          : "El provider no devolvió precio de gas.";
+
+      if (gas > V4_DANGER_GAS) {
+        setV4GasEstimate({
+          status: "error",
+          title: "Gas bloqueado",
+          detail: `${formatGasUnits(
+            gas
+          )} unidades. Supera el límite extremo de ${formatGasUnits(
+            V4_DANGER_GAS
+          )}. ${costText}`
+        });
+        setV4Status("Gas V4 demasiado alto. No firmes esta operación.");
+        return;
+      }
+
+      if (gas > V4_MAX_REASONABLE_GAS) {
+        setV4GasEstimate({
+          status: "warn",
+          title: "Gas alto",
+          detail: `${formatGasUnits(
+            gas
+          )} unidades. Revisar antes de seguir. ${costText}`
+        });
+        setV4Status("Gas V4 alto. Conviene revisar antes de firmar.");
+        return;
+      }
+
+      setV4GasEstimate({
+        status: "ok",
+        title: "Gas normal",
+        detail: `${formatGasUnits(gas)} unidades. ${costText}`
+      });
+      setV4Status("Estimación de gas V4 normal.");
+    } catch (error) {
+      console.error(error);
+      setV4GasEstimate({
+        status: "error",
+        title: "No se pudo estimar gas",
+        detail:
+          error instanceof Error
+            ? error.message
+            : "El provider rechazó la estimación."
+      });
+      setV4Status("No se pudo estimar gas V4. No firmes todavía.");
+    } finally {
+      setV4EstimatingGas(false);
     }
   };
 
@@ -4610,6 +4786,27 @@ export default function Home() {
                           <small>{check.value}</small>
                         </div>
                       ))}
+                    </div>
+                  ) : null}
+                  <button
+                    className={styles.outline}
+                    onClick={handleV4EstimateGas}
+                    disabled={isLocked || v4EstimatingGas}
+                  >
+                    {v4EstimatingGas ? "Estimando gas..." : "Estimar gas V4"}
+                  </button>
+                  {v4GasEstimate ? (
+                    <div
+                      className={`${styles.v4GasBox} ${
+                        v4GasEstimate.status === "ok"
+                          ? styles.v4GasOk
+                          : v4GasEstimate.status === "warn"
+                            ? styles.v4GasWarn
+                            : styles.v4GasError
+                      }`}
+                    >
+                      <strong>{v4GasEstimate.title}</strong>
+                      <span>{v4GasEstimate.detail}</span>
                     </div>
                   ) : null}
                 </>

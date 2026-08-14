@@ -922,6 +922,55 @@
   background: rgba(244, 231, 184, 0.9);
 }
 
+.v4GasBox {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(12, 18, 32, 0.86);
+}
+
+.v4GasBox strong {
+  font-size: 14px;
+}
+
+.v4GasBox span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.v4GasOk {
+  border: 1px solid rgba(52, 211, 153, 0.32);
+}
+
+.v4GasOk strong {
+  color: var(--green);
+}
+
+.v4GasWarn {
+  border: 1px solid rgba(244, 231, 184, 0.36);
+}
+
+.v4GasWarn strong {
+  color: #f4e7b8;
+}
+
+.v4GasError {
+  border: 1px solid rgba(255, 110, 150, 0.55);
+  background: rgba(54, 10, 20, 0.72);
+}
+
+.v4GasError strong {
+  color: #ff8aa8;
+}
+
+.v4GasError span {
+  color: #ffd7e1;
+}
+
 .v3ManualGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
