@@ -1204,8 +1204,16 @@ function deadlineSeconds() {
   return BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
 }
 
-async function waitForV3Receipt(txHash: string, chain: V3ChainKey) {
-  const receipt = await v3Provider(chain).waitForTransaction(txHash, 1, 90000);
+async function waitForV3Receipt(
+  txHash: string,
+  chain: V3ChainKey,
+  timeoutMs = 90000
+) {
+  const receipt = await v3Provider(chain).waitForTransaction(
+    txHash,
+    1,
+    timeoutMs
+  );
   if (!receipt) {
     throw new Error(
       `La transacción ${txHash.slice(0, 10)}... no confirmó dentro del tiempo esperado.`
@@ -1353,6 +1361,7 @@ export default function Home() {
     null
   );
   const [v4AddingLiquidity, setV4AddingLiquidity] = useState(false);
+  const [v4LastTxHash, setV4LastTxHash] = useState("");
 
   const network = useMemo(
     () => NETWORKS.find((item) => item.key === networkKey) ?? NETWORKS[0],
@@ -2769,6 +2778,7 @@ export default function Home() {
       setV4Status("Leyendo NFT V4 en Robinhood.");
       setV4PreflightChecks([]);
       setV4GasEstimate(null);
+      setV4LastTxHash("");
       const tokenId = v4TokenId.trim();
       if (!/^\d+$/.test(tokenId)) {
         setV4Status("Ingresá un tokenId V4 válido.");
@@ -3142,6 +3152,7 @@ export default function Home() {
   };
 
   const handleV4AddLiquidity = async () => {
+    let sentHash = "";
     try {
       setV4AddingLiquidity(true);
       if (!v4Position) {
@@ -3186,14 +3197,36 @@ export default function Home() {
         prepared.deadline,
         { value: prepared.value }
       );
-      setV4Status(`Transacción enviada: ${tx.hash.slice(0, 10)}...`);
-      await waitForV3Receipt(tx.hash, "robinhood");
+      sentHash = tx.hash;
+      setV4LastTxHash(tx.hash);
+      setV4Status(
+        `Transacción enviada: ${tx.hash.slice(
+          0,
+          10
+        )}... Esperando confirmación.`
+      );
+      await waitForV3Receipt(tx.hash, "robinhood", 300000);
       setV4Status(
         `Liquidez V4 agregada al NFT #${v4Position.tokenId}. Refrescando estado.`
       );
       await handleV4ReadPosition();
     } catch (error) {
       console.error(error);
+      const timeoutHash = sentHash || v4LastTxHash;
+      if (
+        error instanceof Error &&
+        error.message.toLowerCase().includes("timeout") &&
+        timeoutHash
+      ) {
+        setV4Status(
+          `La transacción fue enviada pero no confirmó en la app. Revisá el explorer: ${timeoutHash.slice(
+            0,
+            10
+          )}...`
+        );
+        setV4LastTxHash(timeoutHash);
+        return;
+      }
       setV4Status(
         error instanceof Error
           ? `No se pudo agregar liquidez V4: ${describeV4EstimateError(error)}`
@@ -4938,6 +4971,17 @@ export default function Home() {
                       ? "Agregando liquidez..."
                       : `Agregar liquidez real al NFT #${v4Position.tokenId}`}
                   </button>
+                  {v4LastTxHash ? (
+                    <a
+                      className={styles.v4TxLink}
+                      href={`${EXPLORERS.robinhood}${v4LastTxHash}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Ver última transacción V4{" "}
+                      {v4LastTxHash.slice(0, 10)}...
+                    </a>
+                  ) : null}
                 </>
               ) : null}
               {v4Status ? <p className={styles.status}>{v4Status}</p> : null}

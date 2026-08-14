@@ -971,6 +971,20 @@
   color: #ffd7e1;
 }
 
+.v4TxLink {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 12px;
+  color: var(--cyan);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.v4TxLink:hover {
+  text-decoration: underline;
+}
+
 .v3ManualGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
