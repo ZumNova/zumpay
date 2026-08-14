@@ -160,6 +160,13 @@ type V4GasEstimate = {
   detail: string;
 };
 
+type V4LiquidityChange = {
+  before: string;
+  after: string;
+  delta: string;
+  txHash: string;
+};
+
 type V4LiquidityCall = {
   signer: ethers.Signer;
   provider: ethers.Provider;
@@ -1164,6 +1171,16 @@ function v3Provider(chain: V3ChainKey) {
   );
 }
 
+async function readV4PositionLiquidity(tokenId: string) {
+  const readProvider = v3Provider("robinhood");
+  const positionManager = new ethers.Contract(
+    V4_ROBINHOOD_CONTRACTS.positionManager,
+    V4_POSITION_MANAGER_VIEW_ABI,
+    readProvider
+  );
+  return (await positionManager.getPositionLiquidity(tokenId)) as bigint;
+}
+
 function assertReasonableV3Gas(
   gasEstimate: bigint,
   chain: V3ChainKey,
@@ -1362,6 +1379,8 @@ export default function Home() {
   );
   const [v4AddingLiquidity, setV4AddingLiquidity] = useState(false);
   const [v4LastTxHash, setV4LastTxHash] = useState("");
+  const [v4LiquidityChange, setV4LiquidityChange] =
+    useState<V4LiquidityChange | null>(null);
 
   const network = useMemo(
     () => NETWORKS.find((item) => item.key === networkKey) ?? NETWORKS[0],
@@ -2779,6 +2798,7 @@ export default function Home() {
       setV4PreflightChecks([]);
       setV4GasEstimate(null);
       setV4LastTxHash("");
+      setV4LiquidityChange(null);
       const tokenId = v4TokenId.trim();
       if (!/^\d+$/.test(tokenId)) {
         setV4Status("Ingresá un tokenId V4 válido.");
@@ -3153,6 +3173,7 @@ export default function Home() {
 
   const handleV4AddLiquidity = async () => {
     let sentHash = "";
+    let liquidityBefore = BigInt(0);
     try {
       setV4AddingLiquidity(true);
       if (!v4Position) {
@@ -3192,6 +3213,7 @@ export default function Home() {
       setV4Status(
         `MetaMask va a pedir firma real para agregar liquidez al NFT #${v4Position.tokenId}.`
       );
+      liquidityBefore = await readV4PositionLiquidity(v4Position.tokenId);
       const tx = await prepared.manager.modifyLiquidities(
         prepared.unlockData,
         prepared.deadline,
@@ -3206,10 +3228,25 @@ export default function Home() {
         )}... Esperando confirmación.`
       );
       await waitForV3Receipt(tx.hash, "robinhood", 300000);
+      const liquidityAfter = await readV4PositionLiquidity(v4Position.tokenId);
+      const delta =
+        liquidityAfter > liquidityBefore
+          ? liquidityAfter - liquidityBefore
+          : BigInt(0);
+      const liquidityChange = {
+        before: liquidityBefore.toString(),
+        after: liquidityAfter.toString(),
+        delta: delta.toString(),
+        txHash: tx.hash
+      };
       setV4Status(
-        `Liquidez V4 agregada al NFT #${v4Position.tokenId}. Refrescando estado.`
+        delta > BigInt(0)
+          ? `Liquidez V4 agregada al NFT #${v4Position.tokenId}.`
+          : `La tx confirmó, pero la liquidez del NFT #${v4Position.tokenId} no cambió.`
       );
       await handleV4ReadPosition();
+      setV4LastTxHash(tx.hash);
+      setV4LiquidityChange(liquidityChange);
     } catch (error) {
       console.error(error);
       const timeoutHash = sentHash || v4LastTxHash;
@@ -3218,6 +3255,32 @@ export default function Home() {
         error.message.toLowerCase().includes("timeout") &&
         timeoutHash
       ) {
+        try {
+          if (v4Position && liquidityBefore > BigInt(0)) {
+            const liquidityAfter = await readV4PositionLiquidity(
+              v4Position.tokenId
+            );
+            const delta =
+              liquidityAfter > liquidityBefore
+                ? liquidityAfter - liquidityBefore
+                : BigInt(0);
+            setV4LiquidityChange({
+              before: liquidityBefore.toString(),
+              after: liquidityAfter.toString(),
+              delta: delta.toString(),
+              txHash: timeoutHash
+            });
+            if (delta > BigInt(0)) {
+              setV4Status(
+                `La app no vio la confirmación, pero la liquidez del NFT #${v4Position.tokenId} aumentó.`
+              );
+              setV4LastTxHash(timeoutHash);
+              return;
+            }
+          }
+        } catch {
+          // Keep the timeout path below if the post-check also cannot read.
+        }
         setV4Status(
           `La transacción fue enviada pero no confirmó en la app. Revisá el explorer: ${timeoutHash.slice(
             0,
@@ -4981,6 +5044,26 @@ export default function Home() {
                       Ver última transacción V4{" "}
                       {v4LastTxHash.slice(0, 10)}...
                     </a>
+                  ) : null}
+                  {v4LiquidityChange ? (
+                    <div className={styles.v4LiquidityChange}>
+                      <div>
+                        <span>Antes</span>
+                        <strong>{v4LiquidityChange.before}</strong>
+                      </div>
+                      <div>
+                        <span>Después</span>
+                        <strong>{v4LiquidityChange.after}</strong>
+                      </div>
+                      <div>
+                        <span>Cambio</span>
+                        <strong>
+                          {BigInt(v4LiquidityChange.delta) > BigInt(0)
+                            ? `+${v4LiquidityChange.delta}`
+                            : "Sin cambio"}
+                        </strong>
+                      </div>
+                    </div>
                   ) : null}
                 </>
               ) : null}
