@@ -757,6 +757,25 @@ function formatHumanTokenAmount(value: number, symbol: string) {
   });
 }
 
+function parseHumanAmount(value: string) {
+  return Number(value.replace(",", "."));
+}
+
+function formatTokenInputAmount(value: number, symbol: string) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "";
+  }
+
+  const upper = symbol.toUpperCase();
+  const maximumFractionDigits =
+    upper === "ETH" || upper === "WETH" ? 6 : upper.includes("USD") ? 2 : 4;
+
+  return value
+    .toFixed(maximumFractionDigits)
+    .replace(/(\.\d*?[1-9])0+$/, "$1")
+    .replace(/\.0+$/, "");
+}
+
 function formatZumAmount(value: bigint) {
   return ethers
     .formatUnits(value, 18)
@@ -915,6 +934,47 @@ function simulateV4Liquidity(
     suggestedToken0: suggestedToken0Raw / scale0,
     suggestedToken1: suggestedToken1Raw / scale1
   };
+}
+
+function estimateV4CounterpartAmount(
+  amount: number,
+  sourceToken: "token0" | "token1",
+  tickCurrent: number,
+  tickLower: number,
+  tickUpper: number,
+  sourceDecimals: number,
+  targetDecimals: number
+) {
+  const sqrtCurrent = Math.sqrt(Math.pow(1.0001, tickCurrent));
+  const sqrtLower = Math.sqrt(Math.pow(1.0001, tickLower));
+  const sqrtUpper = Math.sqrt(Math.pow(1.0001, tickUpper));
+  const sourceScale = 10 ** sourceDecimals;
+  const targetScale = 10 ** targetDecimals;
+  const amountRaw = amount * sourceScale;
+
+  if (
+    amount <= 0 ||
+    sqrtLower <= 0 ||
+    sqrtUpper <= sqrtLower ||
+    !Number.isFinite(amountRaw)
+  ) {
+    return 0;
+  }
+
+  if (tickCurrent <= tickLower || tickCurrent >= tickUpper) {
+    return 0;
+  }
+
+  if (sourceToken === "token0") {
+    const liquidity =
+      (amountRaw * sqrtCurrent * sqrtUpper) / (sqrtUpper - sqrtCurrent);
+    return (liquidity * (sqrtCurrent - sqrtLower)) / targetScale;
+  }
+
+  const liquidity = amountRaw / (sqrtCurrent - sqrtLower);
+  const targetRaw =
+    (liquidity * (sqrtUpper - sqrtCurrent)) / (sqrtCurrent * sqrtUpper);
+  return targetRaw / targetScale;
 }
 
 function normalizeV4Currency(value: string) {
@@ -1362,8 +1422,8 @@ export default function Home() {
     if (!v4Position) {
       return null;
     }
-    const amount0 = Math.max(Number(v4AddAmount0) || 0, 0);
-    const amount1 = Math.max(Number(v4AddAmount1) || 0, 0);
+    const amount0 = Math.max(parseHumanAmount(v4AddAmount0) || 0, 0);
+    const amount1 = Math.max(parseHumanAmount(v4AddAmount1) || 0, 0);
     return simulateV4Liquidity(
       amount0,
       amount1,
@@ -1376,6 +1436,50 @@ export default function Home() {
       v4Position.token1Decimals
     );
   }, [v4AddAmount0, v4AddAmount1, v4Position]);
+
+  const handleV4AddAmount0Change = (value: string) => {
+    setV4AddAmount0(value);
+    const amount = parseHumanAmount(value);
+    if (!v4Position || !Number.isFinite(amount) || amount <= 0) {
+      setV4AddAmount1("");
+      return;
+    }
+
+    const suggestedToken1 = estimateV4CounterpartAmount(
+      amount,
+      "token0",
+      v4Position.tick,
+      v4Position.tickLower,
+      v4Position.tickUpper,
+      v4Position.token0Decimals,
+      v4Position.token1Decimals
+    );
+    setV4AddAmount1(
+      formatTokenInputAmount(suggestedToken1, v4Position.token1Symbol)
+    );
+  };
+
+  const handleV4AddAmount1Change = (value: string) => {
+    setV4AddAmount1(value);
+    const amount = parseHumanAmount(value);
+    if (!v4Position || !Number.isFinite(amount) || amount <= 0) {
+      setV4AddAmount0("");
+      return;
+    }
+
+    const suggestedToken0 = estimateV4CounterpartAmount(
+      amount,
+      "token1",
+      v4Position.tick,
+      v4Position.tickLower,
+      v4Position.tickUpper,
+      v4Position.token1Decimals,
+      v4Position.token0Decimals
+    );
+    setV4AddAmount0(
+      formatTokenInputAmount(suggestedToken0, v4Position.token0Symbol)
+    );
+  };
 
   useEffect(() => {
     if (!evmAssets.some((asset) => asset.key === evmAssetKey)) {
@@ -4198,10 +4302,6 @@ export default function Home() {
                   <strong>{v4Result ? v4Result.tick : "—"}</strong>
                 </div>
                 <div>
-                  <span>Liquidez</span>
-                  <strong>{v4Result ? v4Result.liquidity : "—"}</strong>
-                </div>
-                <div>
                   <span>LP fee</span>
                   <strong>{v4Result ? v4Result.lpFee : "—"}</strong>
                 </div>
@@ -4232,10 +4332,6 @@ export default function Home() {
                       : "—"}
                   </strong>
                 </div>
-                <div>
-                  <span>Liquidez NFT</span>
-                  <strong>{v4Position ? v4Position.liquidity : "—"}</strong>
-                </div>
               </div>
               {v4Result ? (
                 <div className={styles.field}>
@@ -4256,7 +4352,9 @@ export default function Home() {
                       <label>Monto {v4Position.token0Symbol}</label>
                       <input
                         value={v4AddAmount0}
-                        onChange={(event) => setV4AddAmount0(event.target.value)}
+                        onChange={(event) =>
+                          handleV4AddAmount0Change(event.target.value)
+                        }
                         placeholder={`Monto en ${v4Position.token0Symbol}`}
                         inputMode="decimal"
                       />
@@ -4265,7 +4363,9 @@ export default function Home() {
                       <label>Monto {v4Position.token1Symbol}</label>
                       <input
                         value={v4AddAmount1}
-                        onChange={(event) => setV4AddAmount1(event.target.value)}
+                        onChange={(event) =>
+                          handleV4AddAmount1Change(event.target.value)
+                        }
                         placeholder={`Monto en ${v4Position.token1Symbol}`}
                         inputMode="decimal"
                       />
@@ -4277,7 +4377,7 @@ export default function Home() {
                         <span>Desde {v4Position.token0Symbol}</span>
                         <strong>
                           {formatHumanTokenAmount(
-                            Number(v4AddAmount0) || 0,
+                            parseHumanAmount(v4AddAmount0) || 0,
                             v4Position.token0Symbol
                           )}{" "}
                           {v4Position.token0Symbol} +{" "}
@@ -4288,8 +4388,12 @@ export default function Home() {
                           {v4Position.token1Symbol}
                         </strong>
                         <small>
-                          Carga {v4Position.token0Symbol}; Zumpay calcula el{" "}
-                          {v4Position.token1Symbol} necesario.
+                          Colocá también{" "}
+                          {formatHumanTokenAmount(
+                            v4LiquiditySimulation.suggestedToken1,
+                            v4Position.token1Symbol
+                          )}{" "}
+                          {v4Position.token1Symbol}.
                         </small>
                       </div>
                       <div>
@@ -4301,14 +4405,18 @@ export default function Home() {
                           )}{" "}
                           {v4Position.token0Symbol} +{" "}
                           {formatHumanTokenAmount(
-                            Number(v4AddAmount1) || 0,
+                            parseHumanAmount(v4AddAmount1) || 0,
                             v4Position.token1Symbol
                           )}{" "}
                           {v4Position.token1Symbol}
                         </strong>
                         <small>
-                          Carga {v4Position.token1Symbol}; Zumpay calcula el{" "}
-                          {v4Position.token0Symbol} necesario.
+                          Colocá también{" "}
+                          {formatHumanTokenAmount(
+                            v4LiquiditySimulation.suggestedToken0,
+                            v4Position.token0Symbol
+                          )}{" "}
+                          {v4Position.token0Symbol}.
                         </small>
                       </div>
                     </div>
