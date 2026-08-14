@@ -623,6 +623,8 @@ const V4_POSITION_MANAGER_VIEW_ABI = [
 
 const V4_ACTION_INCREASE_LIQUIDITY = "0x00";
 const V4_ACTION_SETTLE_PAIR = "0x0d";
+const V4_ACTION_SWEEP = "0x14";
+const V4_AMOUNT_BUFFER_BPS = BigInt(100);
 const V4_MAX_REASONABLE_GAS = BigInt(5_000_000);
 const V4_DANGER_GAS = BigInt(25_000_000);
 
@@ -1028,12 +1030,17 @@ function encodeV4IncreaseLiquidityData(
   position: V4PositionView,
   liquidity: bigint,
   amount0Max: bigint,
-  amount1Max: bigint
+  amount1Max: bigint,
+  recipient: string
 ) {
   const coder = ethers.AbiCoder.defaultAbiCoder();
+  const usesNative =
+    position.currency0.toLowerCase() === ZERO_ADDRESS ||
+    position.currency1.toLowerCase() === ZERO_ADDRESS;
   const actions = ethers.concat([
     V4_ACTION_INCREASE_LIQUIDITY,
-    V4_ACTION_SETTLE_PAIR
+    V4_ACTION_SETTLE_PAIR,
+    ...(usesNative ? [V4_ACTION_SWEEP] : [])
   ]);
   const increaseParams = coder.encode(
     ["uint256", "uint256", "uint128", "uint128", "bytes"],
@@ -1043,11 +1050,33 @@ function encodeV4IncreaseLiquidityData(
     ["address", "address"],
     [position.currency0, position.currency1]
   );
+  const params = [increaseParams, settlePairParams];
+  if (usesNative) {
+    params.push(coder.encode(["address", "address"], [ZERO_ADDRESS, recipient]));
+  }
 
   return coder.encode(
     ["bytes", "bytes[]"],
-    [actions, [increaseParams, settlePairParams]]
+    [actions, params]
   );
+}
+
+function addV4AmountBuffer(value: bigint) {
+  return value + (value * V4_AMOUNT_BUFFER_BPS) / BigInt(10_000);
+}
+
+function describeV4EstimateError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("0x31e30ad0")) {
+    return "MaximumAmountExceeded: el contrato pidió más token que el máximo permitido. Se corrige aumentando margen o reduciendo liquidez.";
+  }
+  if (message.includes("0x0ca968d8")) {
+    return "NotApproved: la wallet no está aprobada para operar ese NFT.";
+  }
+  if (message.includes("0xf4d678b8")) {
+    return "InsufficientBalance: saldo insuficiente para la estimación.";
+  }
+  return message;
 }
 
 function v4NativeValue(
@@ -3013,18 +3042,22 @@ export default function Home() {
 
       setV4Status("Estimando gas V4. No se firma ni se envía transacción.");
       const signer = await getV3Signer("robinhood");
+      const owner = await signer.getAddress();
       const manager = new ethers.Contract(
         V4_ROBINHOOD_CONTRACTS.positionManager,
         V4_POSITION_MANAGER_VIEW_ABI,
         signer
       );
+      const amount0Max = addV4AmountBuffer(amount0Raw);
+      const amount1Max = addV4AmountBuffer(amount1Raw);
       const unlockData = encodeV4IncreaseLiquidityData(
         v4Position,
         liquidityRaw,
-        amount0Raw,
-        amount1Raw
+        amount0Max,
+        amount1Max,
+        owner
       );
-      const value = v4NativeValue(v4Position, amount0Raw, amount1Raw);
+      const value = v4NativeValue(v4Position, amount0Max, amount1Max);
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
       const gas = (await manager.modifyLiquidities.estimateGas(
         unlockData,
@@ -3077,10 +3110,7 @@ export default function Home() {
       setV4GasEstimate({
         status: "error",
         title: "No se pudo estimar gas",
-        detail:
-          error instanceof Error
-            ? error.message
-            : "El provider rechazó la estimación."
+        detail: describeV4EstimateError(error)
       });
       setV4Status("No se pudo estimar gas V4. No firmes todavía.");
     } finally {
