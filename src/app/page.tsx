@@ -167,6 +167,13 @@ type V4LiquidityChange = {
   txHash: string;
 };
 
+type V4ValueEstimate = {
+  currentValue: number;
+  addValue: number;
+  totalValue: number;
+  currency: string;
+};
+
 type V4LiquidityCall = {
   signer: ethers.Signer;
   provider: ethers.Provider;
@@ -798,6 +805,17 @@ function formatV4Price(value: number, token0Symbol: string, token1Symbol: string
     maximumFractionDigits: 2,
     minimumFractionDigits: 2
   })} ${token1Symbol} por ${token0Symbol}`;
+}
+
+function formatV4Value(value: number, currency: string) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return `0.00 ${currency}`;
+  }
+
+  return `${value.toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2
+  })} ${currency}`;
 }
 
 function formatGasUnits(value: bigint) {
@@ -1598,6 +1616,35 @@ export default function Home() {
       v4Position.token1Decimals
     );
   }, [v4AddAmount0, v4AddAmount1, v4Position]);
+  const v4ValueEstimate = useMemo<V4ValueEstimate | null>(() => {
+    if (!v4Position || !v4LiquiditySimulation) {
+      return null;
+    }
+
+    const amount0 = Math.max(parseHumanAmount(v4AddAmount0) || 0, 0);
+    const amount1 = Math.max(parseHumanAmount(v4AddAmount1) || 0, 0);
+    const currentLiquidity = Number(v4Position.liquidity);
+    const liquidityToAdd = v4LiquiditySimulation.liquidityToAdd;
+    const token1ValuePerToken0 = v4Position.price;
+    const addValue = amount0 * token1ValuePerToken0 + amount1;
+    if (
+      addValue <= 0 ||
+      currentLiquidity <= 0 ||
+      liquidityToAdd <= 0 ||
+      !Number.isFinite(currentLiquidity) ||
+      !Number.isFinite(liquidityToAdd)
+    ) {
+      return null;
+    }
+
+    const currentValue = addValue * (currentLiquidity / liquidityToAdd);
+    return {
+      currentValue,
+      addValue,
+      totalValue: currentValue + addValue,
+      currency: v4Position.token1Symbol
+    };
+  }, [v4AddAmount0, v4AddAmount1, v4LiquiditySimulation, v4Position]);
 
   const handleV4AddAmount0Change = (value: string) => {
     setV4AddAmount0(value);
@@ -4979,6 +5026,40 @@ export default function Home() {
                           )}{" "}
                           {v4Position.token0Symbol}.
                         </small>
+                      </div>
+                    </div>
+                  ) : null}
+                  {v4ValueEstimate ? (
+                    <div className={styles.v4ValueGrid}>
+                      <div>
+                        <span>Valor NFT ahora</span>
+                        <strong>
+                          {formatV4Value(
+                            v4ValueEstimate.currentValue,
+                            v4ValueEstimate.currency
+                          )}
+                        </strong>
+                        <small>Estimado por liquidez actual.</small>
+                      </div>
+                      <div>
+                        <span>Valor a sumar</span>
+                        <strong>
+                          {formatV4Value(
+                            v4ValueEstimate.addValue,
+                            v4ValueEstimate.currency
+                          )}
+                        </strong>
+                        <small>Según montos cargados.</small>
+                      </div>
+                      <div>
+                        <span>Total aproximado</span>
+                        <strong>
+                          {formatV4Value(
+                            v4ValueEstimate.totalValue,
+                            v4ValueEstimate.currency
+                          )}
+                        </strong>
+                        <small>Después de agregar.</small>
                       </div>
                     </div>
                   ) : null}

@@ -867,6 +867,42 @@
   line-height: 1.4;
 }
 
+.v4ValueGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.v4ValueGrid div {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(12, 18, 32, 0.9);
+  border: 1px solid rgba(39, 213, 244, 0.18);
+}
+
+.v4ValueGrid span {
+  color: var(--cyan);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.v4ValueGrid strong {
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.v4ValueGrid small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .v4PreflightGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -1169,6 +1205,10 @@
   }
 
   .v4BalanceGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .v4ValueGrid {
     grid-template-columns: 1fr;
   }
 
