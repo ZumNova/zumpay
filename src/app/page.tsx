@@ -115,6 +115,8 @@ type V4ScanResult = {
   currency1: string;
   token0Symbol: string;
   token1Symbol: string;
+  token0Decimals: number;
+  token1Decimals: number;
   tick: number;
   price: number;
   liquidity: string;
@@ -131,6 +133,19 @@ type V4PositionView = V4ScanResult & {
   inRange: boolean;
   rangePriceLower: number;
   rangePriceUpper: number;
+};
+
+type V4LiquiditySimulation = {
+  liquidityFromToken0: number;
+  liquidityFromToken1: number;
+  liquidityToAdd: number;
+  limitingToken: string;
+  usedToken0: number;
+  usedToken1: number;
+  leftoverToken0: number;
+  leftoverToken1: number;
+  suggestedToken0: number;
+  suggestedToken1: number;
 };
 
 type InjectedEthereum = {
@@ -791,6 +806,98 @@ function decodeV4PositionInfo(value: bigint) {
   };
 }
 
+function simulateV4Liquidity(
+  amount0: number,
+  amount1: number,
+  tickCurrent: number,
+  tickLower: number,
+  tickUpper: number,
+  token0Symbol: string,
+  token1Symbol: string
+): V4LiquiditySimulation {
+  const sqrtCurrent = Math.sqrt(Math.pow(1.0001, tickCurrent));
+  const sqrtLower = Math.sqrt(Math.pow(1.0001, tickLower));
+  const sqrtUpper = Math.sqrt(Math.pow(1.0001, tickUpper));
+  if (
+    amount0 <= 0 ||
+    amount1 <= 0 ||
+    sqrtLower <= 0 ||
+    sqrtUpper <= sqrtLower
+  ) {
+    return {
+      liquidityFromToken0: 0,
+      liquidityFromToken1: 0,
+      liquidityToAdd: 0,
+      limitingToken: "—",
+      usedToken0: 0,
+      usedToken1: 0,
+      leftoverToken0: amount0,
+      leftoverToken1: amount1,
+      suggestedToken0: 0,
+      suggestedToken1: 0
+    };
+  }
+
+  if (tickCurrent <= tickLower) {
+    const liquidity = (amount0 * sqrtLower * sqrtUpper) / (sqrtUpper - sqrtLower);
+    return {
+      liquidityFromToken0: liquidity,
+      liquidityFromToken1: 0,
+      liquidityToAdd: liquidity,
+      limitingToken: token0Symbol,
+      usedToken0: amount0,
+      usedToken1: 0,
+      leftoverToken0: 0,
+      leftoverToken1: amount1,
+      suggestedToken0: amount0,
+      suggestedToken1: 0
+    };
+  }
+
+  if (tickCurrent >= tickUpper) {
+    const liquidity = amount1 / (sqrtUpper - sqrtLower);
+    return {
+      liquidityFromToken0: 0,
+      liquidityFromToken1: liquidity,
+      liquidityToAdd: liquidity,
+      limitingToken: token1Symbol,
+      usedToken0: 0,
+      usedToken1: amount1,
+      leftoverToken0: amount0,
+      leftoverToken1: 0,
+      suggestedToken0: 0,
+      suggestedToken1: amount1
+    };
+  }
+
+  const liquidityFromToken0 =
+    (amount0 * sqrtCurrent * sqrtUpper) / (sqrtUpper - sqrtCurrent);
+  const liquidityFromToken1 = amount1 / (sqrtCurrent - sqrtLower);
+  const liquidityToAdd = Math.min(liquidityFromToken0, liquidityFromToken1);
+  const usedToken0 =
+    (liquidityToAdd * (sqrtUpper - sqrtCurrent)) /
+    (sqrtCurrent * sqrtUpper);
+  const usedToken1 = liquidityToAdd * (sqrtCurrent - sqrtLower);
+
+  return {
+    liquidityFromToken0,
+    liquidityFromToken1,
+    liquidityToAdd,
+    limitingToken:
+      liquidityFromToken0 <= liquidityFromToken1 ? token0Symbol : token1Symbol,
+    usedToken0,
+    usedToken1,
+    leftoverToken0: Math.max(amount0 - usedToken0, 0),
+    leftoverToken1: Math.max(amount1 - usedToken1, 0),
+    suggestedToken0:
+      (amount1 / (sqrtCurrent - sqrtLower)) *
+      ((sqrtUpper - sqrtCurrent) / (sqrtCurrent * sqrtUpper)),
+    suggestedToken1:
+      ((amount0 * sqrtCurrent * sqrtUpper) / (sqrtUpper - sqrtCurrent)) *
+      (sqrtCurrent - sqrtLower)
+  };
+}
+
 function normalizeV4Currency(value: string) {
   const trimmed = value.trim();
   if (!trimmed || trimmed.toLowerCase() === "eth") {
@@ -1031,6 +1138,8 @@ export default function Home() {
   const [v4TokenId, setV4TokenId] = useState("475983");
   const [v4Position, setV4Position] = useState<V4PositionView | null>(null);
   const [v4ReadingPosition, setV4ReadingPosition] = useState(false);
+  const [v4AddAmount0, setV4AddAmount0] = useState("");
+  const [v4AddAmount1, setV4AddAmount1] = useState("");
 
   const network = useMemo(
     () => NETWORKS.find((item) => item.key === networkKey) ?? NETWORKS[0],
@@ -1230,6 +1339,22 @@ export default function Home() {
     v3ManualAmount0,
     v3ManualAmount1
   ]);
+  const v4LiquiditySimulation = useMemo(() => {
+    if (!v4Position) {
+      return null;
+    }
+    const amount0 = Math.max(Number(v4AddAmount0) || 0, 0);
+    const amount1 = Math.max(Number(v4AddAmount1) || 0, 0);
+    return simulateV4Liquidity(
+      amount0,
+      amount1,
+      v4Position.tick,
+      v4Position.tickLower,
+      v4Position.tickUpper,
+      v4Position.token0Symbol,
+      v4Position.token1Symbol
+    );
+  }, [v4AddAmount0, v4AddAmount1, v4Position]);
 
   useEffect(() => {
     if (!evmAssets.some((asset) => asset.key === evmAssetKey)) {
@@ -2349,6 +2474,8 @@ export default function Home() {
         currency1,
         token0Symbol: meta0.symbol,
         token1Symbol: meta1.symbol,
+        token0Decimals: meta0.decimals,
+        token1Decimals: meta1.decimals,
         tick,
         price: priceFromSqrtPriceX96(
           sqrtPriceX96,
@@ -2448,6 +2575,8 @@ export default function Home() {
         currency1: poolKey.currency1,
         token0Symbol: meta0.symbol,
         token1Symbol: meta1.symbol,
+        token0Decimals: meta0.decimals,
+        token1Decimals: meta1.decimals,
         tick,
         price,
         liquidity: positionLiquidity.toString(),
@@ -4098,6 +4227,113 @@ export default function Home() {
                   <label>Dueño NFT</label>
                   <div className={styles.address}>{v4Position.owner}</div>
                 </div>
+              ) : null}
+              {v4Position ? (
+                <>
+                  <div className={styles.v3ManualGrid}>
+                    <div className={styles.field}>
+                      <label>Monto {v4Position.token0Symbol}</label>
+                      <input
+                        value={v4AddAmount0}
+                        onChange={(event) => setV4AddAmount0(event.target.value)}
+                        placeholder={`Monto en ${v4Position.token0Symbol}`}
+                        inputMode="decimal"
+                      />
+                    </div>
+                    <div className={styles.field}>
+                      <label>Monto {v4Position.token1Symbol}</label>
+                      <input
+                        value={v4AddAmount1}
+                        onChange={(event) => setV4AddAmount1(event.target.value)}
+                        placeholder={`Monto en ${v4Position.token1Symbol}`}
+                        inputMode="decimal"
+                      />
+                    </div>
+                  </div>
+                  <div className={styles.v3MetricGrid}>
+                    <div>
+                      <span>Liquidez simulada</span>
+                      <strong>
+                        {v4LiquiditySimulation
+                          ? v4LiquiditySimulation.liquidityToAdd.toLocaleString(
+                              "en-US",
+                              { maximumFractionDigits: 4 }
+                            )
+                          : "—"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Token limitante</span>
+                      <strong>
+                        {v4LiquiditySimulation
+                          ? v4LiquiditySimulation.limitingToken
+                          : "—"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Usaría</span>
+                      <strong>
+                        {v4LiquiditySimulation
+                          ? `${v4LiquiditySimulation.usedToken0.toLocaleString(
+                              "en-US",
+                              { maximumFractionDigits: 8 }
+                            )} ${v4Position.token0Symbol}`
+                          : "—"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Usaría</span>
+                      <strong>
+                        {v4LiquiditySimulation
+                          ? `${v4LiquiditySimulation.usedToken1.toLocaleString(
+                              "en-US",
+                              { maximumFractionDigits: 8 }
+                            )} ${v4Position.token1Symbol}`
+                          : "—"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Sobrante</span>
+                      <strong>
+                        {v4LiquiditySimulation
+                          ? `${v4LiquiditySimulation.leftoverToken0.toLocaleString(
+                              "en-US",
+                              { maximumFractionDigits: 8 }
+                            )} ${v4Position.token0Symbol}`
+                          : "—"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Sobrante</span>
+                      <strong>
+                        {v4LiquiditySimulation
+                          ? `${v4LiquiditySimulation.leftoverToken1.toLocaleString(
+                              "en-US",
+                              { maximumFractionDigits: 8 }
+                            )} ${v4Position.token1Symbol}`
+                          : "—"}
+                      </strong>
+                    </div>
+                  </div>
+                  {v4LiquiditySimulation ? (
+                    <p className={styles.v3ManualHint}>
+                      Para balancear con el precio/rango actual: con{" "}
+                      {v4AddAmount0 || "0"} {v4Position.token0Symbol} harían
+                      falta aprox.{" "}
+                      {v4LiquiditySimulation.suggestedToken1.toLocaleString(
+                        "en-US",
+                        { maximumFractionDigits: 8 }
+                      )}{" "}
+                      {v4Position.token1Symbol}; con {v4AddAmount1 || "0"}{" "}
+                      {v4Position.token1Symbol} harían falta aprox.{" "}
+                      {v4LiquiditySimulation.suggestedToken0.toLocaleString(
+                        "en-US",
+                        { maximumFractionDigits: 8 }
+                      )}{" "}
+                      {v4Position.token0Symbol}.
+                    </p>
+                  ) : null}
+                </>
               ) : null}
               {v4Status ? <p className={styles.status}>{v4Status}</p> : null}
             </div>
