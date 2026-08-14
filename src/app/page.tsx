@@ -813,11 +813,17 @@ function simulateV4Liquidity(
   tickLower: number,
   tickUpper: number,
   token0Symbol: string,
-  token1Symbol: string
+  token1Symbol: string,
+  token0Decimals: number,
+  token1Decimals: number
 ): V4LiquiditySimulation {
   const sqrtCurrent = Math.sqrt(Math.pow(1.0001, tickCurrent));
   const sqrtLower = Math.sqrt(Math.pow(1.0001, tickLower));
   const sqrtUpper = Math.sqrt(Math.pow(1.0001, tickUpper));
+  const scale0 = 10 ** token0Decimals;
+  const scale1 = 10 ** token1Decimals;
+  const amount0Raw = amount0 * scale0;
+  const amount1Raw = amount1 * scale1;
   if (
     amount0 <= 0 ||
     amount1 <= 0 ||
@@ -839,7 +845,8 @@ function simulateV4Liquidity(
   }
 
   if (tickCurrent <= tickLower) {
-    const liquidity = (amount0 * sqrtLower * sqrtUpper) / (sqrtUpper - sqrtLower);
+    const liquidity =
+      (amount0Raw * sqrtLower * sqrtUpper) / (sqrtUpper - sqrtLower);
     return {
       liquidityFromToken0: liquidity,
       liquidityFromToken1: 0,
@@ -855,7 +862,7 @@ function simulateV4Liquidity(
   }
 
   if (tickCurrent >= tickUpper) {
-    const liquidity = amount1 / (sqrtUpper - sqrtLower);
+    const liquidity = amount1Raw / (sqrtUpper - sqrtLower);
     return {
       liquidityFromToken0: 0,
       liquidityFromToken1: liquidity,
@@ -871,13 +878,19 @@ function simulateV4Liquidity(
   }
 
   const liquidityFromToken0 =
-    (amount0 * sqrtCurrent * sqrtUpper) / (sqrtUpper - sqrtCurrent);
-  const liquidityFromToken1 = amount1 / (sqrtCurrent - sqrtLower);
+    (amount0Raw * sqrtCurrent * sqrtUpper) / (sqrtUpper - sqrtCurrent);
+  const liquidityFromToken1 = amount1Raw / (sqrtCurrent - sqrtLower);
   const liquidityToAdd = Math.min(liquidityFromToken0, liquidityFromToken1);
-  const usedToken0 =
+  const usedToken0Raw =
     (liquidityToAdd * (sqrtUpper - sqrtCurrent)) /
     (sqrtCurrent * sqrtUpper);
-  const usedToken1 = liquidityToAdd * (sqrtCurrent - sqrtLower);
+  const usedToken1Raw = liquidityToAdd * (sqrtCurrent - sqrtLower);
+  const suggestedToken0Raw =
+    (amount1Raw / (sqrtCurrent - sqrtLower)) *
+    ((sqrtUpper - sqrtCurrent) / (sqrtCurrent * sqrtUpper));
+  const suggestedToken1Raw =
+    ((amount0Raw * sqrtCurrent * sqrtUpper) / (sqrtUpper - sqrtCurrent)) *
+    (sqrtCurrent - sqrtLower);
 
   return {
     liquidityFromToken0,
@@ -885,16 +898,12 @@ function simulateV4Liquidity(
     liquidityToAdd,
     limitingToken:
       liquidityFromToken0 <= liquidityFromToken1 ? token0Symbol : token1Symbol,
-    usedToken0,
-    usedToken1,
-    leftoverToken0: Math.max(amount0 - usedToken0, 0),
-    leftoverToken1: Math.max(amount1 - usedToken1, 0),
-    suggestedToken0:
-      (amount1 / (sqrtCurrent - sqrtLower)) *
-      ((sqrtUpper - sqrtCurrent) / (sqrtCurrent * sqrtUpper)),
-    suggestedToken1:
-      ((amount0 * sqrtCurrent * sqrtUpper) / (sqrtUpper - sqrtCurrent)) *
-      (sqrtCurrent - sqrtLower)
+    usedToken0: usedToken0Raw / scale0,
+    usedToken1: usedToken1Raw / scale1,
+    leftoverToken0: Math.max(amount0 - usedToken0Raw / scale0, 0),
+    leftoverToken1: Math.max(amount1 - usedToken1Raw / scale1, 0),
+    suggestedToken0: suggestedToken0Raw / scale0,
+    suggestedToken1: suggestedToken1Raw / scale1
   };
 }
 
@@ -1352,7 +1361,9 @@ export default function Home() {
       v4Position.tickLower,
       v4Position.tickUpper,
       v4Position.token0Symbol,
-      v4Position.token1Symbol
+      v4Position.token1Symbol,
+      v4Position.token0Decimals,
+      v4Position.token1Decimals
     );
   }, [v4AddAmount0, v4AddAmount1, v4Position]);
 
