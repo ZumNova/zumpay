@@ -161,10 +161,10 @@ type V4GasEstimate = {
 };
 
 type V4LiquidityChange = {
-  before: string;
-  after: string;
-  delta: string;
-  txHash: string;
+  beforeValue: number;
+  afterValue: number;
+  deltaValue: number;
+  currency: string;
 };
 
 type V4ValueEstimate = {
@@ -1125,6 +1125,26 @@ function v4NativeValue(
     return amount1Raw;
   }
   return BigInt(0);
+}
+
+function estimateV4ValueFromLiquidity(
+  liquidity: bigint,
+  referenceLiquidity: string,
+  referenceValue: number
+) {
+  const reference = Number(referenceLiquidity);
+  const current = Number(liquidity);
+  if (
+    reference <= 0 ||
+    current < 0 ||
+    !Number.isFinite(reference) ||
+    !Number.isFinite(current) ||
+    !Number.isFinite(referenceValue)
+  ) {
+    return 0;
+  }
+
+  return referenceValue * (current / reference);
 }
 
 function normalizeV4Currency(value: string) {
@@ -3223,12 +3243,18 @@ export default function Home() {
     let liquidityBefore = BigInt(0);
     try {
       setV4AddingLiquidity(true);
+      setV4LastTxHash("");
+      setV4LiquidityChange(null);
       if (!v4Position) {
         setV4Status("Primero leé el NFT V4.");
         return;
       }
       if (v4GasEstimate?.status !== "ok") {
         setV4Status("Primero necesitás una estimación de gas V4 en verde.");
+        return;
+      }
+      if (!v4ValueEstimate) {
+        setV4Status("Primero necesitás una valuación V4 visible.");
         return;
       }
 
@@ -3280,11 +3306,21 @@ export default function Home() {
         liquidityAfter > liquidityBefore
           ? liquidityAfter - liquidityBefore
           : BigInt(0);
+      const beforeValue = estimateV4ValueFromLiquidity(
+        liquidityBefore,
+        v4Position.liquidity,
+        v4ValueEstimate.currentValue
+      );
+      const afterValue = estimateV4ValueFromLiquidity(
+        liquidityAfter,
+        v4Position.liquidity,
+        v4ValueEstimate.currentValue
+      );
       const liquidityChange = {
-        before: liquidityBefore.toString(),
-        after: liquidityAfter.toString(),
-        delta: delta.toString(),
-        txHash: tx.hash
+        beforeValue,
+        afterValue,
+        deltaValue: Math.max(afterValue - beforeValue, 0),
+        currency: v4ValueEstimate.currency
       };
       setV4Status(
         delta > BigInt(0)
@@ -3311,17 +3347,28 @@ export default function Home() {
               liquidityAfter > liquidityBefore
                 ? liquidityAfter - liquidityBefore
                 : BigInt(0);
-            setV4LiquidityChange({
-              before: liquidityBefore.toString(),
-              after: liquidityAfter.toString(),
-              delta: delta.toString(),
-              txHash: timeoutHash
-            });
+            if (v4ValueEstimate) {
+              const beforeValue = estimateV4ValueFromLiquidity(
+                liquidityBefore,
+                v4Position.liquidity,
+                v4ValueEstimate.currentValue
+              );
+              const afterValue = estimateV4ValueFromLiquidity(
+                liquidityAfter,
+                v4Position.liquidity,
+                v4ValueEstimate.currentValue
+              );
+              setV4LiquidityChange({
+                beforeValue,
+                afterValue,
+                deltaValue: Math.max(afterValue - beforeValue, 0),
+                currency: v4ValueEstimate.currency
+              });
+            }
             if (delta > BigInt(0)) {
               setV4Status(
                 `La app no vio la confirmación, pero la liquidez del NFT #${v4Position.tokenId} aumentó.`
               );
-              setV4LastTxHash(timeoutHash);
               return;
             }
           }
@@ -5129,18 +5176,31 @@ export default function Home() {
                   {v4LiquidityChange ? (
                     <div className={styles.v4LiquidityChange}>
                       <div>
-                        <span>Antes</span>
-                        <strong>{v4LiquidityChange.before}</strong>
-                      </div>
-                      <div>
-                        <span>Después</span>
-                        <strong>{v4LiquidityChange.after}</strong>
-                      </div>
-                      <div>
-                        <span>Cambio</span>
+                        <span>Valor antes</span>
                         <strong>
-                          {BigInt(v4LiquidityChange.delta) > BigInt(0)
-                            ? `+${v4LiquidityChange.delta}`
+                          {formatV4Value(
+                            v4LiquidityChange.beforeValue,
+                            v4LiquidityChange.currency
+                          )}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Valor después</span>
+                        <strong>
+                          {formatV4Value(
+                            v4LiquidityChange.afterValue,
+                            v4LiquidityChange.currency
+                          )}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Valor agregado</span>
+                        <strong>
+                          {v4LiquidityChange.deltaValue > 0
+                            ? `+${formatV4Value(
+                                v4LiquidityChange.deltaValue,
+                                v4LiquidityChange.currency
+                              )}`
                             : "Sin cambio"}
                         </strong>
                       </div>
