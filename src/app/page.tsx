@@ -160,6 +160,15 @@ type V4GasEstimate = {
   detail: string;
 };
 
+type V4LiquidityCall = {
+  signer: ethers.Signer;
+  provider: ethers.Provider;
+  manager: ethers.Contract;
+  unlockData: string;
+  deadline: bigint;
+  value: bigint;
+};
+
 type InjectedEthereum = {
   request: (args: {
     method: string;
@@ -1343,6 +1352,7 @@ export default function Home() {
   const [v4GasEstimate, setV4GasEstimate] = useState<V4GasEstimate | null>(
     null
   );
+  const [v4AddingLiquidity, setV4AddingLiquidity] = useState(false);
 
   const network = useMemo(
     () => NETWORKS.find((item) => item.key === networkKey) ?? NETWORKS[0],
@@ -3013,58 +3023,71 @@ export default function Home() {
     }
   };
 
+  const prepareV4LiquidityCall = async (): Promise<V4LiquidityCall | null> => {
+    if (!v4Position) {
+      setV4Status("Primero leé el NFT V4.");
+      return null;
+    }
+
+    const amount0Raw = parseTokenUnits(
+      v4AddAmount0,
+      v4Position.token0Decimals
+    );
+    const amount1Raw = parseTokenUnits(
+      v4AddAmount1,
+      v4Position.token1Decimals
+    );
+    const liquidityRaw = estimatedV4LiquidityRaw(v4LiquiditySimulation);
+    if (
+      amount0Raw <= BigInt(0) ||
+      amount1Raw <= BigInt(0) ||
+      liquidityRaw <= BigInt(0)
+    ) {
+      setV4Status("Ingresá montos válidos antes de operar V4.");
+      return null;
+    }
+
+    const signer = await getV3Signer("robinhood");
+    const owner = await signer.getAddress();
+    const manager = new ethers.Contract(
+      V4_ROBINHOOD_CONTRACTS.positionManager,
+      V4_POSITION_MANAGER_VIEW_ABI,
+      signer
+    );
+    const amount0Max = addV4AmountBuffer(amount0Raw);
+    const amount1Max = addV4AmountBuffer(amount1Raw);
+    const unlockData = encodeV4IncreaseLiquidityData(
+      v4Position,
+      liquidityRaw,
+      amount0Max,
+      amount1Max,
+      owner
+    );
+    const value = v4NativeValue(v4Position, amount0Max, amount1Max);
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
+    if (!signer.provider) {
+      throw new Error("MetaMask no devolvió provider para Robinhood.");
+    }
+
+    return { signer, provider: signer.provider, manager, unlockData, deadline, value };
+  };
+
   const handleV4EstimateGas = async () => {
     try {
       setV4EstimatingGas(true);
       setV4GasEstimate(null);
-      if (!v4Position) {
-        setV4Status("Primero leé el NFT V4.");
-        return;
-      }
-
-      const amount0Raw = parseTokenUnits(
-        v4AddAmount0,
-        v4Position.token0Decimals
-      );
-      const amount1Raw = parseTokenUnits(
-        v4AddAmount1,
-        v4Position.token1Decimals
-      );
-      const liquidityRaw = estimatedV4LiquidityRaw(v4LiquiditySimulation);
-      if (
-        amount0Raw <= BigInt(0) ||
-        amount1Raw <= BigInt(0) ||
-        liquidityRaw <= BigInt(0)
-      ) {
-        setV4Status("Ingresá montos válidos antes de estimar gas.");
+      const prepared = await prepareV4LiquidityCall();
+      if (!prepared) {
         return;
       }
 
       setV4Status("Estimando gas V4. No se firma ni se envía transacción.");
-      const signer = await getV3Signer("robinhood");
-      const owner = await signer.getAddress();
-      const manager = new ethers.Contract(
-        V4_ROBINHOOD_CONTRACTS.positionManager,
-        V4_POSITION_MANAGER_VIEW_ABI,
-        signer
-      );
-      const amount0Max = addV4AmountBuffer(amount0Raw);
-      const amount1Max = addV4AmountBuffer(amount1Raw);
-      const unlockData = encodeV4IncreaseLiquidityData(
-        v4Position,
-        liquidityRaw,
-        amount0Max,
-        amount1Max,
-        owner
-      );
-      const value = v4NativeValue(v4Position, amount0Max, amount1Max);
-      const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
-      const gas = (await manager.modifyLiquidities.estimateGas(
-        unlockData,
-        deadline,
-        { value }
+      const gas = (await prepared.manager.modifyLiquidities.estimateGas(
+        prepared.unlockData,
+        prepared.deadline,
+        { value: prepared.value }
       )) as bigint;
-      const feeData = await signer.provider.getFeeData();
+      const feeData = await prepared.provider.getFeeData();
       const gasPrice =
         feeData.maxFeePerGas ?? feeData.gasPrice ?? BigInt(0);
       const estimatedCost = gasPrice > BigInt(0) ? gas * gasPrice : BigInt(0);
@@ -3115,6 +3138,69 @@ export default function Home() {
       setV4Status("No se pudo estimar gas V4. No firmes todavía.");
     } finally {
       setV4EstimatingGas(false);
+    }
+  };
+
+  const handleV4AddLiquidity = async () => {
+    try {
+      setV4AddingLiquidity(true);
+      if (!v4Position) {
+        setV4Status("Primero leé el NFT V4.");
+        return;
+      }
+      if (v4GasEstimate?.status !== "ok") {
+        setV4Status("Primero necesitás una estimación de gas V4 en verde.");
+        return;
+      }
+
+      setV4Status(
+        `Preparando operación real: agregar liquidez al NFT #${v4Position.tokenId}.`
+      );
+      const prepared = await prepareV4LiquidityCall();
+      if (!prepared) {
+        return;
+      }
+
+      const gas = (await prepared.manager.modifyLiquidities.estimateGas(
+        prepared.unlockData,
+        prepared.deadline,
+        { value: prepared.value }
+      )) as bigint;
+      if (gas > V4_MAX_REASONABLE_GAS) {
+        setV4GasEstimate({
+          status: gas > V4_DANGER_GAS ? "error" : "warn",
+          title: gas > V4_DANGER_GAS ? "Gas bloqueado" : "Gas alto",
+          detail: `${formatGasUnits(
+            gas
+          )} unidades antes de firmar. Operación detenida.`
+        });
+        setV4Status("Gas V4 dejó de estar normal. No se abrió firma.");
+        return;
+      }
+
+      setV4Status(
+        `MetaMask va a pedir firma real para agregar liquidez al NFT #${v4Position.tokenId}.`
+      );
+      const tx = await prepared.manager.modifyLiquidities(
+        prepared.unlockData,
+        prepared.deadline,
+        { value: prepared.value }
+      );
+      setV4Status(`Transacción enviada: ${tx.hash.slice(0, 10)}...`);
+      await waitForV3Receipt(tx.hash, "robinhood");
+      setV4Status(
+        `Liquidez V4 agregada al NFT #${v4Position.tokenId}. Refrescando estado.`
+      );
+      await handleV4ReadPosition();
+    } catch (error) {
+      console.error(error);
+      setV4Status(
+        error instanceof Error
+          ? `No se pudo agregar liquidez V4: ${describeV4EstimateError(error)}`
+          : "No se pudo agregar liquidez V4."
+      );
+    } finally {
+      setV4AddingLiquidity(false);
     }
   };
 
@@ -4839,6 +4925,19 @@ export default function Home() {
                       <span>{v4GasEstimate.detail}</span>
                     </div>
                   ) : null}
+                  <button
+                    className={styles.primary}
+                    onClick={handleV4AddLiquidity}
+                    disabled={
+                      isLocked ||
+                      v4AddingLiquidity ||
+                      v4GasEstimate?.status !== "ok"
+                    }
+                  >
+                    {v4AddingLiquidity
+                      ? "Agregando liquidez..."
+                      : `Agregar liquidez real al NFT #${v4Position.tokenId}`}
+                  </button>
                 </>
               ) : null}
               {v4Status ? <p className={styles.status}>{v4Status}</p> : null}
