@@ -148,6 +148,12 @@ type V4LiquiditySimulation = {
   suggestedToken1: number;
 };
 
+type V4PreflightCheck = {
+  label: string;
+  value: string;
+  ok: boolean;
+};
+
 type InjectedEthereum = {
   request: (args: {
     method: string;
@@ -761,6 +767,14 @@ function parseHumanAmount(value: string) {
   return Number(value.replace(",", "."));
 }
 
+function parseTokenUnits(value: string, decimals: number) {
+  const normalized = value.trim().replace(",", ".");
+  if (!normalized) {
+    return BigInt(0);
+  }
+  return ethers.parseUnits(normalized, decimals);
+}
+
 function formatTokenInputAmount(value: number, symbol: string) {
   if (!Number.isFinite(value) || value <= 0) {
     return "";
@@ -1219,6 +1233,10 @@ export default function Home() {
   const [v4ReadingPosition, setV4ReadingPosition] = useState(false);
   const [v4AddAmount0, setV4AddAmount0] = useState("");
   const [v4AddAmount1, setV4AddAmount1] = useState("");
+  const [v4Preflighting, setV4Preflighting] = useState(false);
+  const [v4PreflightChecks, setV4PreflightChecks] = useState<
+    V4PreflightCheck[]
+  >([]);
 
   const network = useMemo(
     () => NETWORKS.find((item) => item.key === networkKey) ?? NETWORKS[0],
@@ -2633,6 +2651,7 @@ export default function Home() {
     try {
       setV4ReadingPosition(true);
       setV4Status("Leyendo NFT V4 en Robinhood.");
+      setV4PreflightChecks([]);
       const tokenId = v4TokenId.trim();
       if (!/^\d+$/.test(tokenId)) {
         setV4Status("Ingresá un tokenId V4 válido.");
@@ -2747,6 +2766,142 @@ export default function Home() {
       );
     } finally {
       setV4ReadingPosition(false);
+    }
+  };
+
+  const handleV4TwoTokenPreflight = async () => {
+    try {
+      setV4Preflighting(true);
+      setV4PreflightChecks([]);
+      if (!v4Position) {
+        setV4Status("Primero leé el NFT V4.");
+        return;
+      }
+
+      const amount0Raw = parseTokenUnits(
+        v4AddAmount0,
+        v4Position.token0Decimals
+      );
+      const amount1Raw = parseTokenUnits(
+        v4AddAmount1,
+        v4Position.token1Decimals
+      );
+      if (amount0Raw <= BigInt(0) || amount1Raw <= BigInt(0)) {
+        setV4Status("Ingresá montos mayores a cero para los dos tokens.");
+        return;
+      }
+
+      setV4Status("Probando entrada V4 con dos tokens. Solo lectura.");
+      const signer = await getV3Signer("robinhood");
+      const owner = await signer.getAddress();
+      const signerProvider = signer.provider;
+      const manager = new ethers.Contract(
+        V4_ROBINHOOD_CONTRACTS.positionManager,
+        V4_POSITION_MANAGER_VIEW_ABI,
+        signerProvider
+      );
+      const nftOwner = (await manager.ownerOf(v4Position.tokenId)) as string;
+
+      const readBalance = async (currency: string): Promise<bigint> => {
+        if (currency.toLowerCase() === ZERO_ADDRESS) {
+          return signerProvider.getBalance(owner);
+        }
+        const token = new ethers.Contract(currency, ERC20_ABI, signerProvider);
+        return (await token.balanceOf(owner)) as bigint;
+      };
+
+      const readAllowance = async (
+        currency: string,
+        decimals: number
+      ): Promise<{ raw: bigint; label: string }> => {
+        if (currency.toLowerCase() === ZERO_ADDRESS) {
+          return { raw: amount0Raw + amount1Raw, label: "No requiere approve" };
+        }
+        const token = new ethers.Contract(currency, ERC20_ABI, signerProvider);
+        const allowance = (await token.allowance(
+          owner,
+          V4_ROBINHOOD_CONTRACTS.permit2
+        )) as bigint;
+        return {
+          raw: allowance,
+          label: `${formatV3RawAmount(allowance, decimals)} aprobado hacia Permit2`
+        };
+      };
+
+      const [balance0, balance1, allowance0, allowance1] = await Promise.all([
+        readBalance(v4Position.currency0),
+        readBalance(v4Position.currency1),
+        readAllowance(v4Position.currency0, v4Position.token0Decimals),
+        readAllowance(v4Position.currency1, v4Position.token1Decimals)
+      ]);
+
+      const checks: V4PreflightCheck[] = [
+        {
+          label: "Wallet",
+          value: shortAddress(owner),
+          ok: true
+        },
+        {
+          label: "Dueño NFT",
+          value:
+            nftOwner.toLowerCase() === owner.toLowerCase()
+              ? `OK ${shortAddress(nftOwner)}`
+              : `No coincide: ${shortAddress(nftOwner)}`,
+          ok: nftOwner.toLowerCase() === owner.toLowerCase()
+        },
+        {
+          label: `Saldo ${v4Position.token0Symbol}`,
+          value: `${formatV3RawAmount(
+            balance0,
+            v4Position.token0Decimals
+          )} / necesita ${formatHumanTokenAmount(
+            parseHumanAmount(v4AddAmount0) || 0,
+            v4Position.token0Symbol
+          )}`,
+          ok: balance0 >= amount0Raw
+        },
+        {
+          label: `Saldo ${v4Position.token1Symbol}`,
+          value: `${formatV3RawAmount(
+            balance1,
+            v4Position.token1Decimals
+          )} / necesita ${formatHumanTokenAmount(
+            parseHumanAmount(v4AddAmount1) || 0,
+            v4Position.token1Symbol
+          )}`,
+          ok: balance1 >= amount1Raw
+        },
+        {
+          label: `Permiso ${v4Position.token0Symbol}`,
+          value: allowance0.label,
+          ok:
+            v4Position.currency0.toLowerCase() === ZERO_ADDRESS ||
+            allowance0.raw >= amount0Raw
+        },
+        {
+          label: `Permiso ${v4Position.token1Symbol}`,
+          value: allowance1.label,
+          ok:
+            v4Position.currency1.toLowerCase() === ZERO_ADDRESS ||
+            allowance1.raw >= amount1Raw
+        }
+      ];
+
+      setV4PreflightChecks(checks);
+      setV4Status(
+        checks.every((item) => item.ok)
+          ? "Prueba dos tokens OK. Siguiente paso: estimar gas real de agregar liquidez."
+          : "Prueba dos tokens incompleta. Revisá los puntos marcados."
+      );
+    } catch (error) {
+      console.error(error);
+      setV4Status(
+        error instanceof Error
+          ? `No se pudo probar V4: ${error.message}`
+          : "No se pudo probar V4."
+      );
+    } finally {
+      setV4Preflighting(false);
     }
   };
 
@@ -4419,6 +4574,33 @@ export default function Home() {
                           {v4Position.token0Symbol}.
                         </small>
                       </div>
+                    </div>
+                  ) : null}
+                  <button
+                    className={styles.secondary}
+                    onClick={handleV4TwoTokenPreflight}
+                    disabled={isLocked || v4Preflighting}
+                  >
+                    {v4Preflighting
+                      ? "Probando..."
+                      : "Probar dos tokens"}
+                  </button>
+                  {v4PreflightChecks.length > 0 ? (
+                    <div className={styles.v4PreflightGrid}>
+                      {v4PreflightChecks.map((check) => (
+                        <div
+                          key={check.label}
+                          className={
+                            check.ok
+                              ? styles.v4PreflightOk
+                              : styles.v4PreflightWarn
+                          }
+                        >
+                          <span>{check.ok ? "OK" : "Revisar"}</span>
+                          <strong>{check.label}</strong>
+                          <small>{check.value}</small>
+                        </div>
+                      ))}
                     </div>
                   ) : null}
                 </>
