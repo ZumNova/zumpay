@@ -4271,75 +4271,10 @@ export default function Home() {
                       />
                     </div>
                   </div>
-                  <div className={styles.v3MetricGrid}>
-                    <div>
-                      <span>Liquidez simulada</span>
-                      <strong>
-                        {v4LiquiditySimulation
-                          ? v4LiquiditySimulation.liquidityToAdd.toLocaleString(
-                              "en-US",
-                              { maximumFractionDigits: 4 }
-                            )
-                          : "—"}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>Token limitante</span>
-                      <strong>
-                        {v4LiquiditySimulation
-                          ? v4LiquiditySimulation.limitingToken
-                          : "—"}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>Usaría</span>
-                      <strong>
-                        {v4LiquiditySimulation
-                          ? `${formatHumanTokenAmount(
-                              v4LiquiditySimulation.usedToken0,
-                              v4Position.token0Symbol
-                            )} ${v4Position.token0Symbol}`
-                          : "—"}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>Usaría</span>
-                      <strong>
-                        {v4LiquiditySimulation
-                          ? `${formatHumanTokenAmount(
-                              v4LiquiditySimulation.usedToken1,
-                              v4Position.token1Symbol
-                            )} ${v4Position.token1Symbol}`
-                          : "—"}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>Sobrante</span>
-                      <strong>
-                        {v4LiquiditySimulation
-                          ? `${formatHumanTokenAmount(
-                              v4LiquiditySimulation.leftoverToken0,
-                              v4Position.token0Symbol
-                            )} ${v4Position.token0Symbol}`
-                          : "—"}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>Sobrante</span>
-                      <strong>
-                        {v4LiquiditySimulation
-                          ? `${formatHumanTokenAmount(
-                              v4LiquiditySimulation.leftoverToken1,
-                              v4Position.token1Symbol
-                            )} ${v4Position.token1Symbol}`
-                          : "—"}
-                      </strong>
-                    </div>
-                  </div>
                   {v4LiquiditySimulation ? (
-                    <div className={styles.v3MetricGrid}>
+                    <div className={styles.v4BalanceGrid}>
                       <div>
-                        <span>Balancear desde {v4Position.token0Symbol}</span>
+                        <span>Desde {v4Position.token0Symbol}</span>
                         <strong>
                           {formatHumanTokenAmount(
                             Number(v4AddAmount0) || 0,
@@ -4352,9 +4287,13 @@ export default function Home() {
                           )}{" "}
                           {v4Position.token1Symbol}
                         </strong>
+                        <small>
+                          Carga {v4Position.token0Symbol}; Zumpay calcula el{" "}
+                          {v4Position.token1Symbol} necesario.
+                        </small>
                       </div>
                       <div>
-                        <span>Balancear desde {v4Position.token1Symbol}</span>
+                        <span>Desde {v4Position.token1Symbol}</span>
                         <strong>
                           {formatHumanTokenAmount(
                             v4LiquiditySimulation.suggestedToken0,
@@ -4367,6 +4306,10 @@ export default function Home() {
                           )}{" "}
                           {v4Position.token1Symbol}
                         </strong>
+                        <small>
+                          Carga {v4Position.token1Symbol}; Zumpay calcula el{" "}
+                          {v4Position.token0Symbol} necesario.
+                        </small>
                       </div>
                     </div>
                   ) : null}
