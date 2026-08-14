@@ -763,6 +763,13 @@ function formatHumanTokenAmount(value: number, symbol: string) {
   });
 }
 
+function formatV4Price(value: number, token0Symbol: string, token1Symbol: string) {
+  return `${value.toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2
+  })} ${token1Symbol} por ${token0Symbol}`;
+}
+
 function parseHumanAmount(value: string) {
   return Number(value.replace(",", "."));
 }
@@ -4446,9 +4453,11 @@ export default function Home() {
                   <span>Precio</span>
                   <strong>
                     {v4Result
-                      ? v4Result.price.toLocaleString("en-US", {
-                          maximumFractionDigits: 8
-                        })
+                      ? formatV4Price(
+                          v4Result.price,
+                          v4Result.token0Symbol,
+                          v4Result.token1Symbol
+                        )
                       : "—"}
                   </strong>
                 </div>
@@ -4526,6 +4535,15 @@ export default function Home() {
                       />
                     </div>
                   </div>
+                  <button
+                    className={styles.primary}
+                    onClick={handleV4TwoTokenPreflight}
+                    disabled={isLocked || v4Preflighting}
+                  >
+                    {v4Preflighting
+                      ? "Probando balances..."
+                      : "Probar balances y permisos"}
+                  </button>
                   {v4LiquiditySimulation ? (
                     <div className={styles.v4BalanceGrid}>
                       <div>
@@ -4576,15 +4594,6 @@ export default function Home() {
                       </div>
                     </div>
                   ) : null}
-                  <button
-                    className={styles.secondary}
-                    onClick={handleV4TwoTokenPreflight}
-                    disabled={isLocked || v4Preflighting}
-                  >
-                    {v4Preflighting
-                      ? "Probando..."
-                      : "Probar dos tokens"}
-                  </button>
                   {v4PreflightChecks.length > 0 ? (
                     <div className={styles.v4PreflightGrid}>
                       {v4PreflightChecks.map((check) => (
