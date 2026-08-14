@@ -747,6 +747,16 @@ function formatV3RawAmount(value: bigint, decimals: number) {
   });
 }
 
+function formatHumanTokenAmount(value: number, symbol: string) {
+  const upper = symbol.toUpperCase();
+  const maximumFractionDigits =
+    upper === "ETH" || upper === "WETH" || value < 1 ? 6 : 2;
+  return value.toLocaleString("en-US", {
+    maximumFractionDigits,
+    minimumFractionDigits: value > 0 && value < 1 ? 4 : 0
+  });
+}
+
 function formatZumAmount(value: bigint) {
   return ethers
     .formatUnits(value, 18)
@@ -4285,9 +4295,9 @@ export default function Home() {
                       <span>Usaría</span>
                       <strong>
                         {v4LiquiditySimulation
-                          ? `${v4LiquiditySimulation.usedToken0.toLocaleString(
-                              "en-US",
-                              { maximumFractionDigits: 8 }
+                          ? `${formatHumanTokenAmount(
+                              v4LiquiditySimulation.usedToken0,
+                              v4Position.token0Symbol
                             )} ${v4Position.token0Symbol}`
                           : "—"}
                       </strong>
@@ -4296,9 +4306,9 @@ export default function Home() {
                       <span>Usaría</span>
                       <strong>
                         {v4LiquiditySimulation
-                          ? `${v4LiquiditySimulation.usedToken1.toLocaleString(
-                              "en-US",
-                              { maximumFractionDigits: 8 }
+                          ? `${formatHumanTokenAmount(
+                              v4LiquiditySimulation.usedToken1,
+                              v4Position.token1Symbol
                             )} ${v4Position.token1Symbol}`
                           : "—"}
                       </strong>
@@ -4307,9 +4317,9 @@ export default function Home() {
                       <span>Sobrante</span>
                       <strong>
                         {v4LiquiditySimulation
-                          ? `${v4LiquiditySimulation.leftoverToken0.toLocaleString(
-                              "en-US",
-                              { maximumFractionDigits: 8 }
+                          ? `${formatHumanTokenAmount(
+                              v4LiquiditySimulation.leftoverToken0,
+                              v4Position.token0Symbol
                             )} ${v4Position.token0Symbol}`
                           : "—"}
                       </strong>
@@ -4318,31 +4328,47 @@ export default function Home() {
                       <span>Sobrante</span>
                       <strong>
                         {v4LiquiditySimulation
-                          ? `${v4LiquiditySimulation.leftoverToken1.toLocaleString(
-                              "en-US",
-                              { maximumFractionDigits: 8 }
+                          ? `${formatHumanTokenAmount(
+                              v4LiquiditySimulation.leftoverToken1,
+                              v4Position.token1Symbol
                             )} ${v4Position.token1Symbol}`
                           : "—"}
                       </strong>
                     </div>
                   </div>
                   {v4LiquiditySimulation ? (
-                    <p className={styles.v3ManualHint}>
-                      Para balancear con el precio/rango actual: con{" "}
-                      {v4AddAmount0 || "0"} {v4Position.token0Symbol} harían
-                      falta aprox.{" "}
-                      {v4LiquiditySimulation.suggestedToken1.toLocaleString(
-                        "en-US",
-                        { maximumFractionDigits: 8 }
-                      )}{" "}
-                      {v4Position.token1Symbol}; con {v4AddAmount1 || "0"}{" "}
-                      {v4Position.token1Symbol} harían falta aprox.{" "}
-                      {v4LiquiditySimulation.suggestedToken0.toLocaleString(
-                        "en-US",
-                        { maximumFractionDigits: 8 }
-                      )}{" "}
-                      {v4Position.token0Symbol}.
-                    </p>
+                    <div className={styles.v3MetricGrid}>
+                      <div>
+                        <span>Balancear desde {v4Position.token0Symbol}</span>
+                        <strong>
+                          {formatHumanTokenAmount(
+                            Number(v4AddAmount0) || 0,
+                            v4Position.token0Symbol
+                          )}{" "}
+                          {v4Position.token0Symbol} +{" "}
+                          {formatHumanTokenAmount(
+                            v4LiquiditySimulation.suggestedToken1,
+                            v4Position.token1Symbol
+                          )}{" "}
+                          {v4Position.token1Symbol}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Balancear desde {v4Position.token1Symbol}</span>
+                        <strong>
+                          {formatHumanTokenAmount(
+                            v4LiquiditySimulation.suggestedToken0,
+                            v4Position.token0Symbol
+                          )}{" "}
+                          {v4Position.token0Symbol} +{" "}
+                          {formatHumanTokenAmount(
+                            Number(v4AddAmount1) || 0,
+                            v4Position.token1Symbol
+                          )}{" "}
+                          {v4Position.token1Symbol}
+                        </strong>
+                      </div>
+                    </div>
                   ) : null}
                 </>
               ) : null}
