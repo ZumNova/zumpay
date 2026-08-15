@@ -1138,6 +1138,47 @@
   line-height: 1.45;
 }
 
+.v4QuickGuide,
+.v4Advanced {
+  margin-bottom: 16px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(12, 18, 32, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.v4QuickGuide {
+  display: grid;
+  gap: 6px;
+}
+
+.v4QuickGuide strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.v4QuickGuide span,
+.v4Advanced p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.v4Advanced summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.v4Advanced p {
+  margin: 10px 0 14px;
+}
+
+.v4Advanced .field:last-child {
+  margin-bottom: 0;
+}
+
 .v4PoolList {
   display: grid;
   gap: 10px;

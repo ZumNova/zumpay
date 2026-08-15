@@ -5221,53 +5221,82 @@ export default function Home() {
                   />
                 </div>
               </div>
-              <div className={styles.v3ManualGrid}>
-                <div className={styles.field}>
-                  <label>Fee</label>
-                  <input
-                    value={v4Fee}
-                    onChange={(event) => setV4Fee(event.target.value)}
-                    placeholder="500 / 3000 / 10000"
-                    inputMode="numeric"
-                  />
+              <div className={styles.v4QuickGuide}>
+                <strong>Uso normal</strong>
+                <span>
+                  Escanear multi-pool prueba las combinaciones conocidas. Cargar
+                  copia automaticamente el fee, spacing y hooks correctos.
+                </span>
+              </div>
+              <details className={styles.v4Advanced}>
+                <summary>PoolKey avanzado</summary>
+                <p>
+                  Solo hace falta tocar esto si queres buscar una pool exacta
+                  que no esta en la lista. En V4 estos valores identifican otra
+                  pool distinta.
+                </p>
+                <div className={styles.v3ManualGrid}>
+                  <div className={styles.field}>
+                    <label>Fee tier</label>
+                    <select
+                      value={v4Fee}
+                      onChange={(event) => {
+                        const selectedFee = event.target.value;
+                        setV4Fee(selectedFee);
+                        setV4TickSpacing(
+                          selectedFee === "500"
+                            ? "10"
+                            : selectedFee === "3000"
+                              ? "60"
+                              : "200"
+                        );
+                      }}
+                    >
+                      <option value="500">0.05% LP / spacing 10</option>
+                      <option value="3000">0.3% LP / spacing 60</option>
+                      <option value="10000">1% LP / spacing 200</option>
+                    </select>
+                  </div>
+                  <div className={styles.field}>
+                    <label>Tick spacing</label>
+                    <input
+                      value={v4TickSpacing}
+                      onChange={(event) =>
+                        setV4TickSpacing(event.target.value)
+                      }
+                      placeholder="10 / 60 / 200"
+                      inputMode="numeric"
+                    />
+                  </div>
                 </div>
                 <div className={styles.field}>
-                  <label>Tick spacing</label>
+                  <label>Hooks</label>
                   <input
-                    value={v4TickSpacing}
-                    onChange={(event) => setV4TickSpacing(event.target.value)}
-                    placeholder="10 / 60 / 200"
-                    inputMode="numeric"
+                    value={v4Hooks}
+                    onChange={(event) => setV4Hooks(event.target.value)}
+                    placeholder="0x000... si no tiene hooks"
                   />
                 </div>
-              </div>
-              <div className={styles.field}>
-                <label>Hooks</label>
-                <input
-                  value={v4Hooks}
-                  onChange={(event) => setV4Hooks(event.target.value)}
-                  placeholder="0x000... si no tiene hooks"
-                />
-              </div>
+              </details>
               <div className={styles.ctas}>
                 <button
                   className={styles.primary}
                   onClick={handleV4ScanPool}
                   disabled={v4Scanning || v4MultiScanning}
                 >
-                  {v4Scanning ? "Escaneando..." : "Escanear V4"}
+                  {v4Scanning ? "Escaneando..." : "Escanear pool cargada"}
                 </button>
                 <button
                   className={styles.outline}
                   onClick={handleV4ScanMultiplePools}
                   disabled={v4Scanning || v4MultiScanning}
                 >
-                  {v4MultiScanning ? "Barriendo..." : "Escanear multi-pool"}
+                  {v4MultiScanning ? "Barriendo..." : "Buscar pools conocidas"}
                 </button>
               </div>
               <p className={styles.v3ManualHint}>
-                En V4 el pool depende de token0, token1, fee, tick spacing y
-                hooks. Si cualquiera de esos datos cambia, el poolId cambia.
+                Tip: primero usa Buscar pools conocidas. Cuando una fila diga
+                Usable, toca Cargar y la app completa la PoolKey exacta.
               </p>
               <div className={styles.v4PoolList}>
                 {(v4MultiResults.length > 0
