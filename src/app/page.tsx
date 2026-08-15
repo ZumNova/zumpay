@@ -125,6 +125,24 @@ type V4ScanResult = {
   checkedAt: string;
 };
 
+type V4PoolCandidate = {
+  id: string;
+  label: string;
+  currencyA: string;
+  currencyB: string;
+  fee: number;
+  tickSpacing: number;
+  hooks: string;
+  note: string;
+};
+
+type V4MultiPoolScanResult = {
+  candidate: V4PoolCandidate;
+  result: V4ScanResult | null;
+  error: string | null;
+  checkedAt: string;
+};
+
 type V4PositionView = V4ScanResult & {
   tokenId: string;
   owner: string;
@@ -595,6 +613,69 @@ const V3_POOLS: V3Pool[] = [
     tick: 0,
     reserve: "Robinhood experimental",
     activity: "Diagnóstico"
+  }
+];
+
+const V4_ROBINHOOD_POOL_CANDIDATES: V4PoolCandidate[] = [
+  {
+    id: "rh-v4-weth-usdg-500",
+    label: "WETH/USDG",
+    currencyA: V3_TOKENS.robinhood.WETH.address,
+    currencyB: V3_TOKENS.robinhood.USDG.address,
+    fee: 500,
+    tickSpacing: 10,
+    hooks: ZERO_ADDRESS,
+    note: "Pool estable de baja fee"
+  },
+  {
+    id: "rh-v4-weth-usdg-3000",
+    label: "WETH/USDG",
+    currencyA: V3_TOKENS.robinhood.WETH.address,
+    currencyB: V3_TOKENS.robinhood.USDG.address,
+    fee: 3000,
+    tickSpacing: 60,
+    hooks: ZERO_ADDRESS,
+    note: "Fee media"
+  },
+  {
+    id: "rh-v4-spcx-usdg-3000",
+    label: "SPCX/USDG",
+    currencyA: V3_TOKENS.robinhood.SPCX.address,
+    currencyB: V3_TOKENS.robinhood.USDG.address,
+    fee: 3000,
+    tickSpacing: 60,
+    hooks: ZERO_ADDRESS,
+    note: "Token contra USDG"
+  },
+  {
+    id: "rh-v4-spcx-usdg-10000",
+    label: "SPCX/USDG",
+    currencyA: V3_TOKENS.robinhood.SPCX.address,
+    currencyB: V3_TOKENS.robinhood.USDG.address,
+    fee: 10000,
+    tickSpacing: 200,
+    hooks: ZERO_ADDRESS,
+    note: "Fee alta"
+  },
+  {
+    id: "rh-v4-weth-spcx-3000",
+    label: "WETH/SPCX",
+    currencyA: V3_TOKENS.robinhood.WETH.address,
+    currencyB: V3_TOKENS.robinhood.SPCX.address,
+    fee: 3000,
+    tickSpacing: 60,
+    hooks: ZERO_ADDRESS,
+    note: "Cruce volátil"
+  },
+  {
+    id: "rh-v4-eth-usdg-3000",
+    label: "ETH/USDG",
+    currencyA: ZERO_ADDRESS,
+    currencyB: V3_TOKENS.robinhood.USDG.address,
+    fee: 3000,
+    tickSpacing: 60,
+    hooks: ZERO_ADDRESS,
+    note: "Nativo contra USDG"
   }
 ];
 
@@ -1181,6 +1262,52 @@ function v4PoolId(
   );
 }
 
+async function scanV4Pool(
+  readProvider: ethers.Provider,
+  stateView: ethers.Contract,
+  currencyA: string,
+  currencyB: string,
+  fee: number,
+  tickSpacing: number,
+  hooksValue: string
+): Promise<V4ScanResult> {
+  const hooks = normalizeV4Currency(hooksValue || ZERO_ADDRESS);
+  const [currency0, currency1] = sortV4Currencies(currencyA, currencyB);
+  const poolId = v4PoolId(currency0, currency1, fee, tickSpacing, hooks);
+  const [meta0, meta1, slot0, liquidity] = await Promise.all([
+    readV4CurrencyMeta(readProvider, currency0, "TOKEN0"),
+    readV4CurrencyMeta(readProvider, currency1, "TOKEN1"),
+    stateView.getSlot0(poolId) as Promise<[bigint, bigint, bigint, bigint]>,
+    stateView.getLiquidity(poolId) as Promise<bigint>
+  ]);
+  const sqrtPriceX96 = slot0[0];
+  const tick = Number(slot0[1]);
+  const protocolFee = slot0[2];
+  const lpFee = slot0[3];
+  const active = sqrtPriceX96 > BigInt(0) && liquidity > BigInt(0);
+
+  return {
+    status: active ? "Activa" : "No activa",
+    poolId,
+    currency0,
+    currency1,
+    token0Symbol: meta0.symbol,
+    token1Symbol: meta1.symbol,
+    token0Decimals: meta0.decimals,
+    token1Decimals: meta1.decimals,
+    tick,
+    price: priceFromSqrtPriceX96(
+      sqrtPriceX96,
+      meta0.decimals,
+      meta1.decimals
+    ),
+    liquidity: liquidity.toString(),
+    lpFee: `${Number(lpFee) / 10000}%`,
+    protocolFee: protocolFee.toString(),
+    checkedAt: new Date().toLocaleTimeString()
+  };
+}
+
 async function readV4CurrencyMeta(
   provider: ethers.Provider,
   address: string,
@@ -1401,6 +1528,10 @@ export default function Home() {
   const [v4Hooks, setV4Hooks] = useState(ZERO_ADDRESS);
   const [v4Result, setV4Result] = useState<V4ScanResult | null>(null);
   const [v4Scanning, setV4Scanning] = useState(false);
+  const [v4MultiScanning, setV4MultiScanning] = useState(false);
+  const [v4MultiResults, setV4MultiResults] = useState<
+    V4MultiPoolScanResult[]
+  >([]);
   const [v4Status, setV4Status] = useState("");
   const [v4TokenId, setV4TokenId] = useState("475983");
   const [v4Position, setV4Position] = useState<V4PositionView | null>(null);
@@ -2799,9 +2930,6 @@ export default function Home() {
         return;
       }
 
-      const hooks = normalizeV4Currency(v4Hooks || ZERO_ADDRESS);
-      const [currency0, currency1] = sortV4Currencies(v4CurrencyA, v4CurrencyB);
-      const poolId = v4PoolId(currency0, currency1, fee, tickSpacing, hooks);
       const readProvider = v3Provider("robinhood");
       const stateView = new ethers.Contract(
         V4_ROBINHOOD_CONTRACTS.stateView,
@@ -2809,38 +2937,15 @@ export default function Home() {
         readProvider
       );
 
-      const [meta0, meta1, slot0, liquidity] = await Promise.all([
-        readV4CurrencyMeta(readProvider, currency0, "TOKEN0"),
-        readV4CurrencyMeta(readProvider, currency1, "TOKEN1"),
-        stateView.getSlot0(poolId) as Promise<[bigint, bigint, bigint, bigint]>,
-        stateView.getLiquidity(poolId) as Promise<bigint>
-      ]);
-      const sqrtPriceX96 = slot0[0];
-      const tick = Number(slot0[1]);
-      const protocolFee = slot0[2];
-      const lpFee = slot0[3];
-      const active = sqrtPriceX96 > BigInt(0) && liquidity > BigInt(0);
-
-      const result: V4ScanResult = {
-        status: active ? "Activa" : "No activa",
-        poolId,
-        currency0,
-        currency1,
-        token0Symbol: meta0.symbol,
-        token1Symbol: meta1.symbol,
-        token0Decimals: meta0.decimals,
-        token1Decimals: meta1.decimals,
-        tick,
-        price: priceFromSqrtPriceX96(
-          sqrtPriceX96,
-          meta0.decimals,
-          meta1.decimals
-        ),
-        liquidity: liquidity.toString(),
-        lpFee: `${Number(lpFee) / 10000}%`,
-        protocolFee: protocolFee.toString(),
-        checkedAt: new Date().toLocaleTimeString()
-      };
+      const result = await scanV4Pool(
+        readProvider,
+        stateView,
+        v4CurrencyA,
+        v4CurrencyB,
+        fee,
+        tickSpacing,
+        v4Hooks
+      );
       setV4Result(result);
       setV4Status(
         `V4 ${result.status}: ${result.token0Symbol}/${result.token1Symbol}.`
@@ -2856,6 +2961,94 @@ export default function Home() {
     } finally {
       setV4Scanning(false);
     }
+  };
+
+  const handleV4ScanMultiplePools = async () => {
+    try {
+      setV4MultiScanning(true);
+      setV4MultiResults([]);
+      setV4Status("Escaneando pools V4 predefinidas en Robinhood.");
+      const readProvider = v3Provider("robinhood");
+      const stateView = new ethers.Contract(
+        V4_ROBINHOOD_CONTRACTS.stateView,
+        V4_STATE_VIEW_ABI,
+        readProvider
+      );
+      const scannedAt = new Date().toLocaleTimeString();
+      const settled = await Promise.allSettled(
+        V4_ROBINHOOD_POOL_CANDIDATES.map(async (candidate) => ({
+          candidate,
+          result: await scanV4Pool(
+            readProvider,
+            stateView,
+            candidate.currencyA,
+            candidate.currencyB,
+            candidate.fee,
+            candidate.tickSpacing,
+            candidate.hooks
+          )
+        }))
+      );
+      const results = settled.map((item, index): V4MultiPoolScanResult => {
+        const candidate = V4_ROBINHOOD_POOL_CANDIDATES[index];
+        if (item.status === "fulfilled") {
+          return {
+            candidate: item.value.candidate,
+            result: item.value.result,
+            error: null,
+            checkedAt: item.value.result.checkedAt
+          };
+        }
+
+        return {
+          candidate,
+          result: null,
+          error:
+            item.reason instanceof Error
+              ? item.reason.message
+              : String(item.reason),
+          checkedAt: scannedAt
+        };
+      });
+      const activePools = results.filter(
+        (item) => item.result?.status === "Activa"
+      );
+      setV4MultiResults(results);
+      if (activePools[0]?.result) {
+        setV4Result(activePools[0].result);
+      }
+      setV4Status(
+        `Scanner multi-pool: ${activePools.length}/${results.length} pools activas.`
+      );
+    } catch (error) {
+      console.error(error);
+      setV4Status(
+        error instanceof Error
+          ? `No se pudo ejecutar el scanner multi-pool: ${error.message}`
+          : "No se pudo ejecutar el scanner multi-pool."
+      );
+    } finally {
+      setV4MultiScanning(false);
+    }
+  };
+
+  const handleV4LoadCandidate = (
+    candidate: V4PoolCandidate,
+    result: V4ScanResult | null
+  ) => {
+    setV4CurrencyA(candidate.currencyA);
+    setV4CurrencyB(candidate.currencyB);
+    setV4Fee(candidate.fee.toString());
+    setV4TickSpacing(candidate.tickSpacing.toString());
+    setV4Hooks(candidate.hooks);
+    if (result) {
+      setV4Result(result);
+      setV4Status(
+        `Pool cargada: ${result.token0Symbol}/${result.token1Symbol} ${result.status}.`
+      );
+      return;
+    }
+    setV4Status(`Preset cargado: ${candidate.label}.`);
   };
 
   const handleV4ReadPosition = async () => {
@@ -4790,22 +4983,13 @@ export default function Home() {
           </div>
         </section>
 
-        <section
-          className={`${styles.sectionBlock} ${
-            isLocked ? styles.sectionLocked : ""
-          }`}
-        >
+        <section className={styles.sectionBlock}>
           <div>
             <h2>Pools V4 Robinhood</h2>
             <p className={styles.subtitle}>
               Scanner read-only para oportunidades V4. No firma ni mueve fondos.
             </p>
           </div>
-          {isLocked ? (
-            <div className={styles.lockOverlay}>
-              <p>Wallet bloqueada. Pagá {premiumAmount} ZUM para desbloquear.</p>
-            </div>
-          ) : null}
           <div className={styles.sectionGrid}>
             <div className={styles.walletCard}>
               <h3>Scanner V4</h3>
@@ -4820,7 +5004,7 @@ export default function Home() {
                     setV4Hooks(ZERO_ADDRESS);
                     setV4Status("Preset WETH/USDG cargado.");
                   }}
-                  disabled={isLocked}
+                  disabled={v4Scanning || v4MultiScanning}
                 >
                   WETH/USDG
                 </button>
@@ -4834,7 +5018,7 @@ export default function Home() {
                     setV4Hooks(ZERO_ADDRESS);
                     setV4Status("Pegá el contrato del token contra USDG.");
                   }}
-                  disabled={isLocked}
+                  disabled={v4Scanning || v4MultiScanning}
                 >
                   Token/USDG
                 </button>
@@ -4889,19 +5073,83 @@ export default function Home() {
                 <button
                   className={styles.primary}
                   onClick={handleV4ScanPool}
-                  disabled={isLocked || v4Scanning}
+                  disabled={v4Scanning || v4MultiScanning}
                 >
                   {v4Scanning ? "Escaneando..." : "Escanear V4"}
+                </button>
+                <button
+                  className={styles.outline}
+                  onClick={handleV4ScanMultiplePools}
+                  disabled={v4Scanning || v4MultiScanning}
+                >
+                  {v4MultiScanning ? "Barriendo..." : "Escanear multi-pool"}
                 </button>
               </div>
               <p className={styles.v3ManualHint}>
                 En V4 el pool depende de token0, token1, fee, tick spacing y
                 hooks. Si cualquiera de esos datos cambia, el poolId cambia.
               </p>
+              <div className={styles.v4PoolList}>
+                {(v4MultiResults.length > 0
+                  ? v4MultiResults
+                  : V4_ROBINHOOD_POOL_CANDIDATES.map((candidate) => ({
+                      candidate,
+                      result: null,
+                      error: null,
+                      checkedAt: ""
+                    }))
+                ).map((item) => (
+                  <div key={item.candidate.id} className={styles.v4PoolRow}>
+                    <div>
+                      <span>
+                        {item.candidate.label} · {item.candidate.fee / 10000}%
+                        {" · read-only"}
+                      </span>
+                      <strong>
+                        {item.result
+                          ? `${item.result.status} · ${item.result.lpFee} LP`
+                          : item.error
+                            ? "Error"
+                            : "Preset"}
+                      </strong>
+                      <small>
+                        {item.result
+                          ? `${formatV4Price(
+                              item.result.price,
+                              item.result.token0Symbol,
+                              item.result.token1Symbol
+                            )} · L ${Number(
+                              item.result.liquidity
+                            ).toLocaleString("en-US", {
+                              maximumFractionDigits: 0
+                            })} · ${item.checkedAt}`
+                          : item.error
+                            ? item.error
+                            : item.candidate.note}
+                      </small>
+                    </div>
+                    <button
+                      className={styles.softButton}
+                      onClick={() =>
+                        handleV4LoadCandidate(item.candidate, item.result)
+                      }
+                      disabled={v4Scanning || v4MultiScanning}
+                    >
+                      Cargar
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className={styles.walletCard}>
               <h3>Resultado V4</h3>
+              {isLocked ? (
+                <p className={styles.v3ManualHint}>
+                  La lectura del scanner está abierta. Operar NFT V4 requiere
+                  premium.
+                </p>
+              ) : null}
               <div className={styles.field}>
                 <label>Leer NFT V4</label>
                 <input

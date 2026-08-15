@@ -67,6 +67,18 @@ Funciones actuales:
 - Estimacion y cobro de fees.
 - Retiro de liquidez y collect final.
 
+## Modulo Uniswap V4 Robinhood
+
+Se agrego un scanner V4 read-only para Robinhood, separado de los flujos que firman transacciones.
+
+Funciones actuales:
+
+- Scanner manual por token A, token B, fee, tick spacing y hooks.
+- Scanner multi-pool de candidatos predefinidos WETH/USDG, SPCX/USDG, WETH/SPCX y ETH/USDG.
+- Lectura de poolId, estado, tick, precio, liquidez, lpFee y protocolFee desde StateView.
+- Carga de un candidato escaneado al panel de resultado sin firmar ni mover fondos.
+- Manejo aislado de errores por pool para que una pool fallida no corte el barrido completo.
+
 ## Variables de entorno
 
 La app usa `.env.local` en desarrollo y variables de Vercel en produccion.

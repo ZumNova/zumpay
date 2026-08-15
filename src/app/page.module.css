@@ -1064,6 +1064,49 @@
   line-height: 1.45;
 }
 
+.v4PoolList {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.v4PoolRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(12, 18, 32, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.v4PoolRow div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.v4PoolRow span {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.v4PoolRow strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.v4PoolRow small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .v3PositionList {
   display: grid;
   gap: 12px;
@@ -1193,6 +1236,10 @@
   }
 
   .v3Position {
+    grid-template-columns: 1fr;
+  }
+
+  .v4PoolRow {
     grid-template-columns: 1fr;
   }
 
