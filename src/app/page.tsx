@@ -110,9 +110,15 @@ type V3Contracts = {
 
 type V4ScanResult = {
   status: "Activa" | "No activa";
+  usability: "Usable" | "Watch" | "No usable";
+  usabilityDetail: string;
+  nextAction: string;
   poolId: string;
   currency0: string;
   currency1: string;
+  fee: number;
+  tickSpacing: number;
+  hooks: string;
   token0Symbol: string;
   token1Symbol: string;
   token0Decimals: number;
@@ -190,6 +196,13 @@ type V4ValueEstimate = {
   addValue: number;
   totalValue: number;
   currency: string;
+};
+
+type V4MintRange = {
+  lowerTick: number;
+  upperTick: number;
+  lowerPrice: number;
+  upperPrice: number;
 };
 
 type V4LiquidityCall = {
@@ -975,6 +988,51 @@ function priceFromSqrtPriceX96(
   return sqrtRatio * sqrtRatio * 10 ** (token0Decimals - token1Decimals);
 }
 
+function assessV4PoolUsability(
+  sqrtPriceX96: bigint,
+  liquidity: bigint,
+  price: number,
+  hooks: string
+): Pick<V4ScanResult, "usability" | "usabilityDetail" | "nextAction"> {
+  if (sqrtPriceX96 <= BigInt(0)) {
+    return {
+      usability: "No usable",
+      usabilityDetail: "La pool no esta inicializada en StateView.",
+      nextAction: "Probar otra fee, tick spacing u hooks antes de cargar fondos."
+    };
+  }
+
+  if (liquidity <= BigInt(0)) {
+    return {
+      usability: "Watch",
+      usabilityDetail: "La pool tiene precio, pero no muestra liquidez.",
+      nextAction: "No operar ahi salvo que quieras sembrar o crear liquidez inicial."
+    };
+  }
+
+  if (!Number.isFinite(price) || price <= 0) {
+    return {
+      usability: "Watch",
+      usabilityDetail: "La pool tiene liquidez, pero el precio no es confiable.",
+      nextAction: "Revisar decimales y tokens antes de usar esta pool."
+    };
+  }
+
+  if (hooks.toLowerCase() !== ZERO_ADDRESS) {
+    return {
+      usability: "Watch",
+      usabilityDetail: "La pool usa hooks; puede tener reglas adicionales.",
+      nextAction: "Revisar el contrato hook antes de firmar cualquier operacion."
+    };
+  }
+
+  return {
+    usability: "Usable",
+    usabilityDetail: "Pool activa, con liquidez y sin hooks visibles.",
+    nextAction: "Cargarla, leer un NFT compatible y validar rango antes de operar."
+  };
+}
+
 function priceFromTick(tick: number, token0Decimals: number, token1Decimals: number) {
   return Math.pow(1.0001, tick) * 10 ** (token0Decimals - token1Decimals);
 }
@@ -1285,22 +1343,33 @@ async function scanV4Pool(
   const protocolFee = slot0[2];
   const lpFee = slot0[3];
   const active = sqrtPriceX96 > BigInt(0) && liquidity > BigInt(0);
+  const price = priceFromSqrtPriceX96(
+    sqrtPriceX96,
+    meta0.decimals,
+    meta1.decimals
+  );
+  const usability = assessV4PoolUsability(
+    sqrtPriceX96,
+    liquidity,
+    price,
+    hooks
+  );
 
   return {
     status: active ? "Activa" : "No activa",
+    ...usability,
     poolId,
     currency0,
     currency1,
+    fee,
+    tickSpacing,
+    hooks,
     token0Symbol: meta0.symbol,
     token1Symbol: meta1.symbol,
     token0Decimals: meta0.decimals,
     token1Decimals: meta1.decimals,
     tick,
-    price: priceFromSqrtPriceX96(
-      sqrtPriceX96,
-      meta0.decimals,
-      meta1.decimals
-    ),
+    price,
     liquidity: liquidity.toString(),
     lpFee: `${Number(lpFee) / 10000}%`,
     protocolFee: protocolFee.toString(),
@@ -1535,6 +1604,10 @@ export default function Home() {
   const [v4Status, setV4Status] = useState("");
   const [v4TokenId, setV4TokenId] = useState("475983");
   const [v4Position, setV4Position] = useState<V4PositionView | null>(null);
+  const [v4MintProfile, setV4MintProfile] =
+    useState<keyof typeof V3_PROFILES>("moderate");
+  const [v4MintAmount0, setV4MintAmount0] = useState("");
+  const [v4MintAmount1, setV4MintAmount1] = useState("");
   const [v4ReadingPosition, setV4ReadingPosition] = useState(false);
   const [v4AddAmount0, setV4AddAmount0] = useState("");
   const [v4AddAmount1, setV4AddAmount1] = useState("");
@@ -1749,6 +1822,51 @@ export default function Home() {
     v3ManualAmount0,
     v3ManualAmount1
   ]);
+  const v4MintRange = useMemo<V4MintRange | null>(() => {
+    if (!v4Result || v4Result.price <= 0 || v4Result.tickSpacing <= 0) {
+      return null;
+    }
+
+    const profile = V3_PROFILES[v4MintProfile];
+    const lowerMultiplier = 1 - profile.widthPct;
+    const upperMultiplier = 1 + profile.widthPct;
+    const lowerTickRaw =
+      v4Result.tick + Math.log(lowerMultiplier) / Math.log(1.0001);
+    const upperTickRaw =
+      v4Result.tick + Math.log(upperMultiplier) / Math.log(1.0001);
+
+    return {
+      lowerPrice: v4Result.price * lowerMultiplier,
+      upperPrice: v4Result.price * upperMultiplier,
+      lowerTick:
+        Math.floor(lowerTickRaw / v4Result.tickSpacing) *
+        v4Result.tickSpacing,
+      upperTick:
+        Math.ceil(upperTickRaw / v4Result.tickSpacing) *
+        v4Result.tickSpacing
+    };
+  }, [v4MintProfile, v4Result]);
+  const v4MintSimulation = useMemo<V4LiquiditySimulation | null>(() => {
+    if (!v4Result || !v4MintRange) {
+      return null;
+    }
+
+    const amount0 = Math.max(parseHumanAmount(v4MintAmount0) || 0, 0);
+    const amount1 = Math.max(parseHumanAmount(v4MintAmount1) || 0, 0);
+    return simulateV4Liquidity(
+      amount0,
+      amount1,
+      v4Result.tick,
+      v4MintRange.lowerTick,
+      v4MintRange.upperTick,
+      v4Result.token0Symbol,
+      v4Result.token1Symbol,
+      v4Result.token0Decimals,
+      v4Result.token1Decimals
+    );
+  }, [v4MintAmount0, v4MintAmount1, v4MintRange, v4Result]);
+  const v4CanSimulateMint =
+    v4Result?.usability === "Usable" && Boolean(v4MintRange);
   const v4LiquiditySimulation = useMemo(() => {
     if (!v4Position) {
       return null;
@@ -1838,6 +1956,60 @@ export default function Home() {
     );
     setV4AddAmount0(
       formatTokenInputAmount(suggestedToken0, v4Position.token0Symbol)
+    );
+  };
+
+  const handleV4MintAmount0Change = (value: string) => {
+    setV4MintAmount0(value);
+    const amount = parseHumanAmount(value);
+    if (
+      !v4Result ||
+      !v4MintRange ||
+      !Number.isFinite(amount) ||
+      amount <= 0
+    ) {
+      setV4MintAmount1("");
+      return;
+    }
+
+    const suggestedToken1 = estimateV4CounterpartAmount(
+      amount,
+      "token0",
+      v4Result.tick,
+      v4MintRange.lowerTick,
+      v4MintRange.upperTick,
+      v4Result.token0Decimals,
+      v4Result.token1Decimals
+    );
+    setV4MintAmount1(
+      formatTokenInputAmount(suggestedToken1, v4Result.token1Symbol)
+    );
+  };
+
+  const handleV4MintAmount1Change = (value: string) => {
+    setV4MintAmount1(value);
+    const amount = parseHumanAmount(value);
+    if (
+      !v4Result ||
+      !v4MintRange ||
+      !Number.isFinite(amount) ||
+      amount <= 0
+    ) {
+      setV4MintAmount0("");
+      return;
+    }
+
+    const suggestedToken0 = estimateV4CounterpartAmount(
+      amount,
+      "token1",
+      v4Result.tick,
+      v4MintRange.lowerTick,
+      v4MintRange.upperTick,
+      v4Result.token1Decimals,
+      v4Result.token0Decimals
+    );
+    setV4MintAmount0(
+      formatTokenInputAmount(suggestedToken0, v4Result.token0Symbol)
     );
   };
 
@@ -3114,16 +3286,24 @@ export default function Home() {
         meta0.decimals,
         meta1.decimals
       );
+      const poolActive = slot0[0] > BigInt(0) && poolLiquidity > BigInt(0);
+      const poolUsability = assessV4PoolUsability(
+        slot0[0],
+        poolLiquidity,
+        price,
+        poolKey.hooks
+      );
       const result: V4PositionView = {
-        status:
-          slot0[0] > BigInt(0) && positionLiquidity > BigInt(0)
-            ? "Activa"
-            : "No activa",
+        status: poolActive ? "Activa" : "No activa",
+        ...poolUsability,
         tokenId,
         owner,
         poolId,
         currency0: poolKey.currency0,
         currency1: poolKey.currency1,
+        fee: Number(poolKey.fee),
+        tickSpacing: Number(poolKey.tickSpacing),
+        hooks: poolKey.hooks,
         token0Symbol: meta0.symbol,
         token1Symbol: meta1.symbol,
         token0Decimals: meta0.decimals,
@@ -5107,7 +5287,7 @@ export default function Home() {
                       </span>
                       <strong>
                         {item.result
-                          ? `${item.result.status} · ${item.result.lpFee} LP`
+                          ? `${item.result.status} · ${item.result.usability} · ${item.result.lpFee} LP`
                           : item.error
                             ? "Error"
                             : "Preset"}
@@ -5127,6 +5307,9 @@ export default function Home() {
                             ? item.error
                             : item.candidate.note}
                       </small>
+                      {item.result ? (
+                        <small>{item.result.usabilityDetail}</small>
+                      ) : null}
                     </div>
                     <button
                       className={styles.softButton}
@@ -5172,6 +5355,10 @@ export default function Home() {
                   <strong>{v4Result ? v4Result.status : "Pendiente"}</strong>
                 </div>
                 <div>
+                  <span>Uso</span>
+                  <strong>{v4Result ? v4Result.usability : "Pendiente"}</strong>
+                </div>
+                <div>
                   <span>Par</span>
                   <strong>
                     {v4Result
@@ -5198,6 +5385,14 @@ export default function Home() {
                 <div>
                   <span>LP fee</span>
                   <strong>{v4Result ? v4Result.lpFee : "—"}</strong>
+                </div>
+                <div>
+                  <span>Pool fee</span>
+                  <strong>
+                    {v4Result
+                      ? `${v4Result.fee / 10000}% / spacing ${v4Result.tickSpacing}`
+                      : "—"}
+                  </strong>
                 </div>
                 <div>
                   <span>NFT V4</span>
@@ -5227,6 +5422,160 @@ export default function Home() {
                   </strong>
                 </div>
               </div>
+              {v4Result ? (
+                <div className={styles.v4UseBox}>
+                  <strong>{v4Result.usabilityDetail}</strong>
+                  <span>{v4Result.nextAction}</span>
+                </div>
+              ) : null}
+              {v4Result ? (
+                <div className={styles.v4MintPanel}>
+                  <div>
+                    <h4>Simular nuevo NFT V4</h4>
+                    <p>
+                      Prepara un rango y estima liquidez sin firmar. La creacion
+                      real queda bloqueada hasta validar balances, permisos y
+                      gas.
+                    </p>
+                  </div>
+                  <div className={styles.v3ManualGrid}>
+                    <div className={styles.field}>
+                      <label>Perfil de rango</label>
+                      <select
+                        value={v4MintProfile}
+                        onChange={(event) =>
+                          setV4MintProfile(
+                            event.target.value as keyof typeof V3_PROFILES
+                          )
+                        }
+                        disabled={!v4CanSimulateMint}
+                      >
+                        {Object.entries(V3_PROFILES).map(([key, profile]) => (
+                          <option key={key} value={key}>
+                            {profile.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className={styles.field}>
+                      <label>Estado de pool</label>
+                      <div className={styles.address}>
+                        {v4CanSimulateMint
+                          ? "Lista para simular mint"
+                          : `${v4Result.usability}: ${v4Result.usabilityDetail}`}
+                      </div>
+                    </div>
+                  </div>
+                  {v4MintRange ? (
+                    <div className={styles.v4RangeGrid}>
+                      <div>
+                        <span>Rango precio</span>
+                        <strong>
+                          {v4MintRange.lowerPrice.toLocaleString("en-US", {
+                            maximumFractionDigits: 2
+                          })}{" "}
+                          /{" "}
+                          {v4MintRange.upperPrice.toLocaleString("en-US", {
+                            maximumFractionDigits: 2
+                          })}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Ticks</span>
+                        <strong>
+                          {v4MintRange.lowerTick} / {v4MintRange.upperTick}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>PoolKey</span>
+                        <strong>
+                          {v4Result.fee / 10000}% · spacing{" "}
+                          {v4Result.tickSpacing}
+                        </strong>
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className={styles.v3ManualGrid}>
+                    <div className={styles.field}>
+                      <label>Monto {v4Result.token0Symbol}</label>
+                      <input
+                        value={v4MintAmount0}
+                        onChange={(event) =>
+                          handleV4MintAmount0Change(event.target.value)
+                        }
+                        placeholder={`Capital en ${v4Result.token0Symbol}`}
+                        inputMode="decimal"
+                        disabled={!v4CanSimulateMint}
+                      />
+                    </div>
+                    <div className={styles.field}>
+                      <label>Monto {v4Result.token1Symbol}</label>
+                      <input
+                        value={v4MintAmount1}
+                        onChange={(event) =>
+                          handleV4MintAmount1Change(event.target.value)
+                        }
+                        placeholder={`Capital en ${v4Result.token1Symbol}`}
+                        inputMode="decimal"
+                        disabled={!v4CanSimulateMint}
+                      />
+                    </div>
+                  </div>
+                  {v4MintSimulation ? (
+                    <div className={styles.v4BalanceGrid}>
+                      <div>
+                        <span>Liquidez estimada</span>
+                        <strong>
+                          {v4MintSimulation.liquidityToAdd.toLocaleString(
+                            "en-US",
+                            { maximumFractionDigits: 0 }
+                          )}
+                        </strong>
+                        <small>
+                          Limita {v4MintSimulation.limitingToken}. No crea NFT
+                          ni firma.
+                        </small>
+                      </div>
+                      <div>
+                        <span>Uso de capital</span>
+                        <strong>
+                          {formatHumanTokenAmount(
+                            v4MintSimulation.usedToken0,
+                            v4Result.token0Symbol
+                          )}{" "}
+                          {v4Result.token0Symbol} +{" "}
+                          {formatHumanTokenAmount(
+                            v4MintSimulation.usedToken1,
+                            v4Result.token1Symbol
+                          )}{" "}
+                          {v4Result.token1Symbol}
+                        </strong>
+                        <small>
+                          Sobrante estimado:{" "}
+                          {formatHumanTokenAmount(
+                            v4MintSimulation.leftoverToken0,
+                            v4Result.token0Symbol
+                          )}{" "}
+                          {v4Result.token0Symbol} /{" "}
+                          {formatHumanTokenAmount(
+                            v4MintSimulation.leftoverToken1,
+                            v4Result.token1Symbol
+                          )}{" "}
+                          {v4Result.token1Symbol}.
+                        </small>
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className={styles.v4UseBox}>
+                    <strong>Siguiente paso seguro</strong>
+                    <span>
+                      Con esta simulacion lista, el proximo modulo puede hacer
+                      preflight de balances, Permit2 y gas para preparar
+                      MINT_POSITION. Todavia no se firma la creacion del NFT.
+                    </span>
+                  </div>
+                </div>
+              ) : null}
               {v4Result ? (
                 <div className={styles.field}>
                   <label>PoolId</label>

@@ -969,6 +969,78 @@
   background: rgba(12, 18, 32, 0.86);
 }
 
+.v4UseBox {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0 16px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(12, 18, 32, 0.86);
+  border: 1px solid rgba(39, 213, 244, 0.24);
+}
+
+.v4UseBox strong {
+  color: var(--cyan);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.v4UseBox span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.v4MintPanel {
+  display: grid;
+  gap: 14px;
+  margin: 16px 0;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(7, 12, 24, 0.74);
+  border: 1px solid rgba(52, 211, 153, 0.18);
+}
+
+.v4MintPanel h4 {
+  margin: 0 0 6px;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.v4MintPanel p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.v4RangeGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.v4RangeGrid div {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(12, 18, 32, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.v4RangeGrid span {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.v4RangeGrid strong {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 .v4GasBox strong {
   font-size: 14px;
 }
@@ -1258,6 +1330,10 @@
   }
 
   .v4ValueGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .v4RangeGrid {
     grid-template-columns: 1fr;
   }
 
