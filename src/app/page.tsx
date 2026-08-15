@@ -739,6 +739,7 @@ const V4_POSITION_MANAGER_VIEW_ABI = [
 ];
 
 const V4_ACTION_INCREASE_LIQUIDITY = "0x00";
+const V4_ACTION_MINT_POSITION = "0x02";
 const V4_ACTION_SETTLE_PAIR = "0x0d";
 const V4_ACTION_SWEEP = "0x14";
 const V4_AMOUNT_BUFFER_BPS = BigInt(100);
@@ -1234,6 +1235,64 @@ function encodeV4IncreaseLiquidityData(
   );
 }
 
+function encodeV4MintPositionData(
+  pool: V4ScanResult,
+  range: V4MintRange,
+  liquidity: bigint,
+  amount0Max: bigint,
+  amount1Max: bigint,
+  recipient: string
+) {
+  const coder = ethers.AbiCoder.defaultAbiCoder();
+  const usesNative =
+    pool.currency0.toLowerCase() === ZERO_ADDRESS ||
+    pool.currency1.toLowerCase() === ZERO_ADDRESS;
+  const actions = ethers.concat([
+    V4_ACTION_MINT_POSITION,
+    V4_ACTION_SETTLE_PAIR,
+    ...(usesNative ? [V4_ACTION_SWEEP] : [])
+  ]);
+  const poolKey = [
+    pool.currency0,
+    pool.currency1,
+    pool.fee,
+    pool.tickSpacing,
+    pool.hooks
+  ];
+  const mintParams = coder.encode(
+    [
+      "tuple(address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)",
+      "int24",
+      "int24",
+      "uint256",
+      "uint128",
+      "uint128",
+      "address",
+      "bytes"
+    ],
+    [
+      poolKey,
+      range.lowerTick,
+      range.upperTick,
+      liquidity,
+      amount0Max,
+      amount1Max,
+      recipient,
+      "0x"
+    ]
+  );
+  const settlePairParams = coder.encode(
+    ["address", "address"],
+    [pool.currency0, pool.currency1]
+  );
+  const params = [mintParams, settlePairParams];
+  if (usesNative) {
+    params.push(coder.encode(["address", "address"], [ZERO_ADDRESS, recipient]));
+  }
+
+  return coder.encode(["bytes", "bytes[]"], [actions, params]);
+}
+
 function addV4AmountBuffer(value: bigint) {
   return value + (value * V4_AMOUNT_BUFFER_BPS) / BigInt(10_000);
 }
@@ -1261,6 +1320,20 @@ function v4NativeValue(
     return amount0Raw;
   }
   if (position.currency1.toLowerCase() === ZERO_ADDRESS) {
+    return amount1Raw;
+  }
+  return BigInt(0);
+}
+
+function v4PoolNativeValue(
+  pool: V4ScanResult,
+  amount0Raw: bigint,
+  amount1Raw: bigint
+) {
+  if (pool.currency0.toLowerCase() === ZERO_ADDRESS) {
+    return amount0Raw;
+  }
+  if (pool.currency1.toLowerCase() === ZERO_ADDRESS) {
     return amount1Raw;
   }
   return BigInt(0);
@@ -1608,6 +1681,13 @@ export default function Home() {
     useState<keyof typeof V3_PROFILES>("moderate");
   const [v4MintAmount0, setV4MintAmount0] = useState("");
   const [v4MintAmount1, setV4MintAmount1] = useState("");
+  const [v4MintPreflighting, setV4MintPreflighting] = useState(false);
+  const [v4MintPreflightChecks, setV4MintPreflightChecks] = useState<
+    V4PreflightCheck[]
+  >([]);
+  const [v4MintEstimatingGas, setV4MintEstimatingGas] = useState(false);
+  const [v4MintGasEstimate, setV4MintGasEstimate] =
+    useState<V4GasEstimate | null>(null);
   const [v4ReadingPosition, setV4ReadingPosition] = useState(false);
   const [v4AddAmount0, setV4AddAmount0] = useState("");
   const [v4AddAmount1, setV4AddAmount1] = useState("");
@@ -2011,6 +2091,277 @@ export default function Home() {
     setV4MintAmount0(
       formatTokenInputAmount(suggestedToken0, v4Result.token0Symbol)
     );
+  };
+
+  const buildV4MintInputs = () => {
+    if (!v4Result || !v4MintRange || v4Result.usability !== "Usable") {
+      setV4Status("Primero cargá una pool V4 usable.");
+      return null;
+    }
+
+    const amount0Raw = parseTokenUnits(
+      v4MintAmount0,
+      v4Result.token0Decimals
+    );
+    const amount1Raw = parseTokenUnits(
+      v4MintAmount1,
+      v4Result.token1Decimals
+    );
+    const liquidityRaw = estimatedV4LiquidityRaw(v4MintSimulation);
+    if (
+      amount0Raw <= BigInt(0) ||
+      amount1Raw <= BigInt(0) ||
+      liquidityRaw <= BigInt(0)
+    ) {
+      setV4Status("Ingresá montos válidos para simular el nuevo NFT V4.");
+      return null;
+    }
+
+    return {
+      pool: v4Result,
+      range: v4MintRange,
+      amount0Raw,
+      amount1Raw,
+      liquidityRaw
+    };
+  };
+
+  const handleV4MintPreflight = async () => {
+    try {
+      setV4MintPreflighting(true);
+      setV4MintPreflightChecks([]);
+      setV4MintGasEstimate(null);
+      const inputs = buildV4MintInputs();
+      if (!inputs) {
+        return;
+      }
+
+      setV4Status("Probando balances y Permit2 para crear NFT V4. Solo lectura.");
+      const signer = await getV3Signer("robinhood");
+      const owner = await signer.getAddress();
+      if (!signer.provider) {
+        throw new Error("MetaMask no devolvió provider para Robinhood.");
+      }
+      const signerProvider = signer.provider;
+
+      const readBalance = async (currency: string): Promise<bigint> => {
+        if (currency.toLowerCase() === ZERO_ADDRESS) {
+          return signerProvider.getBalance(owner);
+        }
+        const token = new ethers.Contract(currency, ERC20_ABI, signerProvider);
+        return (await token.balanceOf(owner)) as bigint;
+      };
+
+      const readAllowance = async (
+        currency: string,
+        decimals: number
+      ): Promise<{ raw: bigint; label: string }> => {
+        if (currency.toLowerCase() === ZERO_ADDRESS) {
+          return { raw: ethers.MaxUint256, label: "No requiere approve" };
+        }
+        const token = new ethers.Contract(currency, ERC20_ABI, signerProvider);
+        const allowance = (await token.allowance(
+          owner,
+          V4_ROBINHOOD_CONTRACTS.permit2
+        )) as bigint;
+        return {
+          raw: allowance,
+          label: `${formatV3RawAmount(allowance, decimals)} aprobado hacia Permit2`
+        };
+      };
+
+      const [balance0, balance1, allowance0, allowance1] = await Promise.all([
+        readBalance(inputs.pool.currency0),
+        readBalance(inputs.pool.currency1),
+        readAllowance(inputs.pool.currency0, inputs.pool.token0Decimals),
+        readAllowance(inputs.pool.currency1, inputs.pool.token1Decimals)
+      ]);
+
+      const checks: V4PreflightCheck[] = [
+        {
+          label: "Wallet",
+          value: shortAddress(owner),
+          ok: true
+        },
+        {
+          label: "Pool",
+          value: `${inputs.pool.token0Symbol}/${inputs.pool.token1Symbol} ${
+            inputs.pool.fee / 10000
+          }%`,
+          ok: inputs.pool.usability === "Usable"
+        },
+        {
+          label: "Rango",
+          value: `${inputs.range.lowerTick} / ${inputs.range.upperTick}`,
+          ok:
+            inputs.range.lowerTick < inputs.pool.tick &&
+            inputs.range.upperTick > inputs.pool.tick
+        },
+        {
+          label: "Liquidez simulada",
+          value: inputs.liquidityRaw.toLocaleString("en-US"),
+          ok: inputs.liquidityRaw > BigInt(0)
+        },
+        {
+          label: `Saldo ${inputs.pool.token0Symbol}`,
+          value: `${formatV3RawAmount(
+            balance0,
+            inputs.pool.token0Decimals
+          )} / necesita ${formatHumanTokenAmount(
+            parseHumanAmount(v4MintAmount0) || 0,
+            inputs.pool.token0Symbol
+          )}`,
+          ok: balance0 >= inputs.amount0Raw
+        },
+        {
+          label: `Saldo ${inputs.pool.token1Symbol}`,
+          value: `${formatV3RawAmount(
+            balance1,
+            inputs.pool.token1Decimals
+          )} / necesita ${formatHumanTokenAmount(
+            parseHumanAmount(v4MintAmount1) || 0,
+            inputs.pool.token1Symbol
+          )}`,
+          ok: balance1 >= inputs.amount1Raw
+        },
+        {
+          label: `Permiso ${inputs.pool.token0Symbol}`,
+          value: allowance0.label,
+          ok:
+            inputs.pool.currency0.toLowerCase() === ZERO_ADDRESS ||
+            allowance0.raw >= inputs.amount0Raw
+        },
+        {
+          label: `Permiso ${inputs.pool.token1Symbol}`,
+          value: allowance1.label,
+          ok:
+            inputs.pool.currency1.toLowerCase() === ZERO_ADDRESS ||
+            allowance1.raw >= inputs.amount1Raw
+        }
+      ];
+
+      setV4MintPreflightChecks(checks);
+      setV4Status(
+        checks.every((item) => item.ok)
+          ? "Preflight mint OK. Ya se puede estimar gas MINT_POSITION sin firmar."
+          : "Preflight mint incompleto. Revisá saldos o permisos Permit2."
+      );
+    } catch (error) {
+      console.error(error);
+      setV4Status(
+        error instanceof Error
+          ? `No se pudo probar mint V4: ${error.message}`
+          : "No se pudo probar mint V4."
+      );
+    } finally {
+      setV4MintPreflighting(false);
+    }
+  };
+
+  const prepareV4MintCall = async (): Promise<V4LiquidityCall | null> => {
+    const inputs = buildV4MintInputs();
+    if (!inputs) {
+      return null;
+    }
+
+    const signer = await getV3Signer("robinhood");
+    const owner = await signer.getAddress();
+    if (!signer.provider) {
+      throw new Error("MetaMask no devolvió provider para Robinhood.");
+    }
+    const manager = new ethers.Contract(
+      V4_ROBINHOOD_CONTRACTS.positionManager,
+      V4_POSITION_MANAGER_VIEW_ABI,
+      signer
+    );
+    const amount0Max = addV4AmountBuffer(inputs.amount0Raw);
+    const amount1Max = addV4AmountBuffer(inputs.amount1Raw);
+    const unlockData = encodeV4MintPositionData(
+      inputs.pool,
+      inputs.range,
+      inputs.liquidityRaw,
+      amount0Max,
+      amount1Max,
+      owner
+    );
+    const value = v4PoolNativeValue(inputs.pool, amount0Max, amount1Max);
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
+
+    return {
+      signer,
+      provider: signer.provider,
+      manager,
+      unlockData,
+      deadline,
+      value
+    };
+  };
+
+  const handleV4MintEstimateGas = async () => {
+    try {
+      setV4MintEstimatingGas(true);
+      setV4MintGasEstimate(null);
+      const prepared = await prepareV4MintCall();
+      if (!prepared) {
+        return;
+      }
+
+      setV4Status("Estimando gas MINT_POSITION. No se firma ni se envía transacción.");
+      const gas = (await prepared.manager.modifyLiquidities.estimateGas(
+        prepared.unlockData,
+        prepared.deadline,
+        { value: prepared.value }
+      )) as bigint;
+      const feeData = await prepared.provider.getFeeData();
+      const gasPrice =
+        feeData.maxFeePerGas ?? feeData.gasPrice ?? BigInt(0);
+      const estimatedCost = gasPrice > BigInt(0) ? gas * gasPrice : BigInt(0);
+      const costText =
+        estimatedCost > BigInt(0)
+          ? `Costo estimado: ${ethers.formatEther(estimatedCost)} ETH.`
+          : "El provider no devolvió precio de gas.";
+
+      if (gas > V4_DANGER_GAS) {
+        setV4MintGasEstimate({
+          status: "error",
+          title: "Mint bloqueado por gas",
+          detail: `${formatGasUnits(
+            gas
+          )} unidades. Supera el límite extremo. ${costText}`
+        });
+        setV4Status("Gas de mint V4 demasiado alto. No firmes esta operación.");
+        return;
+      }
+
+      if (gas > V4_MAX_REASONABLE_GAS) {
+        setV4MintGasEstimate({
+          status: "warn",
+          title: "Gas de mint alto",
+          detail: `${formatGasUnits(
+            gas
+          )} unidades. Revisar antes de crear NFT. ${costText}`
+        });
+        setV4Status("Gas de mint V4 alto. Conviene revisar antes de firmar.");
+        return;
+      }
+
+      setV4MintGasEstimate({
+        status: "ok",
+        title: "Mint simulable",
+        detail: `${formatGasUnits(gas)} unidades. ${costText}`
+      });
+      setV4Status("MINT_POSITION preparado: gas normal, sin firma enviada.");
+    } catch (error) {
+      console.error(error);
+      setV4MintGasEstimate({
+        status: "error",
+        title: "No se pudo estimar MINT_POSITION",
+        detail: describeV4EstimateError(error)
+      });
+      setV4Status("No se pudo estimar mint V4. No firmes todavía.");
+    } finally {
+      setV4MintEstimatingGas(false);
+    }
   };
 
   useEffect(() => {
@@ -5596,13 +5947,64 @@ export default function Home() {
                     </div>
                   ) : null}
                   <div className={styles.v4UseBox}>
-                    <strong>Siguiente paso seguro</strong>
+                    <strong>Preflight MINT_POSITION</strong>
                     <span>
-                      Con esta simulacion lista, el proximo modulo puede hacer
-                      preflight de balances, Permit2 y gas para preparar
-                      MINT_POSITION. Todavia no se firma la creacion del NFT.
+                      Revisa balances, permiso ERC20 hacia Permit2 y gas para
+                      crear un NFT nuevo. No abre firma ni envia transaccion.
                     </span>
                   </div>
+                  <div className={styles.ctas}>
+                    <button
+                      className={styles.outline}
+                      onClick={handleV4MintPreflight}
+                      disabled={!v4CanSimulateMint || v4MintPreflighting}
+                    >
+                      {v4MintPreflighting
+                        ? "Probando..."
+                        : "Probar balances y Permit2"}
+                    </button>
+                    <button
+                      className={styles.primary}
+                      onClick={handleV4MintEstimateGas}
+                      disabled={!v4CanSimulateMint || v4MintEstimatingGas}
+                    >
+                      {v4MintEstimatingGas
+                        ? "Estimando..."
+                        : "Estimar gas MINT_POSITION"}
+                    </button>
+                  </div>
+                  {v4MintPreflightChecks.length > 0 ? (
+                    <div className={styles.v4PreflightGrid}>
+                      {v4MintPreflightChecks.map((check) => (
+                        <div
+                          key={check.label}
+                          className={
+                            check.ok
+                              ? styles.v4PreflightOk
+                              : styles.v4PreflightWarn
+                          }
+                        >
+                          <span>{check.label}</span>
+                          <strong>{check.ok ? "OK" : "Revisar"}</strong>
+                          <small>{check.value}</small>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {v4MintGasEstimate ? (
+                    <div
+                      className={`${styles.v4GasBox} ${
+                        v4MintGasEstimate.status === "ok"
+                          ? styles.v4GasOk
+                          : v4MintGasEstimate.status === "warn"
+                            ? styles.v4GasWarn
+                            : styles.v4GasError
+                      }`}
+                    >
+                      <strong>{v4MintGasEstimate.title}</strong>
+                      <span>{v4MintGasEstimate.detail}</span>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               {v4Result ? (
