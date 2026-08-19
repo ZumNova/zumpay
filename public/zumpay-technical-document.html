@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ZumPay / ZumNova Technical Document</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #0f172a;
+        --muted: #475569;
+        --line: #dbe3ef;
+        --soft: #f8fafc;
+        --brand: #0ea5e9;
+      }
+
+      body {
+        margin: 0;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        color: var(--ink);
+        background: white;
+        line-height: 1.62;
+      }
+
+      main {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 48px 24px 72px;
+      }
+
+      header {
+        display: grid;
+        gap: 18px;
+        padding-bottom: 28px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+      }
+
+      .brand img {
+        width: 56px;
+        height: 56px;
+      }
+
+      h1,
+      h2,
+      h3 {
+        line-height: 1.2;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 36px;
+      }
+
+      h2 {
+        margin: 34px 0 12px;
+        padding-top: 12px;
+        font-size: 24px;
+        border-top: 1px solid var(--line);
+      }
+
+      h3 {
+        margin: 22px 0 8px;
+        font-size: 17px;
+      }
+
+      p {
+        margin: 0 0 12px;
+      }
+
+      ul {
+        margin: 0 0 16px;
+        padding-left: 22px;
+      }
+
+      li {
+        margin: 6px 0;
+      }
+
+      a {
+        color: #0369a1;
+      }
+
+      code {
+        padding: 2px 5px;
+        border-radius: 5px;
+        background: #eef6ff;
+        color: #075985;
+        word-break: break-word;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 12px 0 18px;
+        font-size: 14px;
+      }
+
+      th,
+      td {
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: var(--soft);
+      }
+
+      .meta,
+      .note {
+        color: var(--muted);
+      }
+
+      .callout {
+        padding: 14px 16px;
+        margin: 14px 0 18px;
+        border: 1px solid #bae6fd;
+        border-radius: 10px;
+        background: #f0f9ff;
+      }
+
+      .small {
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="brand">
+          <img src="/zumpay-token-logo.svg" alt="ZUM token logo" />
+          <div>
+            <h1>ZumPay / ZumNova Technical Document</h1>
+            <p class="meta">Version 1.0 · August 19, 2026</p>
+          </div>
+        </div>
+        <p>
+          This document summarizes the ZUM token and the ZumPay platform for
+          public review, token metadata submissions, and ecosystem partners.
+        </p>
+      </header>
+
+      <section>
+        <h2>Abstract / Executive Summary</h2>
+        <p>
+          ZumPay is a non-custodial crypto wallet and DeFi interface designed
+          to simplify payments, token usage, and liquidity workflows across
+          Polygon and other supported networks. The ZUM token is the platform
+          utility token used for premium access, transaction-based platform
+          payments, rewards, and future liquidity automation features.
+        </p>
+        <p>
+          The project focuses on a user-facing wallet experience while keeping
+          sensitive operations under user control through local wallet storage
+          and external wallet signatures such as MetaMask.
+        </p>
+      </section>
+
+      <section>
+        <h2>Introduction</h2>
+        <p>
+          Web3 payments and DeFi liquidity tools can be difficult for non-technical
+          users. Users often need to understand networks, token contracts,
+          approvals, swaps, liquidity ranges, and pool selection before they can
+          complete a simple action.
+        </p>
+        <p>
+          ZumPay addresses this complexity by combining a non-custodial wallet,
+          clear Polygon token support, premium access flows, and guided Uniswap
+          pool tools in a single interface. The platform aims to reduce manual
+          steps while preserving transparency before any signature or transaction.
+        </p>
+      </section>
+
+      <section>
+        <h2>Token Overview</h2>
+        <table>
+          <tbody>
+            <tr>
+              <th>Token name</th>
+              <td>ZUM</td>
+            </tr>
+            <tr>
+              <th>Symbol</th>
+              <td>ZUM</td>
+            </tr>
+            <tr>
+              <th>Blockchain</th>
+              <td>Polygon PoS</td>
+            </tr>
+            <tr>
+              <th>Token contract</th>
+              <td>
+                <code>0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5</code>
+              </td>
+            </tr>
+            <tr>
+              <th>Maximum supply</th>
+              <td>1,000,000 ZUM</td>
+            </tr>
+            <tr>
+              <th>Official website</th>
+              <td><a href="https://zumpay.com.ar">https://zumpay.com.ar</a></td>
+            </tr>
+            <tr>
+              <th>Official logo</th>
+              <td>
+                <a href="https://zumpay.com.ar/zumpay-token-logo.svg">
+                  https://zumpay.com.ar/zumpay-token-logo.svg
+                </a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="note small">
+          Contract ownership and administrative keys should be verified directly
+          on PolygonScan and through the official project channels before any
+          listing or integration decision.
+        </p>
+      </section>
+
+      <section>
+        <h2>Utility & Use Cases</h2>
+        <ul>
+          <li>
+            Platform access and premium feature usage through a 100 ZUM payment
+            model.
+          </li>
+          <li>
+            User rewards and ecosystem incentives for future platform activity.
+          </li>
+          <li>
+            Guided interaction with Uniswap pools from a simplified interface.
+          </li>
+          <li>
+            Liquidity growth workflows designed to support progressive pool
+            development up to the maximum token supply.
+          </li>
+          <li>
+            Future automation modules that help users prepare token pairs,
+            balances, approvals, and gas checks before creating or adding to
+            liquidity positions.
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Technical Architecture</h2>
+        <h3>Frontend</h3>
+        <ul>
+          <li>Next.js App Router with React and TypeScript.</li>
+          <li>Client-side wallet flows for non-custodial user interactions.</li>
+          <li>Ethers.js for EVM reads, MetaMask signing, and ERC-20 calls.</li>
+          <li>Bitcoin libraries for native BTC wallet support.</li>
+        </ul>
+
+        <h3>Blockchain Integrations</h3>
+        <ul>
+          <li>Polygon PoS for the ZUM token and premium payment flow.</li>
+          <li>Ethereum, Polygon, Arbitrum, Optimism, Base, and compatible EVM networks.</li>
+          <li>Uniswap V3 tools for pool scanning and position management.</li>
+          <li>Uniswap V4 read-only scanner and preflight modules for pool evaluation.</li>
+        </ul>
+
+        <h3>Uniswap Pool Flow</h3>
+        <p>
+          The platform is designed to help users inspect pools, validate token
+          pairs, estimate ranges, calculate required token amounts, and review
+          balances, approvals, and gas before any transaction is signed.
+        </p>
+        <p>
+          For future pool creation modules, the intended flow is:
+        </p>
+        <ul>
+          <li>Select or scan a supported token pair.</li>
+          <li>Load pool metadata such as fee tier, tick spacing, and hooks where applicable.</li>
+          <li>Simulate liquidity and token requirements.</li>
+          <li>Run balance, approval, Permit2, and gas preflight checks.</li>
+          <li>Only then allow the user to decide whether to sign a real transaction.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Tokenomics</h2>
+        <table>
+          <tbody>
+            <tr>
+              <th>Maximum supply</th>
+              <td>1,000,000 ZUM</td>
+            </tr>
+            <tr>
+              <th>Platform access</th>
+              <td>100 ZUM premium payment model.</td>
+            </tr>
+            <tr>
+              <th>Liquidity growth</th>
+              <td>
+                Progressive liquidity development through public pool activity
+                and future guided liquidity modules.
+              </td>
+            </tr>
+            <tr>
+              <th>Rewards</th>
+              <td>
+                Reserved for user incentives, platform participation, and future
+                ecosystem campaigns.
+              </td>
+            </tr>
+            <tr>
+              <th>Initial distribution</th>
+              <td>To be published in the official token allocation schedule.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Security Model</h2>
+        <ul>
+          <li>The ZumPay wallet is designed as a non-custodial interface.</li>
+          <li>Seeds and private keys are not intentionally transmitted to project servers.</li>
+          <li>MetaMask is used for external wallet signatures and Polygon token actions.</li>
+          <li>Premium flows are being formalized through auditable smart contract interactions.</li>
+          <li>Users are shown network, token, amount, and destination details before payment actions.</li>
+        </ul>
+        <div class="callout">
+          <strong>Operational note:</strong> after any suspected local compromise,
+          administrative keys, deployment keys, hosting credentials, RPC keys,
+          and wallet permissions should be rotated before further production use.
+        </div>
+      </section>
+
+      <section>
+        <h2>Roadmap</h2>
+        <ul>
+          <li>Phase 1: Public website, token metadata, wallet interface, and Polygon ZUM support.</li>
+          <li>Phase 2: Premium access contract verification and auditable payment flow.</li>
+          <li>Phase 3: Uniswap V3 pool tools and guided liquidity position workflows.</li>
+          <li>Phase 4: Uniswap V4 read-only scanner, preflight checks, and safer pool preparation.</li>
+          <li>Phase 5: Expanded Layer 2 support, mobile/PWA improvements, and additional reward modules.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Team & Governance</h2>
+        <p>
+          ZumPay / ZumNova is currently operated by its founding development
+          team. Public team profile links, governance details, and any future
+          DAO or voting process should be published through the official website
+          and referenced in token metadata submissions.
+        </p>
+        <p>
+          Governance model: founder-led during the current development phase;
+          community or DAO-based governance may be evaluated in later phases.
+        </p>
+      </section>
+
+      <section>
+        <h2>Contact & Social Profiles</h2>
+        <table>
+          <tbody>
+            <tr>
+              <th>Website</th>
+              <td><a href="https://zumpay.com.ar">https://zumpay.com.ar</a></td>
+            </tr>
+            <tr>
+              <th>Email</th>
+              <td>To be provided from the official project domain.</td>
+            </tr>
+            <tr>
+              <th>X / Twitter</th>
+              <td>To be provided.</td>
+            </tr>
+            <tr>
+              <th>LinkedIn</th>
+              <td>To be provided.</td>
+            </tr>
+            <tr>
+              <th>Telegram / Discord</th>
+              <td>To be provided if used as official support channels.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Appendix / References</h2>
+        <ul>
+          <li>
+            Official website:
+            <a href="https://zumpay.com.ar">https://zumpay.com.ar</a>
+          </li>
+          <li>
+            ZUM token on PolygonScan:
+            <a href="https://polygonscan.com/token/0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5">
+              https://polygonscan.com/token/0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5
+            </a>
+          </li>
+          <li>
+            ZUM token logo:
+            <a href="https://zumpay.com.ar/zumpay-token-logo.svg">
+              https://zumpay.com.ar/zumpay-token-logo.svg
+            </a>
+          </li>
+          <li>Repository: to be provided if intended for public review.</li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>
