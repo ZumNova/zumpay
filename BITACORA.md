@@ -188,6 +188,14 @@ Flujo futuro recomendado:
 
 Para uso personal, el flujo actual sigue siendo suficiente. Para usuarios reales, el contrato premium verificado es el siguiente paso tecnico.
 
+## Pendientes operativos V3/V4
+
+Fecha: 2026-08-19
+
+- V3: corregir la tarjeta de posiciones para mostrar claramente cuando una posicion esta fuera de rango. El usuario pudo retirar liquidez V3 desde Zumpay, pero la UI no marco el estado fuera de rango con suficiente claridad.
+- V4: agregar flujo de salida/retiro de liquidez para posiciones V4. El scanner y el preflight de mint ayudan a evaluar pools, pero todavia falta una accion segura para retirar o ajustar liquidez V4 cuando el precio se mueve y la posicion sale de rango.
+- Mantener estas mejoras separadas del commit actual de assets publicos para Polygonscan.
+
 ## Propuesta futura: administrador privado de granjas
 
 Decision actual:

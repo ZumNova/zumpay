@@ -73,6 +73,8 @@ type V3Position = {
   feeLabel: string;
   tickLower: number;
   tickUpper: number;
+  currentTick?: number;
+  inRange?: boolean;
   liquidity: string;
   fees0?: string;
   fees1?: string;
@@ -280,7 +282,7 @@ const EXPLORER_ROOTS: Record<string, string> = {
 };
 
 const ZUM_ADDRESS = "0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5";
-const ZUM_OWNER = "0x521125be95c5679539aB07582F55F0040975A047";
+const ZUM_OWNER = "0xdD6cB8f731B6ABbAEE5839d2e45Fe2319a8572e4";
 const POLYGON_USDC_ADDRESS = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
 const ZUM_PREMIUM_AMOUNT = "100";
 const ZUM_PREMIUM_AMOUNT_RAW = ethers.parseUnits(ZUM_PREMIUM_AMOUNT, 18);
@@ -3182,6 +3184,31 @@ export default function Home() {
       String(position.token1),
       Number(position.fee)
     );
+    let currentTick: number | undefined;
+    try {
+      const contracts = v3Contracts(chain);
+      const factory = new ethers.Contract(
+        contracts.factory,
+        V3_FACTORY_ABI,
+        manager.runner
+      );
+      const poolAddress = (await factory.getPool(
+        position.token0,
+        position.token1,
+        position.fee
+      )) as string;
+      if (poolAddress && poolAddress.toLowerCase() !== ZERO_ADDRESS) {
+        const pool = new ethers.Contract(
+          poolAddress,
+          V3_POOL_ABI,
+          manager.runner
+        );
+        const slot0 = await pool.slot0();
+        currentTick = Number(slot0.tick);
+      }
+    } catch {
+      currentTick = knownPool?.tick;
+    }
     let collectible0 = BigInt(0);
     let collectible1 = BigInt(0);
     try {
@@ -3205,6 +3232,12 @@ export default function Home() {
       feeLabel: knownPool?.feeLabel ?? `${Number(position.fee) / 10000}%`,
       tickLower: Number(position.tickLower),
       tickUpper: Number(position.tickUpper),
+      currentTick,
+      inRange:
+        typeof currentTick === "number"
+          ? currentTick >= Number(position.tickLower) &&
+            currentTick < Number(position.tickUpper)
+          : undefined,
       liquidity: position.liquidity.toString(),
       fees0: formatV3RawAmount(collectible0, token0.decimals),
       fees1: formatV3RawAmount(collectible1, token1.decimals),
@@ -5473,7 +5506,28 @@ export default function Home() {
                   v3Positions.map((position) => (
                     <div key={`${position.chain}-${position.tokenId}`} className={styles.v3Position}>
                       <div>
-                        <p className={styles.txHash}>NFT #{position.tokenId}</p>
+                        <div className={styles.v3PositionHeader}>
+                          <p className={styles.txHash}>NFT #{position.tokenId}</p>
+                          <span
+                            className={`${styles.v3RangeBadge} ${
+                              position.liquidity === "0"
+                                ? styles.v3RangeNeutral
+                                : position.inRange === true
+                                  ? styles.v3RangeIn
+                                  : position.inRange === false
+                                    ? styles.v3RangeOut
+                                    : styles.v3RangeNeutral
+                            }`}
+                          >
+                            {position.liquidity === "0"
+                              ? "Sin liquidez"
+                              : position.inRange === true
+                                ? "En rango"
+                                : position.inRange === false
+                                  ? "Fuera de rango"
+                                  : "Actualizar estado"}
+                          </span>
+                        </div>
                         <p className={styles.txMeta}>
                           {position.label} · {position.feeLabel} ·{" "}
                           {position.chain}
@@ -5482,6 +5536,11 @@ export default function Home() {
                           Liquidez: {position.liquidity} · Rango:{" "}
                           {position.tickLower} / {position.tickUpper}
                         </p>
+                        {typeof position.currentTick === "number" ? (
+                          <p className={styles.txTime}>
+                            Tick actual: {position.currentTick}
+                          </p>
+                        ) : null}
                         <p className={styles.txTime}>
                           Fees cobrables: {position.fees0 ?? "0"}{" "}
                           {position.token0Symbol ?? "token0"} /{" "}

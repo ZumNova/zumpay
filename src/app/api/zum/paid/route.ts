@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ethers } from "ethers";
 
 const ZUM_ADDRESS = "0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5";
-const ZUM_OWNER = "0x521125be95c5679539aB07582F55F0040975A047";
+const ZUM_OWNER = "0xdD6cB8f731B6ABbAEE5839d2e45Fe2319a8572e4";
 const ZUM_PREMIUM_CONTRACT =
   process.env.ZUM_PREMIUM_CONTRACT ??
   process.env.NEXT_PUBLIC_ZUM_PREMIUM_CONTRACT ??
