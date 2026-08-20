@@ -82,6 +82,10 @@ type V3Position = {
   token1Symbol?: string;
 };
 
+type V3UsedPosition = V3Position & {
+  hiddenAt: string;
+};
+
 type V3EntryEstimate = {
   amount0: number;
   amount1: number;
@@ -227,6 +231,7 @@ const STORAGE_KEY = "zumpay_wallet_v1";
 const TOKEN_KEY = "zumpay_tokens_v1";
 const TX_KEY = "zumpay_txs_v1";
 const V3_POSITION_KEY = "zumpay_v3_positions_v1";
+const V3_USED_POSITION_KEY = "zumpay_v3_used_positions_v1";
 
 const NETWORKS: Network[] = [
   {
@@ -741,8 +746,10 @@ const V4_POSITION_MANAGER_VIEW_ABI = [
 ];
 
 const V4_ACTION_INCREASE_LIQUIDITY = "0x00";
+const V4_ACTION_DECREASE_LIQUIDITY = "0x01";
 const V4_ACTION_MINT_POSITION = "0x02";
 const V4_ACTION_SETTLE_PAIR = "0x0d";
+const V4_ACTION_TAKE_PAIR = "0x11";
 const V4_ACTION_SWEEP = "0x14";
 const V4_AMOUNT_BUFFER_BPS = BigInt(100);
 const V4_MAX_REASONABLE_GAS = BigInt(5_000_000);
@@ -1237,6 +1244,31 @@ function encodeV4IncreaseLiquidityData(
   );
 }
 
+function encodeV4DecreaseLiquidityData(
+  position: V4PositionView,
+  liquidity: bigint,
+  recipient: string
+) {
+  const coder = ethers.AbiCoder.defaultAbiCoder();
+  const actions = ethers.concat([
+    V4_ACTION_DECREASE_LIQUIDITY,
+    V4_ACTION_TAKE_PAIR
+  ]);
+  const decreaseParams = coder.encode(
+    ["uint256", "uint256", "uint128", "uint128", "bytes"],
+    [BigInt(position.tokenId), liquidity, BigInt(0), BigInt(0), "0x"]
+  );
+  const takePairParams = coder.encode(
+    ["address", "address", "address"],
+    [position.currency0, position.currency1, recipient]
+  );
+
+  return coder.encode(
+    ["bytes", "bytes[]"],
+    [actions, [decreaseParams, takePairParams]]
+  );
+}
+
 function encodeV4MintPositionData(
   pool: V4ScanResult,
   range: V4MintRange,
@@ -1656,6 +1688,7 @@ export default function Home() {
   const [v3Wallet, setV3Wallet] = useState<string | null>(null);
   const [v3TokenId, setV3TokenId] = useState("");
   const [v3Positions, setV3Positions] = useState<V3Position[]>([]);
+  const [v3UsedPositions, setV3UsedPositions] = useState<V3UsedPosition[]>([]);
   const [v3Scans, setV3Scans] = useState<Record<string, V3ScanResult>>({});
   const [v3Scanning, setV3Scanning] = useState(false);
   const [v3Discovering, setV3Discovering] = useState(false);
@@ -1702,6 +1735,8 @@ export default function Home() {
     null
   );
   const [v4AddingLiquidity, setV4AddingLiquidity] = useState(false);
+  const [v4CollectingFees, setV4CollectingFees] = useState(false);
+  const [v4WithdrawingLiquidity, setV4WithdrawingLiquidity] = useState(false);
   const [v4LastTxHash, setV4LastTxHash] = useState("");
   const [v4LiquidityChange, setV4LiquidityChange] =
     useState<V4LiquidityChange | null>(null);
@@ -3142,14 +3177,27 @@ export default function Home() {
     const raw = localStorage.getItem(V3_POSITION_KEY);
     if (!raw) {
       setV3Positions([]);
+    } else {
+      try {
+        const parsed = JSON.parse(raw) as Record<string, V3Position[]>;
+        const owner = v3Wallet?.toLowerCase() ?? "local";
+        setV3Positions(parsed[owner] ?? []);
+      } catch {
+        setV3Positions([]);
+      }
+    }
+
+    const usedRaw = localStorage.getItem(V3_USED_POSITION_KEY);
+    if (!usedRaw) {
+      setV3UsedPositions([]);
       return;
     }
     try {
-      const parsed = JSON.parse(raw) as Record<string, V3Position[]>;
+      const parsed = JSON.parse(usedRaw) as Record<string, V3UsedPosition[]>;
       const owner = v3Wallet?.toLowerCase() ?? "local";
-      setV3Positions(parsed[owner] ?? []);
+      setV3UsedPositions(parsed[owner] ?? []);
     } catch {
-      setV3Positions([]);
+      setV3UsedPositions([]);
     }
   }, [v3Wallet]);
 
@@ -3166,7 +3214,111 @@ export default function Home() {
       : [position, ...current];
     parsed[owner] = next;
     localStorage.setItem(V3_POSITION_KEY, JSON.stringify(parsed));
+
+    const usedRaw = localStorage.getItem(V3_USED_POSITION_KEY);
+    if (usedRaw) {
+      const usedParsed = JSON.parse(usedRaw) as Record<string, V3UsedPosition[]>;
+      usedParsed[owner] = (usedParsed[owner] ?? []).filter(
+        (item) =>
+          !(
+            item.chain === position.chain &&
+            item.tokenId === position.tokenId
+          )
+      );
+      localStorage.setItem(V3_USED_POSITION_KEY, JSON.stringify(usedParsed));
+      setV3UsedPositions(usedParsed[owner] ?? []);
+    }
     setV3Positions(next);
+  };
+
+  const saveV3PositionLists = (
+    active: V3Position[],
+    used: V3UsedPosition[],
+    ownerAddress?: string
+  ) => {
+    const owner =
+      ownerAddress?.toLowerCase() ?? v3Wallet?.toLowerCase() ?? "local";
+    const raw = localStorage.getItem(V3_POSITION_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, V3Position[]>) : {};
+    parsed[owner] = active;
+    localStorage.setItem(V3_POSITION_KEY, JSON.stringify(parsed));
+
+    const usedRaw = localStorage.getItem(V3_USED_POSITION_KEY);
+    const usedParsed = usedRaw
+      ? (JSON.parse(usedRaw) as Record<string, V3UsedPosition[]>)
+      : {};
+    usedParsed[owner] = used;
+    localStorage.setItem(V3_USED_POSITION_KEY, JSON.stringify(usedParsed));
+
+    setV3Positions(active);
+    setV3UsedPositions(used);
+  };
+
+  const v3HasCollectibleFees = (position: V3Position) =>
+    (parseHumanAmount(position.fees0 ?? "0") || 0) > 0 ||
+    (parseHumanAmount(position.fees1 ?? "0") || 0) > 0;
+
+  const handleV3HidePosition = (position: V3Position) => {
+    const active = v3Positions.filter(
+      (item) =>
+        !(
+          item.chain === position.chain &&
+          item.tokenId === position.tokenId
+        )
+    );
+    const hidden: V3UsedPosition = {
+      ...position,
+      hiddenAt: new Date().toISOString()
+    };
+    const used = [
+      hidden,
+      ...v3UsedPositions.filter(
+        (item) =>
+          !(
+            item.chain === position.chain &&
+            item.tokenId === position.tokenId
+          )
+      )
+    ];
+    saveV3PositionLists(active, used);
+    setV3Status(`NFT #${position.tokenId} ocultado en Zumpay. No se gastó gas.`);
+  };
+
+  const handleV3RestorePosition = (position: V3UsedPosition) => {
+    const restored: V3Position = {
+      tokenId: position.tokenId,
+      chain: position.chain,
+      label: position.label,
+      feeLabel: position.feeLabel,
+      tickLower: position.tickLower,
+      tickUpper: position.tickUpper,
+      currentTick: position.currentTick,
+      inRange: position.inRange,
+      liquidity: position.liquidity,
+      fees0: position.fees0,
+      fees1: position.fees1,
+      token0Symbol: position.token0Symbol,
+      token1Symbol: position.token1Symbol
+    };
+    const active = [
+      restored,
+      ...v3Positions.filter(
+        (item) =>
+          !(
+            item.chain === position.chain &&
+            item.tokenId === position.tokenId
+          )
+      )
+    ];
+    const used = v3UsedPositions.filter(
+      (item) =>
+        !(
+          item.chain === position.chain &&
+          item.tokenId === position.tokenId
+        )
+    );
+    saveV3PositionLists(active, used);
+    setV3Status(`NFT #${position.tokenId} restaurado a posiciones activas.`);
   };
 
   const readV3Position = async (
@@ -4151,6 +4303,148 @@ export default function Home() {
     }
   };
 
+  const prepareV4DecreaseCall = async (
+    mode: "collect" | "withdraw"
+  ): Promise<V4LiquidityCall | null> => {
+    if (!v4Position) {
+      setV4Status("Primero leé el NFT V4.");
+      return null;
+    }
+
+    const signer = await getV3Signer("robinhood");
+    const owner = await signer.getAddress();
+    if (!signer.provider) {
+      throw new Error("MetaMask no devolvió provider para Robinhood.");
+    }
+
+    const manager = new ethers.Contract(
+      V4_ROBINHOOD_CONTRACTS.positionManager,
+      V4_POSITION_MANAGER_VIEW_ABI,
+      signer
+    );
+    const nftOwner = (await manager.ownerOf(v4Position.tokenId)) as string;
+    if (nftOwner.toLowerCase() !== owner.toLowerCase()) {
+      setV4Status("Ese NFT V4 no pertenece a la MetaMask conectada.");
+      return null;
+    }
+
+    const liveLiquidity = (await manager.getPositionLiquidity(
+      v4Position.tokenId
+    )) as bigint;
+    if (mode === "withdraw" && liveLiquidity <= BigInt(0)) {
+      setV4Status("Ese NFT V4 ya no tiene liquidez para retirar.");
+      return null;
+    }
+
+    const unlockData = encodeV4DecreaseLiquidityData(
+      v4Position,
+      mode === "collect" ? BigInt(0) : liveLiquidity,
+      owner
+    );
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
+
+    return {
+      signer,
+      provider: signer.provider,
+      manager,
+      unlockData,
+      deadline,
+      value: BigInt(0)
+    };
+  };
+
+  const executeV4Decrease = async (mode: "collect" | "withdraw") => {
+    const isWithdraw = mode === "withdraw";
+    let sentHash = "";
+    try {
+      if (isWithdraw) {
+        setV4WithdrawingLiquidity(true);
+      } else {
+        setV4CollectingFees(true);
+      }
+      setV4LastTxHash("");
+      setV4LiquidityChange(null);
+      setV4GasEstimate(null);
+      if (
+        isWithdraw &&
+        !window.confirm(
+          "Vas a retirar toda la liquidez V4 con minimos recibidos en 0. MetaMask mostrara la transaccion real. Continuar?"
+        )
+      ) {
+        setV4Status("Retiro V4 cancelado antes de abrir MetaMask.");
+        return;
+      }
+      setV4Status(
+        isWithdraw
+          ? "Preparando retiro V4. MetaMask pedirá confirmación real."
+          : "Preparando cobro de fees V4. MetaMask pedirá confirmación real."
+      );
+
+      const prepared = await prepareV4DecreaseCall(mode);
+      if (!prepared) {
+        return;
+      }
+
+      const gas = (await prepared.manager.modifyLiquidities.estimateGas(
+        prepared.unlockData,
+        prepared.deadline,
+        { value: prepared.value }
+      )) as bigint;
+      if (gas > V4_MAX_REASONABLE_GAS) {
+        setV4GasEstimate({
+          status: gas > V4_DANGER_GAS ? "error" : "warn",
+          title: gas > V4_DANGER_GAS ? "Gas bloqueado" : "Gas alto",
+          detail: `${formatGasUnits(
+            gas
+          )} unidades antes de firmar. Operación detenida.`
+        });
+        setV4Status("Gas V4 alto. No se abrió firma.");
+        return;
+      }
+
+      const tx = await prepared.manager.modifyLiquidities(
+        prepared.unlockData,
+        prepared.deadline,
+        { value: prepared.value }
+      );
+      sentHash = tx.hash;
+      setV4LastTxHash(tx.hash);
+      setV4Status(`Tx V4 enviada: ${tx.hash.slice(0, 10)}...`);
+      await tx.wait();
+      const refreshed = (await prepared.manager.getPositionLiquidity(
+        v4Position?.tokenId
+      )) as bigint;
+      if (v4Position) {
+        setV4Position({
+          ...v4Position,
+          liquidity: refreshed.toString(),
+          checkedAt: new Date().toLocaleTimeString()
+        });
+      }
+      setV4Status(
+        isWithdraw
+          ? `Liquidez retirada del NFT V4 #${v4Position?.tokenId}.`
+          : `Fees V4 cobradas del NFT #${v4Position?.tokenId}.`
+      );
+    } catch (error) {
+      console.error(error);
+      if (sentHash) {
+        setV4LastTxHash(sentHash);
+      }
+      setV4Status(
+        error instanceof Error
+          ? `No se pudo completar la operación V4: ${describeV4EstimateError(error)}`
+          : "No se pudo completar la operación V4."
+      );
+    } finally {
+      if (isWithdraw) {
+        setV4WithdrawingLiquidity(false);
+      } else {
+        setV4CollectingFees(false);
+      }
+    }
+  };
+
   const handleV3CreatePosition = async () => {
     try {
       setV3Executing(true);
@@ -4490,12 +4784,25 @@ export default function Home() {
       const parsed = raw ? (JSON.parse(raw) as Record<string, V3Position[]>) : {};
       const existing = parsed[ownerKey] ?? [];
       const otherChains = existing.filter((item) => item.chain !== v3Chain);
-      const merged = [...discovered, ...otherChains];
+      const usedRaw = localStorage.getItem(V3_USED_POSITION_KEY);
+      const usedParsed = usedRaw
+        ? (JSON.parse(usedRaw) as Record<string, V3UsedPosition[]>)
+        : {};
+      const hidden = usedParsed[ownerKey] ?? [];
+      const visibleDiscovered = discovered.filter(
+        (position) =>
+          !hidden.some(
+            (item) =>
+              item.chain === position.chain &&
+              item.tokenId === position.tokenId
+          )
+      );
+      const merged = [...visibleDiscovered, ...otherChains];
       parsed[ownerKey] = merged;
       localStorage.setItem(V3_POSITION_KEY, JSON.stringify(parsed));
       setV3Positions(merged);
       setV3Status(
-        `Encontrados ${discovered.length} NFT(s) V3 en ${v3Chain}.`
+        `Encontrados ${discovered.length} NFT(s) V3 en ${v3Chain}; ${visibleDiscovered.length} visibles.`
       );
     } catch (error) {
       console.error(error);
@@ -4507,6 +4814,10 @@ export default function Home() {
 
   const handleV3Collect = async (position: V3Position) => {
     try {
+      if (!v3HasCollectibleFees(position)) {
+        setV3Status(`NFT #${position.tokenId} no tiene fees para cobrar.`);
+        return;
+      }
       setV3Chain(position.chain);
       const signer = await getV3Signer(position.chain);
       const recipient = await signer.getAddress();
@@ -5552,9 +5863,11 @@ export default function Home() {
                         <button
                           className={styles.outline}
                           onClick={() => handleV3Collect(position)}
-                          disabled={isLocked}
+                          disabled={isLocked || !v3HasCollectibleFees(position)}
                         >
-                          Collect fees
+                          {v3HasCollectibleFees(position)
+                            ? "Collect fees"
+                            : "Sin fees"}
                         </button>
                         <button
                           className={styles.outline}
@@ -5563,11 +5876,59 @@ export default function Home() {
                         >
                           Retirar
                         </button>
+                        <button
+                          className={styles.outline}
+                          onClick={() => handleV3HidePosition(position)}
+                          disabled={isLocked}
+                        >
+                          Ocultar
+                        </button>
                       </div>
                     </div>
                   ))
                 )}
               </div>
+              {v3UsedPositions.length > 0 ? (
+                <div className={styles.v3UsedBox}>
+                  <div>
+                    <h4>NFTs usados</h4>
+                    <p>
+                      Ocultos solo en Zumpay. Siguen existiendo on-chain y se
+                      pueden restaurar.
+                    </p>
+                  </div>
+                  <div className={styles.v3PositionList}>
+                    {v3UsedPositions.map((position) => (
+                      <div
+                        key={`used-${position.chain}-${position.tokenId}`}
+                        className={styles.v3UsedRow}
+                      >
+                        <div>
+                          <strong>NFT #{position.tokenId}</strong>
+                          <span>
+                            {position.label} · {position.feeLabel} ·{" "}
+                            {position.chain}
+                          </span>
+                          <small>
+                            Liquidez: {position.liquidity} · Fees:{" "}
+                            {position.fees0 ?? "0"}{" "}
+                            {position.token0Symbol ?? "token0"} /{" "}
+                            {position.fees1 ?? "0"}{" "}
+                            {position.token1Symbol ?? "token1"}
+                          </small>
+                        </div>
+                        <button
+                          className={styles.outline}
+                          onClick={() => handleV3RestorePosition(position)}
+                          disabled={isLocked}
+                        >
+                          Restaurar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               {v3Status ? <p className={styles.status}>{v3Status}</p> : null}
             </div>
           </div>
@@ -6080,6 +6441,41 @@ export default function Home() {
               ) : null}
               {v4Position ? (
                 <>
+                  <div className={styles.v4UseBox}>
+                    <strong>Gestionar NFT V4 existente</strong>
+                    <span>
+                      Cobrar fees usa DECREASE_LIQUIDITY con liquidez cero.
+                      Retirar liquidez usa la liquidez actual del NFT. Ambas
+                      acciones abren MetaMask.
+                    </span>
+                  </div>
+                  <div className={styles.ctas}>
+                    <button
+                      className={styles.outline}
+                      onClick={() => executeV4Decrease("collect")}
+                      disabled={
+                        isLocked ||
+                        v4CollectingFees ||
+                        v4WithdrawingLiquidity
+                      }
+                    >
+                      {v4CollectingFees ? "Cobrando..." : "Cobrar fees V4"}
+                    </button>
+                    <button
+                      className={styles.primary}
+                      onClick={() => executeV4Decrease("withdraw")}
+                      disabled={
+                        isLocked ||
+                        v4CollectingFees ||
+                        v4WithdrawingLiquidity ||
+                        v4Position.liquidity === "0"
+                      }
+                    >
+                      {v4WithdrawingLiquidity
+                        ? "Retirando..."
+                        : "Retirar liquidez V4"}
+                    </button>
+                  </div>
                   <div className={styles.v3ManualGrid}>
                     <div className={styles.field}>
                       <label>Monto {v4Position.token0Symbol}</label>

@@ -1283,6 +1283,56 @@
   justify-content: flex-end;
 }
 
+.v3UsedBox {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.v3UsedBox h4 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.v3UsedBox p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.v3UsedRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(7, 12, 24, 0.5);
+  border: 1px dashed rgba(148, 163, 184, 0.2);
+}
+
+.v3UsedRow div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.v3UsedRow strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.v3UsedRow span,
+.v3UsedRow small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .txRow:hover {
     transform: translateY(-2px);
@@ -1389,6 +1439,10 @@
   }
 
   .v3Position {
+    grid-template-columns: 1fr;
+  }
+
+  .v3UsedRow {
     grid-template-columns: 1fr;
   }
 
