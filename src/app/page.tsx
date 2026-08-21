@@ -423,6 +423,10 @@ const V3_TOKENS: Record<
       address: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
       decimals: 6
     },
+    USDe: {
+      address: "0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34",
+      decimals: 18
+    },
     SPCX: {
       address: "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
       decimals: 18
@@ -473,6 +477,20 @@ const V3_POOLS: V3Pool[] = [
     tick: 64646,
     reserve: "$3.33M",
     activity: "Activa baja"
+  },
+  {
+    id: "arb-wbtc-weth-500",
+    chain: "arbitrum",
+    label: "WBTC/WETH",
+    fee: 500,
+    feeLabel: "0.05%",
+    token0: "WBTC",
+    token1: "WETH",
+    inputToken: "WETH",
+    price: 31.02,
+    tick: 264619,
+    reserve: "Blue-chip rotation",
+    activity: "Activa"
   },
   {
     id: "arb-usdc-link-3000",
@@ -646,6 +664,16 @@ const V3_POOLS: V3Pool[] = [
 ];
 
 const V4_ROBINHOOD_POOL_CANDIDATES: V4PoolCandidate[] = [
+  {
+    id: "rh-v4-usde-usdg-100",
+    label: "USDe/USDG",
+    currencyA: V3_TOKENS.robinhood.USDe.address,
+    currencyB: V3_TOKENS.robinhood.USDG.address,
+    fee: 100,
+    tickSpacing: 1,
+    hooks: ZERO_ADDRESS,
+    note: "Stable Core · fee 0.01% · rango sugerido 0.98-1.02"
+  },
   {
     id: "rh-v4-weth-usdg-500",
     label: "WETH/USDG",
@@ -1724,6 +1752,7 @@ export default function Home() {
   const [v4MintProfile, setV4MintProfile] =
     useState<keyof typeof V3_PROFILES>("moderate");
   const [v4MintUsdAmount, setV4MintUsdAmount] = useState("");
+  const [v4MintSlippage, setV4MintSlippage] = useState("1");
   const [v4MintAmount0, setV4MintAmount0] = useState("");
   const [v4MintAmount1, setV4MintAmount1] = useState("");
   const [v4MintPreflighting, setV4MintPreflighting] = useState(false);
@@ -1733,6 +1762,7 @@ export default function Home() {
   const [v4MintEstimatingGas, setV4MintEstimatingGas] = useState(false);
   const [v4MintGasEstimate, setV4MintGasEstimate] =
     useState<V4GasEstimate | null>(null);
+  const [v4Minting, setV4Minting] = useState(false);
   const [v4ReadingPosition, setV4ReadingPosition] = useState(false);
   const [v4AddAmount0, setV4AddAmount0] = useState("");
   const [v4AddAmount1, setV4AddAmount1] = useState("");
@@ -2215,21 +2245,37 @@ export default function Home() {
     );
   };
 
-  const buildV4MintInputs = () => {
+  const buildV4MintInputs = (
+    amount0Text = v4MintAmount0,
+    amount1Text = v4MintAmount1
+  ) => {
     if (!v4Result || !v4MintRange || v4Result.usability !== "Usable") {
       setV4Status("Primero cargá una pool V4 usable.");
       return null;
     }
 
     const amount0Raw = parseTokenUnits(
-      v4MintAmount0,
+      amount0Text,
       v4Result.token0Decimals
     );
     const amount1Raw = parseTokenUnits(
-      v4MintAmount1,
+      amount1Text,
       v4Result.token1Decimals
     );
-    const liquidityRaw = estimatedV4LiquidityRaw(v4MintSimulation);
+    const amount0 = Math.max(parseHumanAmount(amount0Text) || 0, 0);
+    const amount1 = Math.max(parseHumanAmount(amount1Text) || 0, 0);
+    const simulation = simulateV4Liquidity(
+      amount0,
+      amount1,
+      v4Result.tick,
+      v4MintRange.lowerTick,
+      v4MintRange.upperTick,
+      v4Result.token0Symbol,
+      v4Result.token1Symbol,
+      v4Result.token0Decimals,
+      v4Result.token1Decimals
+    );
+    const liquidityRaw = estimatedV4LiquidityRaw(simulation);
     if (
       amount0Raw <= BigInt(0) ||
       amount1Raw <= BigInt(0) ||
@@ -2380,8 +2426,11 @@ export default function Home() {
     }
   };
 
-  const prepareV4MintCall = async (): Promise<V4LiquidityCall | null> => {
-    const inputs = buildV4MintInputs();
+  const prepareV4MintCall = async (
+    amount0Text?: string,
+    amount1Text?: string
+  ): Promise<V4LiquidityCall | null> => {
+    const inputs = buildV4MintInputs(amount0Text, amount1Text);
     if (!inputs) {
       return null;
     }
@@ -2483,6 +2532,288 @@ export default function Home() {
       setV4Status("No se pudo estimar mint V4. No firmes todavía.");
     } finally {
       setV4MintEstimatingGas(false);
+    }
+  };
+
+  const handleV4MintPosition = async () => {
+    try {
+      setV4Minting(true);
+      setV4LastTxHash("");
+      setV4LiquidityChange(null);
+      if (v4MintGasEstimate?.status !== "ok") {
+        setV4Status("Primero necesitás una estimación de gas MINT_POSITION en verde.");
+        return;
+      }
+
+      const prepared = await prepareV4MintCall();
+      if (!prepared) {
+        return;
+      }
+      const owner = await prepared.signer.getAddress();
+
+      setV4Status("Revalidando gas antes de abrir MetaMask para crear el NFT V4.");
+      const gas = (await prepared.manager.modifyLiquidities.estimateGas(
+        prepared.unlockData,
+        prepared.deadline,
+        { value: prepared.value }
+      )) as bigint;
+      if (gas > V4_MAX_REASONABLE_GAS) {
+        setV4MintGasEstimate({
+          status: gas > V4_DANGER_GAS ? "error" : "warn",
+          title: gas > V4_DANGER_GAS ? "Mint bloqueado por gas" : "Gas de mint alto",
+          detail: `${formatGasUnits(
+            gas
+          )} unidades antes de firmar. Operación detenida.`
+        });
+        setV4Status("Gas de mint V4 dejó de estar normal. No se abrió firma.");
+        return;
+      }
+
+      setV4Status("MetaMask va a pedir firma real para crear un NFT V4 nuevo.");
+      const tx = await prepared.manager.modifyLiquidities(
+        prepared.unlockData,
+        prepared.deadline,
+        { value: prepared.value }
+      );
+      setV4LastTxHash(tx.hash);
+      setV4Status(
+        `Mint enviado: ${tx.hash.slice(0, 10)}... Esperando confirmación.`
+      );
+
+      const receipt = await waitForV3Receipt(tx.hash, "robinhood", 300000);
+      const mintedTokenId = extractMintedV3TokenId(
+        receipt,
+        owner,
+        V4_ROBINHOOD_CONTRACTS.positionManager
+      );
+      if (mintedTokenId) {
+        setV4TokenId(mintedTokenId);
+        setV4Position(null);
+        setV4MintGasEstimate(null);
+        setV4MintPreflightChecks([]);
+      }
+      setV4Status(
+        mintedTokenId
+          ? `NFT V4 creado #${mintedTokenId}. Tocá Leer NFT V4 para cargarlo en pantalla.`
+          : "NFT V4 creado. No pude leer el tokenId del recibo; revisalo en el explorador."
+      );
+    } catch (error) {
+      console.error(error);
+      setV4Status(
+        error instanceof Error
+          ? `No se pudo crear el NFT V4: ${error.message}`
+          : "No se pudo crear el NFT V4."
+      );
+    } finally {
+      setV4Minting(false);
+    }
+  };
+
+  const handleV4CreateFromUsd = async () => {
+    try {
+      setV4Minting(true);
+      setV4LastTxHash("");
+      setV4LiquidityChange(null);
+      setV4MintGasEstimate(null);
+      if (!v4Result || !v4MintRange || !v4UsdAssistPlan) {
+        setV4Status("Cargá una pool token/USDG y un total USDG válido.");
+        return;
+      }
+      const usdgAddress = V3_TOKENS.robinhood.USDG.address.toLowerCase();
+      if (
+        v4Result.currency1.toLowerCase() !== usdgAddress ||
+        v4Result.currency0.toLowerCase() === ZERO_ADDRESS
+      ) {
+        setV4Status(
+          "Crear desde USDG automático está habilitado para pools ERC20/USDG. ETH nativo queda para el siguiente módulo."
+        );
+        return;
+      }
+      if (
+        !window.confirm(
+          "Zumpay va a ejecutar swap USDG -> token y luego crear el NFT V4. MetaMask puede pedir approvals y dos transacciones reales. Continuar?"
+        )
+      ) {
+        setV4Status("Crear desde USDG cancelado antes de abrir MetaMask.");
+        return;
+      }
+
+      const signer = await getV3Signer("robinhood");
+      const owner = await signer.getAddress();
+      const contracts = v3Contracts("robinhood");
+      if (!contracts.quoter) {
+        setV4Status("Robinhood no tiene quoter V3 configurado para swap interno.");
+        return;
+      }
+
+      const totalUsdRaw = parseTokenUnits(
+        v4MintUsdAmount,
+        v4Result.token1Decimals
+      );
+      const swapUsdRaw = parseTokenUnits(
+        v4UsdAssistPlan.sourceToSwap
+          .toFixed(Math.min(v4Result.token1Decimals, 8))
+          .replace(/(\.\d*?[1-9])0+$/, "$1")
+          .replace(/\.0+$/, ""),
+        v4Result.token1Decimals
+      );
+      const keepUsdRaw =
+        totalUsdRaw > swapUsdRaw ? totalUsdRaw - swapUsdRaw : BigInt(0);
+      if (totalUsdRaw <= BigInt(0) || swapUsdRaw <= BigInt(0) || keepUsdRaw <= BigInt(0)) {
+        setV4Status("El total USDG es demasiado chico para dividir swap + mint.");
+        return;
+      }
+
+      const usdg = new ethers.Contract(v4Result.currency1, ERC20_ABI, signer);
+      const target = new ethers.Contract(v4Result.currency0, ERC20_ABI, signer);
+      const usdgBalance = (await usdg.balanceOf(owner)) as bigint;
+      if (usdgBalance < totalUsdRaw) {
+        setV4Status(
+          `Saldo insuficiente. Tenés ${formatV3RawAmount(
+            usdgBalance,
+            v4Result.token1Decimals
+          )} ${v4Result.token1Symbol}.`
+        );
+        return;
+      }
+
+      const quoter = new ethers.Contract(contracts.quoter, V3_QUOTER_ABI, signer);
+      const slippagePct = Math.min(Math.max(Number(v4MintSlippage) || 1, 0.1), 5);
+      setV4Status(
+        `Consultando quote para cambiar ${v4Result.token1Symbol} a ${v4Result.token0Symbol}.`
+      );
+      const quotedOutput = (await quoter.quoteExactInputSingle.staticCall(
+        v4Result.currency1,
+        v4Result.currency0,
+        v4Result.fee,
+        swapUsdRaw,
+        0
+      )) as bigint;
+      const minOutput =
+        (quotedOutput * BigInt(10000 - Math.round(slippagePct * 100))) /
+        BigInt(10000);
+
+      await ensureV4Erc20Allowance(
+        v4Result.currency1,
+        contracts.swapRouter,
+        swapUsdRaw,
+        signer,
+        `${v4Result.token1Symbol} para swap`
+      );
+
+      const targetBalanceBefore = (await target.balanceOf(owner)) as bigint;
+      const router = new ethers.Contract(
+        contracts.swapRouter,
+        V3_SWAP_ROUTER_ABI,
+        signer
+      );
+      setV4Status(
+        `Ejecutando swap interno ${v4Result.token1Symbol} -> ${v4Result.token0Symbol}.`
+      );
+      const swapTx = await router.exactInputSingle({
+        tokenIn: v4Result.currency1,
+        tokenOut: v4Result.currency0,
+        fee: v4Result.fee,
+        recipient: owner,
+        deadline: deadlineSeconds(),
+        amountIn: swapUsdRaw,
+        amountOutMinimum: minOutput,
+        sqrtPriceLimitX96: 0
+      });
+      setV4LastTxHash(swapTx.hash);
+      setV4Status(`Swap enviado: ${swapTx.hash.slice(0, 10)}...`);
+      await waitForV3Receipt(swapTx.hash, "robinhood", 300000);
+
+      const targetBalanceAfter = (await target.balanceOf(owner)) as bigint;
+      const targetReceived = targetBalanceAfter - targetBalanceBefore;
+      if (targetReceived <= BigInt(0)) {
+        setV4Status("El swap no dejó saldo nuevo para crear la posición V4.");
+        return;
+      }
+
+      const amount0Text = ethers.formatUnits(
+        targetReceived,
+        v4Result.token0Decimals
+      );
+      const amount1Text = ethers.formatUnits(keepUsdRaw, v4Result.token1Decimals);
+      setV4MintAmount0(amount0Text);
+      setV4MintAmount1(amount1Text);
+
+      await ensureV4Erc20Allowance(
+        v4Result.currency0,
+        V4_ROBINHOOD_CONTRACTS.permit2,
+        targetReceived,
+        signer,
+        `${v4Result.token0Symbol} para mint V4`
+      );
+      await ensureV4Erc20Allowance(
+        v4Result.currency1,
+        V4_ROBINHOOD_CONTRACTS.permit2,
+        keepUsdRaw,
+        signer,
+        `${v4Result.token1Symbol} para mint V4`
+      );
+
+      setV4Status("Preparando MINT_POSITION con los montos reales del swap.");
+      const prepared = await prepareV4MintCall(amount0Text, amount1Text);
+      if (!prepared) {
+        return;
+      }
+      const gas = (await prepared.manager.modifyLiquidities.estimateGas(
+        prepared.unlockData,
+        prepared.deadline,
+        { value: prepared.value }
+      )) as bigint;
+      if (gas > V4_MAX_REASONABLE_GAS) {
+        setV4MintGasEstimate({
+          status: gas > V4_DANGER_GAS ? "error" : "warn",
+          title: gas > V4_DANGER_GAS ? "Mint bloqueado por gas" : "Gas de mint alto",
+          detail: `${formatGasUnits(
+            gas
+          )} unidades después del swap. Operación detenida.`
+        });
+        setV4Status("Swap hecho, pero el mint quedó detenido por gas alto.");
+        return;
+      }
+      setV4MintGasEstimate({
+        status: "ok",
+        title: "Mint listo",
+        detail: `${formatGasUnits(gas)} unidades estimadas después del swap.`
+      });
+
+      setV4Status("MetaMask va a pedir firma real para crear el NFT V4.");
+      const mintTx = await prepared.manager.modifyLiquidities(
+        prepared.unlockData,
+        prepared.deadline,
+        { value: prepared.value }
+      );
+      setV4LastTxHash(mintTx.hash);
+      setV4Status(`Mint enviado: ${mintTx.hash.slice(0, 10)}...`);
+      const receipt = await waitForV3Receipt(mintTx.hash, "robinhood", 300000);
+      const mintedTokenId = extractMintedV3TokenId(
+        receipt,
+        owner,
+        V4_ROBINHOOD_CONTRACTS.positionManager
+      );
+      if (mintedTokenId) {
+        setV4TokenId(mintedTokenId);
+        setV4Position(null);
+        setV4MintPreflightChecks([]);
+      }
+      setV4Status(
+        mintedTokenId
+          ? `Crear desde USDG completado. NFT V4 #${mintedTokenId} creado.`
+          : "Crear desde USDG completado. No pude leer el tokenId del recibo."
+      );
+    } catch (error) {
+      console.error(error);
+      setV4Status(
+        error instanceof Error
+          ? `No se pudo crear desde USDG: ${describeV4EstimateError(error)}`
+          : "No se pudo crear desde USDG."
+      );
+    } finally {
+      setV4Minting(false);
     }
   };
 
@@ -3512,6 +3843,36 @@ export default function Home() {
     assertReasonableV3Gas(approveGas, chain, `Approve ${label}`);
     const approveTx = await token.approve(spender, amount);
     await waitForV3Receipt(approveTx.hash, chain);
+  };
+
+  const ensureV4Erc20Allowance = async (
+    tokenAddress: string,
+    spender: string,
+    amount: bigint,
+    signer: ethers.Signer,
+    label: string
+  ) => {
+    if (amount <= BigInt(0) || tokenAddress.toLowerCase() === ZERO_ADDRESS) {
+      return;
+    }
+    const owner = await signer.getAddress();
+    const token = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+    const current = (await token.allowance(owner, spender)) as bigint;
+    if (current >= amount) {
+      return;
+    }
+    if (current > BigInt(0)) {
+      setV4Status(`Reseteando approve previo de ${label}.`);
+      const resetGas = (await token.approve.estimateGas(spender, 0)) as bigint;
+      assertReasonableV3Gas(resetGas, "robinhood", `Approve reset ${label}`);
+      const resetTx = await token.approve(spender, 0);
+      await waitForV3Receipt(resetTx.hash, "robinhood", 300000);
+    }
+    setV4Status(`Aprobando ${label}.`);
+    const approveGas = (await token.approve.estimateGas(spender, amount)) as bigint;
+    assertReasonableV3Gas(approveGas, "robinhood", `Approve ${label}`);
+    const approveTx = await token.approve(spender, amount);
+    await waitForV3Receipt(approveTx.hash, "robinhood", 300000);
   };
 
   const getV3Signer = async (chain: V3ChainKey = v3Chain) => {
@@ -5636,6 +5997,33 @@ export default function Home() {
           <div className={styles.sectionGrid}>
             <div className={styles.walletCard}>
               <h3>Preparar rango</h3>
+              <div className={styles.strategyGrid}>
+                <div className={styles.strategyCard}>
+                  <div>
+                    <span>Blue Chip Rotation V3</span>
+                    <strong>WBTC/WETH · Arbitrum · 0.05%</strong>
+                    <small>
+                      No es estable. Sirve si aceptarías quedar 100% en WBTC o
+                      100% en WETH.
+                    </small>
+                  </div>
+                  <button
+                    className={styles.softButton}
+                    onClick={() => {
+                      setV3Chain("arbitrum");
+                      setV3PoolId("arb-wbtc-weth-500");
+                      setV3Profile("conservative");
+                      setV3EntryMode("single");
+                      setV3Status(
+                        "Blue Chip Rotation cargada: WBTC/WETH 0.05% en Arbitrum."
+                      );
+                    }}
+                    disabled={isLocked || v3Scanning || v3Executing}
+                  >
+                    Cargar
+                  </button>
+                </div>
+              </div>
               <div className={styles.field}>
                 <label>Red</label>
                 <select
@@ -6069,6 +6457,21 @@ export default function Home() {
                   className={styles.outline}
                   onClick={() => {
                     resetV4LoadedPosition();
+                    setV4CurrencyA(V3_TOKENS.robinhood.USDe.address);
+                    setV4CurrencyB(V3_TOKENS.robinhood.USDG.address);
+                    setV4Fee("100");
+                    setV4TickSpacing("1");
+                    setV4Hooks(ZERO_ADDRESS);
+                    setV4Status("Preset USDe/USDG Stable Core cargado.");
+                  }}
+                  disabled={v4Scanning || v4MultiScanning}
+                >
+                  USDe/USDG
+                </button>
+                <button
+                  className={styles.outline}
+                  onClick={() => {
+                    resetV4LoadedPosition();
                     setV4CurrencyA("");
                     setV4CurrencyB(V3_TOKENS.robinhood.USDG.address);
                     setV4Fee("3000");
@@ -6122,7 +6525,9 @@ export default function Home() {
                         const selectedFee = event.target.value;
                         setV4Fee(selectedFee);
                         setV4TickSpacing(
-                          selectedFee === "500"
+                          selectedFee === "100"
+                            ? "1"
+                            : selectedFee === "500"
                             ? "10"
                             : selectedFee === "3000"
                               ? "60"
@@ -6130,6 +6535,7 @@ export default function Home() {
                         );
                       }}
                     >
+                      <option value="100">0.01% LP / spacing 1</option>
                       <option value="500">0.05% LP / spacing 10</option>
                       <option value="3000">0.3% LP / spacing 60</option>
                       <option value="10000">1% LP / spacing 200</option>
@@ -6156,6 +6562,35 @@ export default function Home() {
                   />
                 </div>
               </details>
+              <div className={styles.strategyGrid}>
+                <div className={styles.strategyCard}>
+                  <div>
+                    <span>Stable Core V4</span>
+                    <strong>USDe/USDG · 0.01%</strong>
+                    <small>
+                      Rango sugerido 0.98-1.02. Entrada desde USDG, sin hooks.
+                    </small>
+                  </div>
+                  <button
+                    className={styles.softButton}
+                    onClick={() => {
+                      resetV4LoadedPosition();
+                      setV4CurrencyA(V3_TOKENS.robinhood.USDe.address);
+                      setV4CurrencyB(V3_TOKENS.robinhood.USDG.address);
+                      setV4Fee("100");
+                      setV4TickSpacing("1");
+                      setV4Hooks(ZERO_ADDRESS);
+                      setV4MintProfile("conservative");
+                      setV4Status(
+                        "Stable Core cargada: USDe/USDG 0.01%, spacing 1. Escaneá antes de crear."
+                      );
+                    }}
+                    disabled={v4Scanning || v4MultiScanning}
+                  >
+                    Cargar
+                  </button>
+                </div>
+              </div>
               <div className={styles.ctas}>
                 <button
                   className={styles.primary}
@@ -6338,11 +6773,10 @@ export default function Home() {
               {v4Result ? (
                 <div className={styles.v4MintPanel}>
                   <div>
-                    <h4>Simular nuevo NFT V4</h4>
+                    <h4>Crear NFT V4</h4>
                     <p>
-                      Prepara un rango y estima liquidez sin firmar. La creacion
-                      real queda bloqueada hasta validar balances, permisos y
-                      gas.
+                      Prepara el split, valida balances y permisos, estima gas
+                      y habilita la firma real de MINT_POSITION.
                     </p>
                   </div>
                   <div className={styles.v3ManualGrid}>
@@ -6404,11 +6838,12 @@ export default function Home() {
                   ) : null}
                   {v4Result.token1Symbol.toUpperCase() === "USDG" ? (
                     <div className={styles.v4UseBox}>
-                      <strong>Entrar desde USDG</strong>
+                      <strong>Paso 1 · Split desde USDG</strong>
                       <span>
                         Ingresá un monto único en USDG. Zumpay calcula cuánto
                         conviene convertir al otro token y cuánto dejar como
-                        USDG para este rango.
+                        USDG para este rango. Si falta el otro token, primero
+                        hay que hacer ese swap.
                       </span>
                       <div className={styles.v4AssistGrid}>
                         <div className={styles.field}>
@@ -6419,6 +6854,18 @@ export default function Home() {
                               setV4MintUsdAmount(event.target.value)
                             }
                             placeholder="Ej: 10"
+                            inputMode="decimal"
+                            disabled={!v4CanSimulateMint}
+                          />
+                        </div>
+                        <div className={styles.field}>
+                          <label>Slippage</label>
+                          <input
+                            value={v4MintSlippage}
+                            onChange={(event) =>
+                              setV4MintSlippage(event.target.value)
+                            }
+                            placeholder="1"
                             inputMode="decimal"
                             disabled={!v4CanSimulateMint}
                           />
@@ -6525,17 +6972,21 @@ export default function Home() {
                     </div>
                   ) : null}
                   <div className={styles.v4UseBox}>
-                    <strong>Preflight MINT_POSITION</strong>
+                    <strong>Paso 2 · Crear posición</strong>
                     <span>
-                      Revisa balances, permiso ERC20 hacia Permit2 y gas para
-                      crear un NFT nuevo. No abre firma ni envia transaccion.
+                      Probá balances y Permit2, estimá gas y recién después
+                      abrí MetaMask para crear el NFT V4 nuevo.
                     </span>
                   </div>
                   <div className={styles.ctas}>
                     <button
                       className={styles.outline}
                       onClick={handleV4MintPreflight}
-                      disabled={!v4CanSimulateMint || v4MintPreflighting}
+                      disabled={
+                        !v4CanSimulateMint ||
+                        v4MintPreflighting ||
+                        v4Minting
+                      }
                     >
                       {v4MintPreflighting
                         ? "Probando..."
@@ -6544,11 +6995,37 @@ export default function Home() {
                     <button
                       className={styles.primary}
                       onClick={handleV4MintEstimateGas}
-                      disabled={!v4CanSimulateMint || v4MintEstimatingGas}
+                      disabled={
+                        !v4CanSimulateMint ||
+                        v4MintEstimatingGas ||
+                        v4Minting
+                      }
                     >
                       {v4MintEstimatingGas
                         ? "Estimando..."
                         : "Estimar gas MINT_POSITION"}
+                    </button>
+                    <button
+                      className={styles.primary}
+                      onClick={handleV4MintPosition}
+                      disabled={
+                        !v4CanSimulateMint ||
+                        v4Minting ||
+                        v4MintGasEstimate?.status !== "ok"
+                      }
+                    >
+                      {v4Minting ? "Creando..." : "Crear NFT V4"}
+                    </button>
+                    <button
+                      className={styles.primary}
+                      onClick={handleV4CreateFromUsd}
+                      disabled={
+                        !v4CanSimulateMint ||
+                        v4Minting ||
+                        !v4UsdAssistPlan
+                      }
+                    >
+                      {v4Minting ? "Operando..." : "Swap + Crear desde USDG"}
                     </button>
                   </div>
                   {v4MintPreflightChecks.length > 0 ? (

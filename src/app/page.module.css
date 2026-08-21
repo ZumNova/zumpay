@@ -349,6 +349,46 @@
   gap: 20px;
 }
 
+.strategyGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.strategyCard {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  border-radius: 10px;
+  background: rgba(8, 14, 28, 0.72);
+}
+
+.strategyCard div {
+  display: grid;
+  gap: 4px;
+}
+
+.strategyCard span {
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.strategyCard strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.strategyCard small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .sectionLocked {
   position: relative;
 }
