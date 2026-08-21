@@ -991,6 +991,24 @@
   line-height: 1.4;
 }
 
+.v4UseBox small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.v4AssistGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin-top: 10px;
+}
+
+.v4AssistGrid .field {
+  margin-bottom: 0;
+}
+
 .v4MintPanel {
   display: grid;
   gap: 14px;
@@ -1467,6 +1485,10 @@
   }
 
   .v4RangeGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .v4AssistGrid {
     grid-template-columns: 1fr;
   }
 

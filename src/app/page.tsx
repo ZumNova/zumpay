@@ -211,6 +211,15 @@ type V4MintRange = {
   upperPrice: number;
 };
 
+type V4UsdAssistPlan = {
+  sourceSymbol: string;
+  targetSymbol: string;
+  targetAmount: number;
+  sourceToSwap: number;
+  sourceToKeep: number;
+  totalSource: number;
+};
+
 type V4LiquidityCall = {
   signer: ethers.Signer;
   provider: ethers.Provider;
@@ -1714,6 +1723,7 @@ export default function Home() {
   const [v4Position, setV4Position] = useState<V4PositionView | null>(null);
   const [v4MintProfile, setV4MintProfile] =
     useState<keyof typeof V3_PROFILES>("moderate");
+  const [v4MintUsdAmount, setV4MintUsdAmount] = useState("");
   const [v4MintAmount0, setV4MintAmount0] = useState("");
   const [v4MintAmount1, setV4MintAmount1] = useState("");
   const [v4MintPreflighting, setV4MintPreflighting] = useState(false);
@@ -1982,6 +1992,52 @@ export default function Home() {
       v4Result.token1Decimals
     );
   }, [v4MintAmount0, v4MintAmount1, v4MintRange, v4Result]);
+  const v4UsdAssistPlan = useMemo<V4UsdAssistPlan | null>(() => {
+    if (!v4Result || !v4MintRange || v4Result.price <= 0) {
+      return null;
+    }
+    const usdgAddress = V3_TOKENS.robinhood.USDG.address.toLowerCase();
+    const sourceIsToken1 =
+      v4Result.currency1.toLowerCase() === usdgAddress ||
+      v4Result.token1Symbol.toUpperCase() === "USDG";
+    if (!sourceIsToken1) {
+      return null;
+    }
+
+    const totalSource = Math.max(parseHumanAmount(v4MintUsdAmount) || 0, 0);
+    const sourcePerOneTarget = estimateV4CounterpartAmount(
+      1,
+      "token0",
+      v4Result.tick,
+      v4MintRange.lowerTick,
+      v4MintRange.upperTick,
+      v4Result.token0Decimals,
+      v4Result.token1Decimals
+    );
+    const costPerOneTarget = v4Result.price;
+    const totalPerOneTarget = costPerOneTarget + sourcePerOneTarget;
+    if (
+      totalSource <= 0 ||
+      sourcePerOneTarget <= 0 ||
+      totalPerOneTarget <= 0 ||
+      !Number.isFinite(totalPerOneTarget)
+    ) {
+      return null;
+    }
+
+    const targetAmount = totalSource / totalPerOneTarget;
+    const sourceToKeep = sourcePerOneTarget * targetAmount;
+    const sourceToSwap = Math.max(totalSource - sourceToKeep, 0);
+
+    return {
+      sourceSymbol: v4Result.token1Symbol,
+      targetSymbol: v4Result.token0Symbol,
+      targetAmount,
+      sourceToSwap,
+      sourceToKeep,
+      totalSource
+    };
+  }, [v4MintRange, v4MintUsdAmount, v4Result]);
   const v4CanSimulateMint =
     v4Result?.usability === "Usable" && Boolean(v4MintRange);
   const v4LiquiditySimulation = useMemo(() => {
@@ -2127,6 +2183,35 @@ export default function Home() {
     );
     setV4MintAmount0(
       formatTokenInputAmount(suggestedToken0, v4Result.token0Symbol)
+    );
+  };
+
+  const handleApplyV4UsdAssist = () => {
+    if (!v4Result || !v4UsdAssistPlan) {
+      setV4Status("Cargá una pool V4 contra USDG e ingresá un monto válido.");
+      return;
+    }
+
+    setV4MintAmount0(
+      formatTokenInputAmount(
+        v4UsdAssistPlan.targetAmount,
+        v4Result.token0Symbol
+      )
+    );
+    setV4MintAmount1(
+      formatTokenInputAmount(
+        v4UsdAssistPlan.sourceToKeep,
+        v4Result.token1Symbol
+      )
+    );
+    setV4Status(
+      `Plan USDG cargado: cambiar aprox ${formatHumanTokenAmount(
+        v4UsdAssistPlan.sourceToSwap,
+        v4UsdAssistPlan.sourceSymbol
+      )} ${v4UsdAssistPlan.sourceSymbol} a ${v4UsdAssistPlan.targetSymbol} y mantener ${formatHumanTokenAmount(
+        v4UsdAssistPlan.sourceToKeep,
+        v4UsdAssistPlan.sourceSymbol
+      )} ${v4UsdAssistPlan.sourceSymbol}.`
     );
   };
 
@@ -6293,6 +6378,57 @@ export default function Home() {
                           {v4Result.tickSpacing}
                         </strong>
                       </div>
+                    </div>
+                  ) : null}
+                  {v4Result.token1Symbol.toUpperCase() === "USDG" ? (
+                    <div className={styles.v4UseBox}>
+                      <strong>Entrar desde USDG</strong>
+                      <span>
+                        Ingresá un monto único en USDG. Zumpay calcula cuánto
+                        conviene convertir al otro token y cuánto dejar como
+                        USDG para este rango.
+                      </span>
+                      <div className={styles.v4AssistGrid}>
+                        <div className={styles.field}>
+                          <label>Total USDG</label>
+                          <input
+                            value={v4MintUsdAmount}
+                            onChange={(event) =>
+                              setV4MintUsdAmount(event.target.value)
+                            }
+                            placeholder="Ej: 10"
+                            inputMode="decimal"
+                            disabled={!v4CanSimulateMint}
+                          />
+                        </div>
+                        <button
+                          className={styles.outline}
+                          onClick={handleApplyV4UsdAssist}
+                          disabled={!v4CanSimulateMint || !v4UsdAssistPlan}
+                        >
+                          Cargar split
+                        </button>
+                      </div>
+                      {v4UsdAssistPlan ? (
+                        <small>
+                          Cambiar aprox{" "}
+                          {formatHumanTokenAmount(
+                            v4UsdAssistPlan.sourceToSwap,
+                            v4UsdAssistPlan.sourceSymbol
+                          )}{" "}
+                          {v4UsdAssistPlan.sourceSymbol} a{" "}
+                          {formatHumanTokenAmount(
+                            v4UsdAssistPlan.targetAmount,
+                            v4UsdAssistPlan.targetSymbol
+                          )}{" "}
+                          {v4UsdAssistPlan.targetSymbol}; mantener{" "}
+                          {formatHumanTokenAmount(
+                            v4UsdAssistPlan.sourceToKeep,
+                            v4UsdAssistPlan.sourceSymbol
+                          )}{" "}
+                          {v4UsdAssistPlan.sourceSymbol}.
+                        </small>
+                      ) : null}
                     </div>
                   ) : null}
                   <div className={styles.v3ManualGrid}>
