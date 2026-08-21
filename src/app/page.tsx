@@ -1719,7 +1719,7 @@ export default function Home() {
     V4MultiPoolScanResult[]
   >([]);
   const [v4Status, setV4Status] = useState("");
-  const [v4TokenId, setV4TokenId] = useState("475983");
+  const [v4TokenId, setV4TokenId] = useState("");
   const [v4Position, setV4Position] = useState<V4PositionView | null>(null);
   const [v4MintProfile, setV4MintProfile] =
     useState<keyof typeof V3_PROFILES>("moderate");
@@ -3712,6 +3712,7 @@ export default function Home() {
     try {
       setV4Scanning(true);
       setV4Status("Escaneando pool V4 en Robinhood.");
+      resetV4LoadedPosition();
       const fee = Number(v4Fee);
       const tickSpacing = Number(v4TickSpacing);
       if (!Number.isInteger(fee) || fee <= 0) {
@@ -3756,11 +3757,28 @@ export default function Home() {
     }
   };
 
+  const resetV4LoadedPosition = () => {
+    setV4TokenId("");
+    setV4Position(null);
+    setV4MintUsdAmount("");
+    setV4MintAmount0("");
+    setV4MintAmount1("");
+    setV4MintPreflightChecks([]);
+    setV4MintGasEstimate(null);
+    setV4AddAmount0("");
+    setV4AddAmount1("");
+    setV4PreflightChecks([]);
+    setV4GasEstimate(null);
+    setV4LastTxHash("");
+    setV4LiquidityChange(null);
+  };
+
   const handleV4ScanMultiplePools = async () => {
     try {
       setV4MultiScanning(true);
       setV4MultiResults([]);
       setV4Status("Escaneando pools V4 predefinidas en Robinhood.");
+      resetV4LoadedPosition();
       const readProvider = v3Provider("robinhood");
       const stateView = new ethers.Contract(
         V4_ROBINHOOD_CONTRACTS.stateView,
@@ -3829,6 +3847,7 @@ export default function Home() {
     candidate: V4PoolCandidate,
     result: V4ScanResult | null
   ) => {
+    resetV4LoadedPosition();
     setV4CurrencyA(candidate.currencyA);
     setV4CurrencyB(candidate.currencyB);
     setV4Fee(candidate.fee.toString());
@@ -3848,6 +3867,7 @@ export default function Home() {
     try {
       setV4ReadingPosition(true);
       setV4Status("Leyendo NFT V4 en Robinhood.");
+      setV4Position(null);
       setV4PreflightChecks([]);
       setV4GasEstimate(null);
       setV4LastTxHash("");
@@ -6033,6 +6053,7 @@ export default function Home() {
                 <button
                   className={styles.outline}
                   onClick={() => {
+                    resetV4LoadedPosition();
                     setV4CurrencyA(V3_TOKENS.robinhood.WETH.address);
                     setV4CurrencyB(V3_TOKENS.robinhood.USDG.address);
                     setV4Fee("500");
@@ -6047,6 +6068,7 @@ export default function Home() {
                 <button
                   className={styles.outline}
                   onClick={() => {
+                    resetV4LoadedPosition();
                     setV4CurrencyA("");
                     setV4CurrencyB(V3_TOKENS.robinhood.USDG.address);
                     setV4Fee("3000");
