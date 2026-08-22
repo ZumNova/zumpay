@@ -1416,9 +1416,9 @@ function encodeV4SwapExactInputSingleData(
   const params = [
     coder.encode(
       [
-        "tuple(tuple(address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) poolKey,bool zeroForOne,uint128 amountIn,uint128 amountOutMinimum,bytes hookData,uint256 minHopPriceX36)"
+        "tuple(tuple(address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) poolKey,bool zeroForOne,uint128 amountIn,uint128 amountOutMinimum,uint256 minHopPriceX36,bytes hookData)"
       ],
-      [[poolKey, zeroForOne, amountIn, amountOutMinimum, "0x", 0]]
+      [[poolKey, zeroForOne, amountIn, amountOutMinimum, 0, "0x"]]
     ),
     coder.encode(["address", "uint256"], [inputCurrency, amountIn]),
     coder.encode(["address", "uint256"], [outputCurrency, amountOutMinimum])
