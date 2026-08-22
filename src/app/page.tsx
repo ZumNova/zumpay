@@ -770,6 +770,19 @@ const V3_QUOTER_ABI = [
   "function quoteExactInputSingle(address tokenIn,address tokenOut,uint24 fee,uint256 amountIn,uint160 sqrtPriceLimitX96) returns (uint256 amountOut)"
 ];
 
+const V4_QUOTER_ABI = [
+  "function quoteExactInputSingle((tuple(address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) poolKey,bool zeroForOne,uint128 exactAmount,bytes hookData) params) returns (uint256 amountOut,uint256 gasEstimate)"
+];
+
+const V4_UNIVERSAL_ROUTER_ABI = [
+  "function execute(bytes commands,bytes[] inputs,uint256 deadline) payable"
+];
+
+const PERMIT2_ABI = [
+  "function allowance(address owner,address token,address spender) view returns (uint160 amount,uint48 expiration,uint48 nonce)",
+  "function approve(address token,address spender,uint160 amount,uint48 expiration)"
+];
+
 const V4_STATE_VIEW_ABI = [
   "function getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96,int24 tick,uint24 protocolFee,uint24 lpFee)",
   "function getLiquidity(bytes32 poolId) view returns (uint128 liquidity)"
@@ -785,12 +798,18 @@ const V4_POSITION_MANAGER_VIEW_ABI = [
 const V4_ACTION_INCREASE_LIQUIDITY = "0x00";
 const V4_ACTION_DECREASE_LIQUIDITY = "0x01";
 const V4_ACTION_MINT_POSITION = "0x02";
+const V4_ACTION_SWAP_EXACT_IN_SINGLE = "0x06";
+const V4_ACTION_SETTLE_ALL = "0x0c";
 const V4_ACTION_SETTLE_PAIR = "0x0d";
+const V4_ACTION_TAKE_ALL = "0x0f";
 const V4_ACTION_TAKE_PAIR = "0x11";
 const V4_ACTION_SWEEP = "0x14";
+const V4_UNIVERSAL_ROUTER_COMMAND_SWAP = "0x10";
 const V4_AMOUNT_BUFFER_BPS = BigInt(100);
 const V4_MAX_REASONABLE_GAS = BigInt(5_000_000);
 const V4_DANGER_GAS = BigInt(25_000_000);
+const MAX_UINT160 = (BigInt(1) << BigInt(160)) - BigInt(1);
+const PERMIT2_EXPIRATION = 4_102_444_800;
 
 const DEFAULT_TOKENS: Record<string, TokenMeta[]> = {
   ethereum: [
@@ -1366,6 +1385,49 @@ function encodeV4MintPositionData(
 
 function addV4AmountBuffer(value: bigint) {
   return value + (value * V4_AMOUNT_BUFFER_BPS) / BigInt(10_000);
+}
+
+function v4PoolKeyTuple(pool: V4ScanResult) {
+  return [
+    pool.currency0,
+    pool.currency1,
+    pool.fee,
+    pool.tickSpacing,
+    pool.hooks
+  ] as const;
+}
+
+function encodeV4SwapExactInputSingleData(
+  pool: V4ScanResult,
+  inputCurrency: string,
+  amountIn: bigint,
+  amountOutMinimum: bigint
+) {
+  const coder = ethers.AbiCoder.defaultAbiCoder();
+  const poolKey = v4PoolKeyTuple(pool);
+  const zeroForOne =
+    inputCurrency.toLowerCase() === pool.currency0.toLowerCase();
+  const outputCurrency = zeroForOne ? pool.currency1 : pool.currency0;
+  const actions = ethers.concat([
+    V4_ACTION_SWAP_EXACT_IN_SINGLE,
+    V4_ACTION_SETTLE_ALL,
+    V4_ACTION_TAKE_ALL
+  ]);
+  const params = [
+    coder.encode(
+      [
+        "tuple(tuple(address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) poolKey,bool zeroForOne,uint128 amountIn,uint128 amountOutMinimum,bytes hookData,uint256 minHopPriceX36)"
+      ],
+      [[poolKey, zeroForOne, amountIn, amountOutMinimum, "0x", 0]]
+    ),
+    coder.encode(["address", "uint256"], [inputCurrency, amountIn]),
+    coder.encode(["address", "uint256"], [outputCurrency, amountOutMinimum])
+  ];
+
+  return {
+    commands: V4_UNIVERSAL_ROUTER_COMMAND_SWAP,
+    inputs: [coder.encode(["bytes", "bytes[]"], [actions, params])]
+  };
 }
 
 function describeV4EstimateError(error: unknown) {
@@ -2640,11 +2702,6 @@ export default function Home() {
 
       const signer = await getV3Signer("robinhood");
       const owner = await signer.getAddress();
-      const contracts = v3Contracts("robinhood");
-      if (!contracts.quoter) {
-        setV4Status("Robinhood no tiene quoter V3 configurado para swap interno.");
-        return;
-      }
 
       const totalUsdRaw = parseTokenUnits(
         v4MintUsdAmount,
@@ -2677,49 +2734,77 @@ export default function Home() {
         return;
       }
 
-      const quoter = new ethers.Contract(contracts.quoter, V3_QUOTER_ABI, signer);
+      if (swapUsdRaw > MAX_UINT128) {
+        setV4Status("El swap V4 supera el máximo uint128 permitido.");
+        return;
+      }
+
       const slippagePct = Math.min(Math.max(Number(v4MintSlippage) || 1, 0.1), 5);
       setV4Status(
-        `Consultando quote para cambiar ${v4Result.token1Symbol} a ${v4Result.token0Symbol}.`
+        `Consultando quote V4 para cambiar ${v4Result.token1Symbol} a ${v4Result.token0Symbol}.`
       );
-      const quotedOutput = (await quoter.quoteExactInputSingle.staticCall(
-        v4Result.currency1,
-        v4Result.currency0,
-        v4Result.fee,
+      const quoter = new ethers.Contract(
+        V4_ROBINHOOD_CONTRACTS.quoter,
+        V4_QUOTER_ABI,
+        signer
+      );
+      const poolKey = v4PoolKeyTuple(v4Result);
+      const zeroForOne = false;
+      const quoteResult = (await quoter.quoteExactInputSingle.staticCall([
+        poolKey,
+        zeroForOne,
         swapUsdRaw,
-        0
-      )) as bigint;
+        "0x"
+      ])) as [bigint, bigint];
+      const quotedOutput = quoteResult[0];
       const minOutput =
         (quotedOutput * BigInt(10000 - Math.round(slippagePct * 100))) /
         BigInt(10000);
 
       await ensureV4Erc20Allowance(
         v4Result.currency1,
-        contracts.swapRouter,
+        V4_ROBINHOOD_CONTRACTS.permit2,
         swapUsdRaw,
         signer,
-        `${v4Result.token1Symbol} para swap`
+        `${v4Result.token1Symbol} para Permit2`
+      );
+      await ensureV4Permit2Allowance(
+        v4Result.currency1,
+        V4_ROBINHOOD_CONTRACTS.universalRouter,
+        swapUsdRaw,
+        signer,
+        `${v4Result.token1Symbol} hacia Universal Router`
       );
 
       const targetBalanceBefore = (await target.balanceOf(owner)) as bigint;
       const router = new ethers.Contract(
-        contracts.swapRouter,
-        V3_SWAP_ROUTER_ABI,
+        V4_ROBINHOOD_CONTRACTS.universalRouter,
+        V4_UNIVERSAL_ROUTER_ABI,
         signer
       );
       setV4Status(
-        `Ejecutando swap interno ${v4Result.token1Symbol} -> ${v4Result.token0Symbol}.`
+        `Ejecutando swap V4 ${v4Result.token1Symbol} -> ${v4Result.token0Symbol}.`
       );
-      const swapTx = await router.exactInputSingle({
-        tokenIn: v4Result.currency1,
-        tokenOut: v4Result.currency0,
-        fee: v4Result.fee,
-        recipient: owner,
-        deadline: deadlineSeconds(),
-        amountIn: swapUsdRaw,
-        amountOutMinimum: minOutput,
-        sqrtPriceLimitX96: 0
-      });
+      const swapPayload = encodeV4SwapExactInputSingleData(
+        v4Result,
+        v4Result.currency1,
+        swapUsdRaw,
+        minOutput
+      );
+      const swapDeadline = deadlineSeconds();
+      const swapGas = (await router.execute.estimateGas(
+        swapPayload.commands,
+        swapPayload.inputs,
+        swapDeadline,
+        { value: 0 }
+      )) as bigint;
+      assertReasonableV3Gas(swapGas, "robinhood", "Swap V4 desde USDG");
+      const swapTx = await router.execute(
+        swapPayload.commands,
+        swapPayload.inputs,
+        swapDeadline,
+        { value: 0 }
+      );
       setV4LastTxHash(swapTx.hash);
       setV4Status(`Swap enviado: ${swapTx.hash.slice(0, 10)}...`);
       await waitForV3Receipt(swapTx.hash, "robinhood", 300000);
@@ -3873,6 +3958,50 @@ export default function Home() {
     assertReasonableV3Gas(approveGas, "robinhood", `Approve ${label}`);
     const approveTx = await token.approve(spender, amount);
     await waitForV3Receipt(approveTx.hash, "robinhood", 300000);
+  };
+
+  const ensureV4Permit2Allowance = async (
+    tokenAddress: string,
+    spender: string,
+    amount: bigint,
+    signer: ethers.Signer,
+    label: string
+  ) => {
+    if (amount <= BigInt(0) || tokenAddress.toLowerCase() === ZERO_ADDRESS) {
+      return;
+    }
+    const owner = await signer.getAddress();
+    const permit2 = new ethers.Contract(
+      V4_ROBINHOOD_CONTRACTS.permit2,
+      PERMIT2_ABI,
+      signer
+    );
+    const [currentAmount, expiration] = (await permit2.allowance(
+      owner,
+      tokenAddress,
+      spender
+    )) as [bigint, bigint, bigint];
+    const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+    if (currentAmount >= amount && expiration > nowSeconds + BigInt(60)) {
+      return;
+    }
+
+    const permitAmount = amount > MAX_UINT160 ? MAX_UINT160 : amount;
+    setV4Status(`Aprobando Permit2 para ${label}.`);
+    const gas = (await permit2.approve.estimateGas(
+      tokenAddress,
+      spender,
+      permitAmount,
+      PERMIT2_EXPIRATION
+    )) as bigint;
+    assertReasonableV3Gas(gas, "robinhood", `Permit2 approve ${label}`);
+    const tx = await permit2.approve(
+      tokenAddress,
+      spender,
+      permitAmount,
+      PERMIT2_EXPIRATION
+    );
+    await waitForV3Receipt(tx.hash, "robinhood", 300000);
   };
 
   const getV3Signer = async (chain: V3ChainKey = v3Chain) => {
