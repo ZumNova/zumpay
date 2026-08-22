@@ -1441,6 +1441,9 @@ function describeV4EstimateError(error: unknown) {
   if (message.includes("0xf4d678b8")) {
     return "InsufficientBalance: saldo insuficiente para la estimación.";
   }
+  if (message.includes("0xd81b2f2e")) {
+    return "Permit2 AllowanceExpired: falta aprobar Permit2 hacia el contrato que ejecuta la operación.";
+  }
   return message;
 }
 
@@ -2837,6 +2840,20 @@ export default function Home() {
         keepUsdRaw,
         signer,
         `${v4Result.token1Symbol} para mint V4`
+      );
+      await ensureV4Permit2Allowance(
+        v4Result.currency0,
+        V4_ROBINHOOD_CONTRACTS.positionManager,
+        addV4AmountBuffer(targetReceived),
+        signer,
+        `${v4Result.token0Symbol} hacia Position Manager`
+      );
+      await ensureV4Permit2Allowance(
+        v4Result.currency1,
+        V4_ROBINHOOD_CONTRACTS.positionManager,
+        addV4AmountBuffer(keepUsdRaw),
+        signer,
+        `${v4Result.token1Symbol} hacia Position Manager`
       );
 
       setV4Status("Preparando MINT_POSITION con los montos reales del swap.");
