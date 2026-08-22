@@ -1637,6 +1637,10 @@ function assertReasonableV3Gas(
   }
 }
 
+function bufferedGasLimit(gasEstimate: bigint, bufferBps = 2_000) {
+  return gasEstimate + (gasEstimate * BigInt(bufferBps)) / BigInt(10_000);
+}
+
 function estimateV3ReserveUsd(pool: V3Pool, balance0: number, balance1: number) {
   if (pool.token0 === "USDC" || pool.token0 === "USDT") {
     return balance0 * 2;
@@ -5261,7 +5265,15 @@ export default function Home() {
       };
       const mintGas = (await manager.mint.estimateGas(mintParams)) as bigint;
       assertReasonableV3Gas(mintGas, v3Chain, `Mint ${selectedV3Pool.label}`);
-      const mintTx = await manager.mint(mintParams);
+      const mintGasLimit = bufferedGasLimit(mintGas);
+      setV3Status(
+        `Enviando mint al Position Manager. Gas estimado ${formatGasUnits(
+          mintGas
+        )}, límite ${formatGasUnits(mintGasLimit)}.`
+      );
+      const mintTx = await manager.mint(mintParams, {
+        gasLimit: mintGasLimit
+      });
       setV3Status(`Mint enviado: ${mintTx.hash.slice(0, 10)}...`);
       const receipt = await waitForV3Receipt(mintTx.hash, v3Chain);
       const mintedTokenId = extractMintedV3TokenId(
