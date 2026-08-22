@@ -241,6 +241,7 @@ const TOKEN_KEY = "zumpay_tokens_v1";
 const TX_KEY = "zumpay_txs_v1";
 const V3_POSITION_KEY = "zumpay_v3_positions_v1";
 const V3_USED_POSITION_KEY = "zumpay_v3_used_positions_v1";
+const V4_POSITION_KEY = "zumpay_v4_positions_v1";
 
 const NETWORKS: Network[] = [
   {
@@ -1816,8 +1817,10 @@ export default function Home() {
     V4MultiPoolScanResult[]
   >([]);
   const [v4Status, setV4Status] = useState("");
+  const [v4Wallet, setV4Wallet] = useState<string | null>(null);
   const [v4TokenId, setV4TokenId] = useState("");
   const [v4Position, setV4Position] = useState<V4PositionView | null>(null);
+  const [v4Positions, setV4Positions] = useState<V4PositionView[]>([]);
   const [v4MintProfile, setV4MintProfile] =
     useState<keyof typeof V3_PROFILES>("moderate");
   const [v4MintUsdAmount, setV4MintUsdAmount] = useState("");
@@ -2774,13 +2777,18 @@ export default function Home() {
       );
       if (mintedTokenId) {
         setV4TokenId(mintedTokenId);
-        setV4Position(null);
         setV4MintGasEstimate(null);
         setV4MintPreflightChecks([]);
+        try {
+          await readAndSaveV4Position(mintedTokenId);
+        } catch (readError) {
+          console.error(readError);
+          setV4Position(null);
+        }
       }
       setV4Status(
         mintedTokenId
-          ? `NFT V4 creado #${mintedTokenId}. Tocá Leer NFT V4 para cargarlo en pantalla.`
+          ? `NFT V4 creado #${mintedTokenId} y guardado en Mis NFTs V4 activos.`
           : "NFT V4 creado. No pude leer el tokenId del recibo; revisalo en el explorador."
       );
     } catch (error) {
@@ -3020,12 +3028,17 @@ export default function Home() {
       );
       if (mintedTokenId) {
         setV4TokenId(mintedTokenId);
-        setV4Position(null);
         setV4MintPreflightChecks([]);
+        try {
+          await readAndSaveV4Position(mintedTokenId);
+        } catch (readError) {
+          console.error(readError);
+          setV4Position(null);
+        }
       }
       setV4Status(
         mintedTokenId
-          ? `Crear desde USDG completado. NFT V4 #${mintedTokenId} creado.`
+          ? `Crear desde USDG completado. NFT V4 #${mintedTokenId} guardado en Mis NFTs V4 activos.`
           : "Crear desde USDG completado. No pude leer el tokenId del recibo."
       );
     } catch (error) {
@@ -3893,6 +3906,73 @@ export default function Home() {
     setV3UsedPositions(used);
   };
 
+  useEffect(() => {
+    const raw = localStorage.getItem(V4_POSITION_KEY);
+    if (!raw) {
+      setV4Positions([]);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw) as Record<string, V4PositionView[]>;
+      const owner = v4Wallet?.toLowerCase() ?? "local";
+      setV4Positions(parsed[owner] ?? []);
+    } catch {
+      setV4Positions([]);
+    }
+  }, [v4Wallet]);
+
+  const saveV4Position = (
+    position: V4PositionView,
+    ownerAddress?: string
+  ) => {
+    const owner =
+      ownerAddress?.toLowerCase() ??
+      position.owner?.toLowerCase() ??
+      v4Wallet?.toLowerCase() ??
+      "local";
+    let parsed: Record<string, V4PositionView[]> = {};
+    try {
+      const raw = localStorage.getItem(V4_POSITION_KEY);
+      parsed = raw ? (JSON.parse(raw) as Record<string, V4PositionView[]>) : {};
+    } catch {
+      parsed = {};
+    }
+    const current = parsed[owner] ?? [];
+    const next = current.some((item) => item.tokenId === position.tokenId)
+      ? current.map((item) =>
+          item.tokenId === position.tokenId ? position : item
+        )
+      : [position, ...current];
+    parsed[owner] = next;
+    localStorage.setItem(V4_POSITION_KEY, JSON.stringify(parsed));
+    setV4Wallet(position.owner);
+    setV4Positions(next);
+  };
+
+  const loadV4PositionOnScreen = (position: V4PositionView) => {
+    setV4TokenId(position.tokenId);
+    setV4Position(position);
+    setV4CurrencyA(position.currency0);
+    setV4CurrencyB(position.currency1);
+    setV4Fee(position.fee.toString());
+    setV4TickSpacing(position.tickSpacing.toString());
+    setV4Hooks(position.hooks);
+    setV4Result(position);
+    setV4PreflightChecks([]);
+    setV4GasEstimate(null);
+    setV4MintGasEstimate(null);
+    setV4LiquidityChange(null);
+    setV4Status(
+      `NFT V4 #${position.tokenId}: ${position.token0Symbol}/${position.token1Symbol} ${
+        position.liquidity === "0"
+          ? "sin liquidez"
+          : position.inRange
+            ? "dentro de rango"
+            : "fuera de rango"
+      }.`
+    );
+  };
+
   const v3HasCollectibleFees = (position: V3Position) =>
     (parseHumanAmount(position.fees0 ?? "0") || 0) > 0 ||
     (parseHumanAmount(position.fees1 ?? "0") || 0) > 0;
@@ -4491,6 +4571,193 @@ export default function Home() {
     setV4Status(`Preset cargado: ${candidate.label}.`);
   };
 
+  const readV4PositionSnapshot = async (
+    tokenId: string
+  ): Promise<{ position: V4PositionView; poolLiquidity: bigint }> => {
+    const readProvider = v3Provider("robinhood");
+    const positionManager = new ethers.Contract(
+      V4_ROBINHOOD_CONTRACTS.positionManager,
+      V4_POSITION_MANAGER_VIEW_ABI,
+      readProvider
+    );
+    const stateView = new ethers.Contract(
+      V4_ROBINHOOD_CONTRACTS.stateView,
+      V4_STATE_VIEW_ABI,
+      readProvider
+    );
+
+    const [owner, poolAndInfo, positionLiquidity] = await Promise.all([
+      positionManager.ownerOf(tokenId) as Promise<string>,
+      positionManager.getPoolAndPositionInfo(tokenId) as Promise<
+        [
+          {
+            currency0: string;
+            currency1: string;
+            fee: bigint;
+            tickSpacing: bigint;
+            hooks: string;
+          },
+          bigint
+        ]
+      >,
+      positionManager.getPositionLiquidity(tokenId) as Promise<bigint>
+    ]);
+    const [poolKey, infoValue] = poolAndInfo;
+    const poolId = v4PoolId(
+      poolKey.currency0,
+      poolKey.currency1,
+      Number(poolKey.fee),
+      Number(poolKey.tickSpacing),
+      poolKey.hooks
+    );
+    const positionInfo = decodeV4PositionInfo(infoValue);
+    const [meta0, meta1, slot0, poolLiquidity] = await Promise.all([
+      readV4CurrencyMeta(readProvider, poolKey.currency0, "TOKEN0"),
+      readV4CurrencyMeta(readProvider, poolKey.currency1, "TOKEN1"),
+      stateView.getSlot0(poolId) as Promise<[bigint, bigint, bigint, bigint]>,
+      stateView.getLiquidity(poolId) as Promise<bigint>
+    ]);
+    const tick = Number(slot0[1]);
+    const price = priceFromSqrtPriceX96(
+      slot0[0],
+      meta0.decimals,
+      meta1.decimals
+    );
+    const poolActive = slot0[0] > BigInt(0) && poolLiquidity > BigInt(0);
+    const poolUsability = assessV4PoolUsability(
+      slot0[0],
+      poolLiquidity,
+      price,
+      poolKey.hooks
+    );
+    const position: V4PositionView = {
+      status: poolActive ? "Activa" : "No activa",
+      ...poolUsability,
+      tokenId,
+      owner,
+      poolId,
+      currency0: poolKey.currency0,
+      currency1: poolKey.currency1,
+      fee: Number(poolKey.fee),
+      tickSpacing: Number(poolKey.tickSpacing),
+      hooks: poolKey.hooks,
+      token0Symbol: meta0.symbol,
+      token1Symbol: meta1.symbol,
+      token0Decimals: meta0.decimals,
+      token1Decimals: meta1.decimals,
+      tick,
+      price,
+      liquidity: positionLiquidity.toString(),
+      lpFee: `${Number(slot0[3]) / 10000}%`,
+      protocolFee: slot0[2].toString(),
+      checkedAt: new Date().toLocaleTimeString(),
+      tickLower: positionInfo.tickLower,
+      tickUpper: positionInfo.tickUpper,
+      inRange: tick >= positionInfo.tickLower && tick < positionInfo.tickUpper,
+      rangePriceLower: priceFromTick(
+        positionInfo.tickLower,
+        meta0.decimals,
+        meta1.decimals
+      ),
+      rangePriceUpper: priceFromTick(
+        positionInfo.tickUpper,
+        meta0.decimals,
+        meta1.decimals
+      )
+    };
+
+    return { position, poolLiquidity };
+  };
+
+  const applyV4PositionSnapshot = (
+    position: V4PositionView,
+    poolLiquidity?: bigint
+  ) => {
+    setV4Position(position);
+    setV4CurrencyA(position.currency0);
+    setV4CurrencyB(position.currency1);
+    setV4Fee(position.fee.toString());
+    setV4TickSpacing(position.tickSpacing.toString());
+    setV4Hooks(position.hooks);
+    setV4Result({
+      ...position,
+      liquidity: poolLiquidity?.toString() ?? position.liquidity
+    });
+  };
+
+  const readAndSaveV4Position = async (tokenId: string) => {
+    const { position, poolLiquidity } = await readV4PositionSnapshot(tokenId);
+    setV4Wallet(position.owner);
+    applyV4PositionSnapshot(position, poolLiquidity);
+    saveV4Position(position, position.owner);
+    return position;
+  };
+
+  const handleV4LoadSavedPosition = async (position: V4PositionView) => {
+    try {
+      setV4ReadingPosition(true);
+      setV4Status(`Leyendo NFT V4 #${position.tokenId}.`);
+      const refreshed = await readAndSaveV4Position(position.tokenId);
+      setV4Status(
+        `NFT V4 #${refreshed.tokenId}: ${refreshed.token0Symbol}/${refreshed.token1Symbol} ${
+          refreshed.liquidity === "0"
+            ? "sin liquidez"
+            : refreshed.inRange
+              ? "dentro de rango"
+              : "fuera de rango"
+        }.`
+      );
+    } catch (error) {
+      console.error(error);
+      setV4Wallet(position.owner);
+      loadV4PositionOnScreen(position);
+      setV4Status("No pude refrescar on-chain; cargué la copia local.");
+    } finally {
+      setV4ReadingPosition(false);
+    }
+  };
+
+  const handleV4RefreshPositions = async () => {
+    try {
+      setV4ReadingPosition(true);
+      setV4Status("Actualizando NFTs V4 guardados.");
+      const refreshed = await Promise.all(
+        v4Positions.map(async (position) => {
+          try {
+            const snapshot = await readV4PositionSnapshot(position.tokenId);
+            return snapshot.position;
+          } catch {
+            return position;
+          }
+        })
+      );
+      const owner = v4Wallet ?? refreshed[0]?.owner;
+      if (owner) {
+        const raw = localStorage.getItem(V4_POSITION_KEY);
+        const parsed = raw
+          ? (JSON.parse(raw) as Record<string, V4PositionView[]>)
+          : {};
+        parsed[owner.toLowerCase()] = refreshed;
+        localStorage.setItem(V4_POSITION_KEY, JSON.stringify(parsed));
+      }
+      setV4Positions(refreshed);
+      if (v4Position) {
+        const current = refreshed.find(
+          (position) => position.tokenId === v4Position.tokenId
+        );
+        if (current) {
+          loadV4PositionOnScreen(current);
+        }
+      }
+      setV4Status("NFTs V4 guardados actualizados.");
+    } catch (error) {
+      console.error(error);
+      setV4Status("No se pudieron actualizar los NFTs V4 guardados.");
+    } finally {
+      setV4ReadingPosition(false);
+    }
+  };
+
   const handleV4ReadPosition = async () => {
     try {
       setV4ReadingPosition(true);
@@ -4506,109 +4773,7 @@ export default function Home() {
         return;
       }
 
-      const readProvider = v3Provider("robinhood");
-      const positionManager = new ethers.Contract(
-        V4_ROBINHOOD_CONTRACTS.positionManager,
-        V4_POSITION_MANAGER_VIEW_ABI,
-        readProvider
-      );
-      const stateView = new ethers.Contract(
-        V4_ROBINHOOD_CONTRACTS.stateView,
-        V4_STATE_VIEW_ABI,
-        readProvider
-      );
-
-      const [owner, poolAndInfo, positionLiquidity] = await Promise.all([
-        positionManager.ownerOf(tokenId) as Promise<string>,
-        positionManager.getPoolAndPositionInfo(tokenId) as Promise<
-          [
-            {
-              currency0: string;
-              currency1: string;
-              fee: bigint;
-              tickSpacing: bigint;
-              hooks: string;
-            },
-            bigint
-          ]
-        >,
-        positionManager.getPositionLiquidity(tokenId) as Promise<bigint>
-      ]);
-      const [poolKey, infoValue] = poolAndInfo;
-      const poolId = v4PoolId(
-        poolKey.currency0,
-        poolKey.currency1,
-        Number(poolKey.fee),
-        Number(poolKey.tickSpacing),
-        poolKey.hooks
-      );
-      const positionInfo = decodeV4PositionInfo(infoValue);
-      const [meta0, meta1, slot0, poolLiquidity] = await Promise.all([
-        readV4CurrencyMeta(readProvider, poolKey.currency0, "TOKEN0"),
-        readV4CurrencyMeta(readProvider, poolKey.currency1, "TOKEN1"),
-        stateView.getSlot0(poolId) as Promise<[bigint, bigint, bigint, bigint]>,
-        stateView.getLiquidity(poolId) as Promise<bigint>
-      ]);
-      const tick = Number(slot0[1]);
-      const price = priceFromSqrtPriceX96(
-        slot0[0],
-        meta0.decimals,
-        meta1.decimals
-      );
-      const poolActive = slot0[0] > BigInt(0) && poolLiquidity > BigInt(0);
-      const poolUsability = assessV4PoolUsability(
-        slot0[0],
-        poolLiquidity,
-        price,
-        poolKey.hooks
-      );
-      const result: V4PositionView = {
-        status: poolActive ? "Activa" : "No activa",
-        ...poolUsability,
-        tokenId,
-        owner,
-        poolId,
-        currency0: poolKey.currency0,
-        currency1: poolKey.currency1,
-        fee: Number(poolKey.fee),
-        tickSpacing: Number(poolKey.tickSpacing),
-        hooks: poolKey.hooks,
-        token0Symbol: meta0.symbol,
-        token1Symbol: meta1.symbol,
-        token0Decimals: meta0.decimals,
-        token1Decimals: meta1.decimals,
-        tick,
-        price,
-        liquidity: positionLiquidity.toString(),
-        lpFee: `${Number(slot0[3]) / 10000}%`,
-        protocolFee: slot0[2].toString(),
-        checkedAt: new Date().toLocaleTimeString(),
-        tickLower: positionInfo.tickLower,
-        tickUpper: positionInfo.tickUpper,
-        inRange:
-          tick >= positionInfo.tickLower && tick < positionInfo.tickUpper,
-        rangePriceLower: priceFromTick(
-          positionInfo.tickLower,
-          meta0.decimals,
-          meta1.decimals
-        ),
-        rangePriceUpper: priceFromTick(
-          positionInfo.tickUpper,
-          meta0.decimals,
-          meta1.decimals
-        )
-      };
-
-      setV4Position(result);
-      setV4CurrencyA(poolKey.currency0);
-      setV4CurrencyB(poolKey.currency1);
-      setV4Fee(Number(poolKey.fee).toString());
-      setV4TickSpacing(Number(poolKey.tickSpacing).toString());
-      setV4Hooks(poolKey.hooks);
-      setV4Result({
-        ...result,
-        liquidity: poolLiquidity.toString()
-      });
+      const result = await readAndSaveV4Position(tokenId);
       setV4Status(
         `NFT V4 #${tokenId}: ${result.token0Symbol}/${result.token1Symbol} ${result.inRange ? "dentro de rango" : "fuera de rango"}.`
       );
@@ -6950,6 +7115,82 @@ export default function Home() {
                   premium.
                 </p>
               ) : null}
+              <div className={styles.v3PositionList}>
+                <div className={styles.v3PositionHeader}>
+                  <h4>Mis NFTs V4 activos</h4>
+                  <button
+                    className={styles.outline}
+                    onClick={handleV4RefreshPositions}
+                    disabled={
+                      isLocked || v4ReadingPosition || v4Positions.length === 0
+                    }
+                  >
+                    {v4ReadingPosition ? "Actualizando..." : "Leer estado"}
+                  </button>
+                </div>
+                <div className={styles.field}>
+                  <label>Wallet V4</label>
+                  <div className={styles.address}>{v4Wallet ?? "—"}</div>
+                </div>
+                {v4Positions.length === 0 ? (
+                  <p className={styles.muted}>
+                    Todavía no hay NFTs V4 guardados. Leé un NFT o creá uno
+                    desde USDG para que aparezca acá.
+                  </p>
+                ) : (
+                  v4Positions.map((position) => (
+                    <div key={position.tokenId} className={styles.v3Position}>
+                      <div>
+                        <div className={styles.v3PositionHeader}>
+                          <p className={styles.txHash}>NFT #{position.tokenId}</p>
+                          <span
+                            className={`${styles.v3RangeBadge} ${
+                              position.liquidity === "0"
+                                ? styles.v3RangeNeutral
+                                : position.inRange
+                                  ? styles.v3RangeIn
+                                  : styles.v3RangeOut
+                            }`}
+                          >
+                            {position.liquidity === "0"
+                              ? "Sin liquidez"
+                              : position.inRange
+                                ? "En rango"
+                                : "Fuera de rango"}
+                          </span>
+                        </div>
+                        <p className={styles.txMeta}>
+                          {position.token0Symbol}/{position.token1Symbol} ·{" "}
+                          {position.lpFee} · Robinhood
+                        </p>
+                        <p className={styles.txTime}>
+                          Liquidez: {position.liquidity} · Rango:{" "}
+                          {position.rangePriceLower.toLocaleString("en-US", {
+                            maximumFractionDigits: 2
+                          })}{" "}
+                          /{" "}
+                          {position.rangePriceUpper.toLocaleString("en-US", {
+                            maximumFractionDigits: 2
+                          })}
+                        </p>
+                        <p className={styles.txTime}>
+                          Tick actual: {position.tick} · Última lectura:{" "}
+                          {position.checkedAt}
+                        </p>
+                      </div>
+                      <div className={styles.v3Actions}>
+                        <button
+                          className={styles.outline}
+                          onClick={() => handleV4LoadSavedPosition(position)}
+                          disabled={isLocked}
+                        >
+                          Cargar
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
               <div className={styles.field}>
                 <label>Leer NFT V4</label>
                 <input
