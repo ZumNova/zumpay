@@ -2407,11 +2407,50 @@ export default function Home() {
         };
       };
 
-      const [balance0, balance1, allowance0, allowance1] = await Promise.all([
+      const readPermit2Allowance = async (
+        currency: string,
+        decimals: number
+      ): Promise<{ raw: bigint; label: string }> => {
+        if (currency.toLowerCase() === ZERO_ADDRESS) {
+          return { raw: ethers.MaxUint256, label: "No requiere Permit2" };
+        }
+        const permit2 = new ethers.Contract(
+          V4_ROBINHOOD_CONTRACTS.permit2,
+          PERMIT2_ABI,
+          signerProvider
+        );
+        const [amount, expiration] = (await permit2.allowance(
+          owner,
+          currency,
+          V4_ROBINHOOD_CONTRACTS.positionManager
+        )) as [bigint, bigint, bigint];
+        const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+        return {
+          raw: expiration > nowSeconds ? amount : BigInt(0),
+          label:
+            expiration > nowSeconds
+              ? `${formatV3RawAmount(
+                  amount,
+                  decimals
+                )} Permit2 hacia Position Manager`
+              : "Permit2 hacia Position Manager expirado"
+        };
+      };
+
+      const [
+        balance0,
+        balance1,
+        allowance0,
+        allowance1,
+        permit2Allowance0,
+        permit2Allowance1
+      ] = await Promise.all([
         readBalance(inputs.pool.currency0),
         readBalance(inputs.pool.currency1),
         readAllowance(inputs.pool.currency0, inputs.pool.token0Decimals),
-        readAllowance(inputs.pool.currency1, inputs.pool.token1Decimals)
+        readAllowance(inputs.pool.currency1, inputs.pool.token1Decimals),
+        readPermit2Allowance(inputs.pool.currency0, inputs.pool.token0Decimals),
+        readPermit2Allowance(inputs.pool.currency1, inputs.pool.token1Decimals)
       ]);
 
       const checks: V4PreflightCheck[] = [
@@ -2474,6 +2513,20 @@ export default function Home() {
           ok:
             inputs.pool.currency1.toLowerCase() === ZERO_ADDRESS ||
             allowance1.raw >= inputs.amount1Raw
+        },
+        {
+          label: `Permit2 PM ${inputs.pool.token0Symbol}`,
+          value: permit2Allowance0.label,
+          ok:
+            inputs.pool.currency0.toLowerCase() === ZERO_ADDRESS ||
+            permit2Allowance0.raw >= addV4AmountBuffer(inputs.amount0Raw)
+        },
+        {
+          label: `Permit2 PM ${inputs.pool.token1Symbol}`,
+          value: permit2Allowance1.label,
+          ok:
+            inputs.pool.currency1.toLowerCase() === ZERO_ADDRESS ||
+            permit2Allowance1.raw >= addV4AmountBuffer(inputs.amount1Raw)
         }
       ];
 
@@ -2535,6 +2588,65 @@ export default function Home() {
       deadline,
       value
     };
+  };
+
+  const approveV4MintPermit2 = async () => {
+    const inputs = buildV4MintInputs();
+    if (!inputs) {
+      return false;
+    }
+    const signer = await getV3Signer("robinhood");
+    await ensureV4Erc20Allowance(
+      inputs.pool.currency0,
+      V4_ROBINHOOD_CONTRACTS.permit2,
+      addV4AmountBuffer(inputs.amount0Raw),
+      signer,
+      `${inputs.pool.token0Symbol} para Permit2`
+    );
+    await ensureV4Erc20Allowance(
+      inputs.pool.currency1,
+      V4_ROBINHOOD_CONTRACTS.permit2,
+      addV4AmountBuffer(inputs.amount1Raw),
+      signer,
+      `${inputs.pool.token1Symbol} para Permit2`
+    );
+    await ensureV4Permit2Allowance(
+      inputs.pool.currency0,
+      V4_ROBINHOOD_CONTRACTS.positionManager,
+      addV4AmountBuffer(inputs.amount0Raw),
+      signer,
+      `${inputs.pool.token0Symbol} hacia Position Manager`
+    );
+    await ensureV4Permit2Allowance(
+      inputs.pool.currency1,
+      V4_ROBINHOOD_CONTRACTS.positionManager,
+      addV4AmountBuffer(inputs.amount1Raw),
+      signer,
+      `${inputs.pool.token1Symbol} hacia Position Manager`
+    );
+    return true;
+  };
+
+  const handleV4MintApprovePermit2 = async () => {
+    try {
+      setV4Minting(true);
+      setV4MintGasEstimate(null);
+      setV4Status("Aprobando permisos Permit2 para crear NFT V4.");
+      const approved = await approveV4MintPermit2();
+      if (approved) {
+        setV4Status("Permisos Permit2 para mint V4 listos. Ya podés estimar gas.");
+        await handleV4MintPreflight();
+      }
+    } catch (error) {
+      console.error(error);
+      setV4Status(
+        error instanceof Error
+          ? `No se pudo aprobar Permit2 para mint V4: ${describeV4EstimateError(error)}`
+          : "No se pudo aprobar Permit2 para mint V4."
+      );
+    } finally {
+      setV4Minting(false);
+    }
   };
 
   const handleV4MintEstimateGas = async () => {
@@ -2614,6 +2726,11 @@ export default function Home() {
         return;
       }
 
+      setV4Status("Verificando permisos Permit2 antes de crear NFT V4.");
+      const approved = await approveV4MintPermit2();
+      if (!approved) {
+        return;
+      }
       const prepared = await prepareV4MintCall();
       if (!prepared) {
         return;
@@ -7149,6 +7266,13 @@ export default function Home() {
                       {v4MintPreflighting
                         ? "Probando..."
                         : "Probar balances y Permit2"}
+                    </button>
+                    <button
+                      className={styles.outline}
+                      onClick={handleV4MintApprovePermit2}
+                      disabled={!v4CanSimulateMint || v4Minting}
+                    >
+                      {v4Minting ? "Aprobando..." : "Aprobar Permit2 mint"}
                     </button>
                     <button
                       className={styles.primary}
