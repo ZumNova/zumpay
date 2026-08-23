@@ -1653,7 +1653,13 @@ function estimateV3ReserveUsd(pool: V3Pool, balance0: number, balance1: number) 
 }
 
 function classifyV3Pool(liquidity: bigint, reserveUsd: number, swaps: number) {
-  if (liquidity <= BigInt(0) || reserveUsd < 1000) {
+  if (liquidity <= BigInt(0)) {
+    return "No activa" as const;
+  }
+  if (reserveUsd <= 0) {
+    return swaps > 0 ? ("Activa" as const) : ("Watch" as const);
+  }
+  if (reserveUsd < 1000) {
     return "No activa" as const;
   }
   if (reserveUsd >= 100000 && swaps >= 10) {
@@ -4394,7 +4400,7 @@ export default function Home() {
             ? `$${reserveUsd.toLocaleString("en-US", {
                 maximumFractionDigits: 0
               })}`
-            : "Sin reserva USD",
+            : "Reserva en par",
         swaps,
         token0Balance: `${balance0.toLocaleString("en-US", {
           maximumFractionDigits: 6
