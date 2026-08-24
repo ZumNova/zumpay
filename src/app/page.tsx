@@ -345,6 +345,8 @@ const V4_ROBINHOOD_CONTRACTS = {
   universalRouter: "0x8876789976decbfcbbbe364623c63652db8c0904",
   permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3"
 };
+const V4_DISCOVERY_LOOKBACK_BLOCKS = 1_000_000;
+const V4_DISCOVERY_CHUNK_BLOCKS = 50_000;
 const MAX_UINT128 = (BigInt(1) << BigInt(128)) - BigInt(1);
 const SWAP_TOPIC =
   "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67";
@@ -790,6 +792,7 @@ const V4_STATE_VIEW_ABI = [
 ];
 
 const V4_POSITION_MANAGER_VIEW_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
   "function ownerOf(uint256 tokenId) view returns (address)",
   "function getPoolAndPositionInfo(uint256 tokenId) view returns ((address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) poolKey,uint256 info)",
   "function getPositionLiquidity(uint256 tokenId) view returns (uint128 liquidity)",
@@ -1823,6 +1826,7 @@ export default function Home() {
     V4MultiPoolScanResult[]
   >([]);
   const [v4Status, setV4Status] = useState("");
+  const [v4Discovering, setV4Discovering] = useState(false);
   const [v4Wallet, setV4Wallet] = useState<string | null>(null);
   const [v4TokenId, setV4TokenId] = useState("");
   const [v4Position, setV4Position] = useState<V4PositionView | null>(null);
@@ -4812,6 +4816,121 @@ export default function Home() {
     }
   };
 
+  const handleV4DiscoverPositions = async () => {
+    try {
+      setV4Discovering(true);
+      setV4ReadingPosition(true);
+      setV4Status("Conectando MetaMask en Robinhood para buscar NFTs V4.");
+      const signer = await getV3Signer("robinhood");
+      const owner = await signer.getAddress();
+      setV4Wallet(owner);
+      const readProvider = v3Provider("robinhood");
+      const manager = new ethers.Contract(
+        V4_ROBINHOOD_CONTRACTS.positionManager,
+        V4_POSITION_MANAGER_VIEW_ABI,
+        readProvider
+      );
+      const balance = (await manager.balanceOf(owner)) as bigint;
+      if (balance === BigInt(0)) {
+        const ownerKey = owner.toLowerCase();
+        const raw = localStorage.getItem(V4_POSITION_KEY);
+        const parsed = raw
+          ? (JSON.parse(raw) as Record<string, V4PositionView[]>)
+          : {};
+        parsed[ownerKey] = [];
+        localStorage.setItem(V4_POSITION_KEY, JSON.stringify(parsed));
+        setV4Positions([]);
+        setV4Status(`No hay NFTs V4 para ${shortAddress(owner)} en Robinhood.`);
+        return;
+      }
+
+      const ownerTopic = topicForAddress(owner);
+      const latestBlock = await readProvider.getBlockNumber();
+      const fromBlock = Math.max(
+        latestBlock - V4_DISCOVERY_LOOKBACK_BLOCKS,
+        0
+      );
+      const tokenIds = new Set<string>();
+      setV4Status(
+        `Buscando ${balance.toString()} NFT(s) V4 de ${shortAddress(
+          owner
+        )}. Esto puede tardar unos segundos.`
+      );
+
+      for (
+        let startBlock = fromBlock;
+        startBlock <= latestBlock;
+        startBlock += V4_DISCOVERY_CHUNK_BLOCKS + 1
+      ) {
+        const endBlock = Math.min(
+          startBlock + V4_DISCOVERY_CHUNK_BLOCKS,
+          latestBlock
+        );
+        const logs = await readProvider.getLogs({
+          address: V4_ROBINHOOD_CONTRACTS.positionManager,
+          topics: [TRANSFER_TOPIC, null, ownerTopic],
+          fromBlock: startBlock,
+          toBlock: endBlock
+        });
+        logs.forEach((log) => {
+          const tokenIdTopic = log.topics?.[3];
+          if (tokenIdTopic) {
+            tokenIds.add(BigInt(tokenIdTopic).toString());
+          }
+        });
+      }
+
+      const discovered: V4PositionView[] = [];
+      for (const tokenId of tokenIds) {
+        try {
+          const ownerOfToken = (await manager.ownerOf(tokenId)) as string;
+          if (ownerOfToken.toLowerCase() !== owner.toLowerCase()) {
+            continue;
+          }
+          const snapshot = await readV4PositionSnapshot(tokenId);
+          discovered.push(snapshot.position);
+        } catch (error) {
+          console.error(error);
+        }
+      }
+
+      const ownerKey = owner.toLowerCase();
+      const raw = localStorage.getItem(V4_POSITION_KEY);
+      const parsed = raw
+        ? (JSON.parse(raw) as Record<string, V4PositionView[]>)
+        : {};
+      const existing = parsed[ownerKey] ?? [];
+      const merged = [
+        ...discovered,
+        ...existing.filter(
+          (item) =>
+            !discovered.some(
+              (position) => position.tokenId === item.tokenId
+            )
+        )
+      ];
+      parsed[ownerKey] = merged;
+      localStorage.setItem(V4_POSITION_KEY, JSON.stringify(parsed));
+      setV4Positions(merged);
+      if (discovered[0]) {
+        loadV4PositionOnScreen(discovered[0]);
+      }
+      setV4Status(
+        `Encontrados ${discovered.length} de ${balance.toString()} NFT(s) V4 en Robinhood.`
+      );
+    } catch (error) {
+      console.error(error);
+      setV4Status(
+        error instanceof Error
+          ? `No se pudieron buscar los NFTs V4: ${error.message}`
+          : "No se pudieron buscar los NFTs V4 de esta wallet."
+      );
+    } finally {
+      setV4Discovering(false);
+      setV4ReadingPosition(false);
+    }
+  };
+
   const handleV4ReadPosition = async () => {
     try {
       setV4ReadingPosition(true);
@@ -7467,15 +7586,26 @@ export default function Home() {
               <div className={styles.v3PositionList}>
                 <div className={styles.v3PositionHeader}>
                   <h4>Mis NFTs V4 activos</h4>
-                  <button
-                    className={styles.outline}
-                    onClick={handleV4RefreshPositions}
-                    disabled={
-                      isLocked || v4ReadingPosition || v4Positions.length === 0
-                    }
-                  >
-                    {v4ReadingPosition ? "Actualizando..." : "Leer estado"}
-                  </button>
+                  <div className={styles.ctas}>
+                    <button
+                      className={styles.outline}
+                      onClick={handleV4DiscoverPositions}
+                      disabled={isLocked || v4Discovering || v4ReadingPosition}
+                    >
+                      {v4Discovering ? "Buscando..." : "Buscar mis NFTs V4"}
+                    </button>
+                    <button
+                      className={styles.outline}
+                      onClick={handleV4RefreshPositions}
+                      disabled={
+                        isLocked ||
+                        v4ReadingPosition ||
+                        v4Positions.length === 0
+                      }
+                    >
+                      {v4ReadingPosition ? "Actualizando..." : "Leer estado"}
+                    </button>
+                  </div>
                 </div>
                 <div className={styles.field}>
                   <label>Wallet V4</label>
@@ -7483,8 +7613,9 @@ export default function Home() {
                 </div>
                 {v4Positions.length === 0 ? (
                   <p className={styles.muted}>
-                    Todavía no hay NFTs V4 guardados. Leé un NFT o creá uno
-                    desde USDG para que aparezca acá.
+                    Todavía no hay NFTs V4 guardados. Conectá MetaMask con
+                    Buscar mis NFTs V4, leé un NFT o creá uno desde USDG para
+                    que aparezca acá.
                   </p>
                 ) : (
                   v4Positions.map((position) => (
