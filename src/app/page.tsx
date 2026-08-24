@@ -5063,7 +5063,10 @@ export default function Home() {
         return;
       }
       if (v4GasEstimate?.status !== "ok") {
-        setV4Status("Primero necesitás una estimación de gas V4 en verde.");
+        setV4Status(
+          "Primero preparo la estimación de gas V4. Si queda en verde, tocá de nuevo para abrir MetaMask."
+        );
+        await handleV4EstimateGas();
         return;
       }
       if (!v4ValueEstimate) {
@@ -7799,15 +7802,15 @@ export default function Home() {
                   <button
                     className={styles.primary}
                     onClick={handleV4AddLiquidity}
-                    disabled={
-                      isLocked ||
-                      v4AddingLiquidity ||
-                      v4GasEstimate?.status !== "ok"
-                    }
+                    disabled={isLocked || v4AddingLiquidity || v4EstimatingGas}
                   >
                     {v4AddingLiquidity
                       ? "Agregando liquidez..."
-                      : `Agregar liquidez real al NFT #${v4Position.tokenId}`}
+                      : v4EstimatingGas
+                        ? "Estimando gas..."
+                      : v4GasEstimate?.status === "ok"
+                        ? `Agregar liquidez real al NFT #${v4Position.tokenId}`
+                        : "Preparar agregar liquidez V4"}
                   </button>
                   {v4LastTxHash ? (
                     <a
