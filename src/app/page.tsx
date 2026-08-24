@@ -2458,13 +2458,36 @@ export default function Home() {
           return { raw: ethers.MaxUint256, label: "No requiere approve" };
         }
         const token = new ethers.Contract(currency, ERC20_ABI, signerProvider);
-        const allowance = (await token.allowance(
+        const permit2 = new ethers.Contract(
+          V4_ROBINHOOD_CONTRACTS.permit2,
+          PERMIT2_ABI,
+          signerProvider
+        );
+        const erc20Allowance = (await token.allowance(
           owner,
           V4_ROBINHOOD_CONTRACTS.permit2
         )) as bigint;
+        const [permit2Allowance, expiration] = (await permit2.allowance(
+          owner,
+          currency,
+          V4_ROBINHOOD_CONTRACTS.positionManager
+        )) as [bigint, bigint, bigint];
+        const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+        const activePermit2 =
+          permit2Allowance > BigInt(0) &&
+          expiration > nowSeconds + BigInt(60);
+        const raw = erc20Allowance < permit2Allowance
+          ? erc20Allowance
+          : permit2Allowance;
         return {
-          raw: allowance,
-          label: `${formatV3RawAmount(allowance, decimals)} aprobado hacia Permit2`
+          raw: activePermit2 ? raw : BigInt(0),
+          label: `${formatV3RawAmount(
+            erc20Allowance,
+            decimals
+          )} ERC20 + ${formatV3RawAmount(
+            activePermit2 ? permit2Allowance : BigInt(0),
+            decimals
+          )} Permit2 hacia Position Manager`
         };
       };
 
@@ -5100,6 +5123,75 @@ export default function Home() {
     }
   };
 
+  const approveV4LiquidityPermit2 = async (
+    amount0Text = v4AddAmount0,
+    amount1Text = v4AddAmount1
+  ) => {
+    if (!v4Position) {
+      setV4Status("Primero leé el NFT V4.");
+      return false;
+    }
+    const amount0Raw = parseTokenUnits(amount0Text, v4Position.token0Decimals);
+    const amount1Raw = parseTokenUnits(amount1Text, v4Position.token1Decimals);
+    if (amount0Raw <= BigInt(0) || amount1Raw <= BigInt(0)) {
+      setV4Status("Ingresá montos mayores a cero para los dos tokens.");
+      return false;
+    }
+
+    const signer = await getV3Signer("robinhood");
+    await ensureV4Erc20Allowance(
+      v4Position.currency0,
+      V4_ROBINHOOD_CONTRACTS.permit2,
+      addV4AmountBuffer(amount0Raw),
+      signer,
+      `${v4Position.token0Symbol} para Permit2`
+    );
+    await ensureV4Erc20Allowance(
+      v4Position.currency1,
+      V4_ROBINHOOD_CONTRACTS.permit2,
+      addV4AmountBuffer(amount1Raw),
+      signer,
+      `${v4Position.token1Symbol} para Permit2`
+    );
+    await ensureV4Permit2Allowance(
+      v4Position.currency0,
+      V4_ROBINHOOD_CONTRACTS.positionManager,
+      addV4AmountBuffer(amount0Raw),
+      signer,
+      `${v4Position.token0Symbol} hacia Position Manager`
+    );
+    await ensureV4Permit2Allowance(
+      v4Position.currency1,
+      V4_ROBINHOOD_CONTRACTS.positionManager,
+      addV4AmountBuffer(amount1Raw),
+      signer,
+      `${v4Position.token1Symbol} hacia Position Manager`
+    );
+    return true;
+  };
+
+  const handleV4ApproveLiquidityPermit2 = async () => {
+    try {
+      setV4AddingLiquidity(true);
+      setV4GasEstimate(null);
+      setV4Status("Aprobando Permit2 para sumar liquidez V4.");
+      const approved = await approveV4LiquidityPermit2();
+      if (approved) {
+        setV4Status("Permit2 listo para sumar liquidez. Ahora podés estimar gas V4.");
+        await handleV4TwoTokenPreflight();
+      }
+    } catch (error) {
+      console.error(error);
+      setV4Status(
+        error instanceof Error
+          ? `No se pudo aprobar Permit2 para liquidez V4: ${describeV4EstimateError(error)}`
+          : "No se pudo aprobar Permit2 para liquidez V4."
+      );
+    } finally {
+      setV4AddingLiquidity(false);
+    }
+  };
+
   const prepareV4LiquidityCall = async (
     amount0Text = v4AddAmount0,
     amount1Text = v4AddAmount1
@@ -5254,6 +5346,12 @@ export default function Home() {
       }
       if (!v4ValueEstimate) {
         setV4Status("Primero necesitás una valuación V4 visible.");
+        return;
+      }
+
+      setV4Status("Verificando Permit2 antes de sumar liquidez V4.");
+      const approved = await approveV4LiquidityPermit2();
+      if (!approved) {
         return;
       }
 
@@ -8234,6 +8332,15 @@ export default function Home() {
                     {v4Preflighting
                       ? "Probando balances..."
                       : "Probar balances y permisos"}
+                  </button>
+                  <button
+                    className={styles.outline}
+                    onClick={handleV4ApproveLiquidityPermit2}
+                    disabled={isLocked || v4AddingLiquidity}
+                  >
+                    {v4AddingLiquidity
+                      ? "Aprobando..."
+                      : "Aprobar Permit2 liquidez"}
                   </button>
                   {v4LiquiditySimulation ? (
                     <div className={styles.v4BalanceGrid}>
