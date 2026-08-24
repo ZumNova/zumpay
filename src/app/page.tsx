@@ -1844,6 +1844,8 @@ export default function Home() {
   const [v4ReadingPosition, setV4ReadingPosition] = useState(false);
   const [v4AddAmount0, setV4AddAmount0] = useState("");
   const [v4AddAmount1, setV4AddAmount1] = useState("");
+  const [v4AddUsdAmount, setV4AddUsdAmount] = useState("");
+  const [v4AddSlippage, setV4AddSlippage] = useState("1");
   const [v4Preflighting, setV4Preflighting] = useState(false);
   const [v4PreflightChecks, setV4PreflightChecks] = useState<
     V4PreflightCheck[]
@@ -2148,6 +2150,52 @@ export default function Home() {
   }, [v4MintRange, v4MintUsdAmount, v4Result]);
   const v4CanSimulateMint =
     v4Result?.usability === "Usable" && Boolean(v4MintRange);
+  const v4AddUsdAssistPlan = useMemo<V4UsdAssistPlan | null>(() => {
+    if (!v4Position || v4Position.price <= 0) {
+      return null;
+    }
+    const usdgAddress = V3_TOKENS.robinhood.USDG.address.toLowerCase();
+    const sourceIsToken1 =
+      v4Position.currency1.toLowerCase() === usdgAddress ||
+      v4Position.token1Symbol.toUpperCase() === "USDG";
+    if (!sourceIsToken1 || v4Position.currency0.toLowerCase() === ZERO_ADDRESS) {
+      return null;
+    }
+
+    const totalSource = Math.max(parseHumanAmount(v4AddUsdAmount) || 0, 0);
+    const sourcePerOneTarget = estimateV4CounterpartAmount(
+      1,
+      "token0",
+      v4Position.tick,
+      v4Position.tickLower,
+      v4Position.tickUpper,
+      v4Position.token0Decimals,
+      v4Position.token1Decimals
+    );
+    const costPerOneTarget = v4Position.price;
+    const totalPerOneTarget = costPerOneTarget + sourcePerOneTarget;
+    if (
+      totalSource <= 0 ||
+      sourcePerOneTarget <= 0 ||
+      totalPerOneTarget <= 0 ||
+      !Number.isFinite(totalPerOneTarget)
+    ) {
+      return null;
+    }
+
+    const targetAmount = totalSource / totalPerOneTarget;
+    const sourceToKeep = sourcePerOneTarget * targetAmount;
+    const sourceToSwap = Math.max(totalSource - sourceToKeep, 0);
+
+    return {
+      sourceSymbol: v4Position.token1Symbol,
+      targetSymbol: v4Position.token0Symbol,
+      targetAmount,
+      sourceToSwap,
+      sourceToKeep,
+      totalSource
+    };
+  }, [v4AddUsdAmount, v4Position]);
   const v4LiquiditySimulation = useMemo(() => {
     if (!v4Position) {
       return null;
@@ -4933,21 +4981,37 @@ export default function Home() {
     }
   };
 
-  const prepareV4LiquidityCall = async (): Promise<V4LiquidityCall | null> => {
+  const prepareV4LiquidityCall = async (
+    amount0Text = v4AddAmount0,
+    amount1Text = v4AddAmount1
+  ): Promise<V4LiquidityCall | null> => {
     if (!v4Position) {
       setV4Status("Primero leé el NFT V4.");
       return null;
     }
 
     const amount0Raw = parseTokenUnits(
-      v4AddAmount0,
+      amount0Text,
       v4Position.token0Decimals
     );
     const amount1Raw = parseTokenUnits(
-      v4AddAmount1,
+      amount1Text,
       v4Position.token1Decimals
     );
-    const liquidityRaw = estimatedV4LiquidityRaw(v4LiquiditySimulation);
+    const amount0 = Math.max(parseHumanAmount(amount0Text) || 0, 0);
+    const amount1 = Math.max(parseHumanAmount(amount1Text) || 0, 0);
+    const simulation = simulateV4Liquidity(
+      amount0,
+      amount1,
+      v4Position.tick,
+      v4Position.tickLower,
+      v4Position.tickUpper,
+      v4Position.token0Symbol,
+      v4Position.token1Symbol,
+      v4Position.token0Decimals,
+      v4Position.token1Decimals
+    );
+    const liquidityRaw = estimatedV4LiquidityRaw(simulation);
     if (
       amount0Raw <= BigInt(0) ||
       amount1Raw <= BigInt(0) ||
@@ -5204,6 +5268,282 @@ export default function Home() {
         error instanceof Error
           ? `No se pudo agregar liquidez V4: ${describeV4EstimateError(error)}`
           : "No se pudo agregar liquidez V4."
+      );
+    } finally {
+      setV4AddingLiquidity(false);
+    }
+  };
+
+  const handleV4ApplyAddUsdAssist = () => {
+    if (!v4Position || !v4AddUsdAssistPlan) {
+      setV4Status("Cargá un NFT V4 token/USDG e ingresá un total USDG válido.");
+      return;
+    }
+    setV4AddAmount0(
+      formatTokenInputAmount(
+        v4AddUsdAssistPlan.targetAmount,
+        v4Position.token0Symbol
+      )
+    );
+    setV4AddAmount1(
+      formatTokenInputAmount(
+        v4AddUsdAssistPlan.sourceToKeep,
+        v4Position.token1Symbol
+      )
+    );
+    setV4GasEstimate(null);
+    setV4PreflightChecks([]);
+    setV4Status(
+      `Plan para sumar cargado: cambiar aprox ${formatHumanTokenAmount(
+        v4AddUsdAssistPlan.sourceToSwap,
+        v4AddUsdAssistPlan.sourceSymbol
+      )} ${v4AddUsdAssistPlan.sourceSymbol} a ${
+        v4AddUsdAssistPlan.targetSymbol
+      } y mantener ${formatHumanTokenAmount(
+        v4AddUsdAssistPlan.sourceToKeep,
+        v4AddUsdAssistPlan.sourceSymbol
+      )} ${v4AddUsdAssistPlan.sourceSymbol}.`
+    );
+  };
+
+  const handleV4AddFromUsd = async () => {
+    let liquidityBefore = BigInt(0);
+    try {
+      setV4AddingLiquidity(true);
+      setV4LastTxHash("");
+      setV4LiquidityChange(null);
+      setV4GasEstimate(null);
+      if (!v4Position || !v4AddUsdAssistPlan) {
+        setV4Status("Cargá un NFT V4 token/USDG y un total USDG válido.");
+        return;
+      }
+      const usdgAddress = V3_TOKENS.robinhood.USDG.address.toLowerCase();
+      if (
+        v4Position.currency1.toLowerCase() !== usdgAddress ||
+        v4Position.currency0.toLowerCase() === ZERO_ADDRESS
+      ) {
+        setV4Status(
+          "Sumar desde USDG automático está habilitado para NFTs ERC20/USDG. ETH nativo queda para el siguiente módulo."
+        );
+        return;
+      }
+      if (
+        !window.confirm(
+          `Zumpay va a hacer swap ${v4Position.token1Symbol} -> ${v4Position.token0Symbol} y después sumar liquidez al NFT #${v4Position.tokenId}. MetaMask puede pedir approvals y dos transacciones reales. Continuar?`
+        )
+      ) {
+        setV4Status("Sumar desde USDG cancelado antes de abrir MetaMask.");
+        return;
+      }
+
+      const signer = await getV3Signer("robinhood");
+      const owner = await signer.getAddress();
+      const totalUsdRaw = parseTokenUnits(
+        v4AddUsdAmount,
+        v4Position.token1Decimals
+      );
+      const swapUsdRaw = parseTokenUnits(
+        v4AddUsdAssistPlan.sourceToSwap
+          .toFixed(Math.min(v4Position.token1Decimals, 8))
+          .replace(/(\.\d*?[1-9])0+$/, "$1")
+          .replace(/\.0+$/, ""),
+        v4Position.token1Decimals
+      );
+      const keepUsdRaw =
+        totalUsdRaw > swapUsdRaw ? totalUsdRaw - swapUsdRaw : BigInt(0);
+      if (totalUsdRaw <= BigInt(0) || swapUsdRaw <= BigInt(0) || keepUsdRaw <= BigInt(0)) {
+        setV4Status("El total USDG es demasiado chico para dividir swap + liquidez.");
+        return;
+      }
+
+      const usdg = new ethers.Contract(v4Position.currency1, ERC20_ABI, signer);
+      const target = new ethers.Contract(v4Position.currency0, ERC20_ABI, signer);
+      const usdgBalance = (await usdg.balanceOf(owner)) as bigint;
+      if (usdgBalance < totalUsdRaw) {
+        setV4Status(
+          `Saldo insuficiente. Tenés ${formatV3RawAmount(
+            usdgBalance,
+            v4Position.token1Decimals
+          )} ${v4Position.token1Symbol}.`
+        );
+        return;
+      }
+      if (swapUsdRaw > MAX_UINT128) {
+        setV4Status("El swap V4 supera el máximo uint128 permitido.");
+        return;
+      }
+
+      const slippagePct = Math.min(Math.max(Number(v4AddSlippage) || 1, 0.1), 5);
+      setV4Status(
+        `Consultando quote V4 para cambiar ${v4Position.token1Symbol} a ${v4Position.token0Symbol}.`
+      );
+      const quoter = new ethers.Contract(
+        V4_ROBINHOOD_CONTRACTS.quoter,
+        V4_QUOTER_ABI,
+        signer
+      );
+      const quoteResult = (await quoter.quoteExactInputSingle.staticCall([
+        v4PoolKeyTuple(v4Position),
+        false,
+        swapUsdRaw,
+        "0x"
+      ])) as [bigint, bigint];
+      const quotedOutput = quoteResult[0];
+      const minOutput =
+        (quotedOutput * BigInt(10000 - Math.round(slippagePct * 100))) /
+        BigInt(10000);
+
+      await ensureV4Erc20Allowance(
+        v4Position.currency1,
+        V4_ROBINHOOD_CONTRACTS.permit2,
+        swapUsdRaw,
+        signer,
+        `${v4Position.token1Symbol} para Permit2`
+      );
+      await ensureV4Permit2Allowance(
+        v4Position.currency1,
+        V4_ROBINHOOD_CONTRACTS.universalRouter,
+        swapUsdRaw,
+        signer,
+        `${v4Position.token1Symbol} hacia Universal Router`
+      );
+
+      const targetBalanceBefore = (await target.balanceOf(owner)) as bigint;
+      const router = new ethers.Contract(
+        V4_ROBINHOOD_CONTRACTS.universalRouter,
+        V4_UNIVERSAL_ROUTER_ABI,
+        signer
+      );
+      setV4Status(
+        `Ejecutando swap V4 ${v4Position.token1Symbol} -> ${v4Position.token0Symbol}.`
+      );
+      const swapPayload = encodeV4SwapExactInputSingleData(
+        v4Position,
+        v4Position.currency1,
+        swapUsdRaw,
+        minOutput
+      );
+      const swapDeadline = deadlineSeconds();
+      const swapGas = (await router.execute.estimateGas(
+        swapPayload.commands,
+        swapPayload.inputs,
+        swapDeadline,
+        { value: 0 }
+      )) as bigint;
+      assertReasonableV3Gas(swapGas, "robinhood", "Swap V4 para sumar liquidez");
+      const swapTx = await router.execute(
+        swapPayload.commands,
+        swapPayload.inputs,
+        swapDeadline,
+        { value: 0 }
+      );
+      setV4LastTxHash(swapTx.hash);
+      setV4Status(`Swap enviado: ${swapTx.hash.slice(0, 10)}...`);
+      await waitForV3Receipt(swapTx.hash, "robinhood", 300000);
+
+      const targetBalanceAfter = (await target.balanceOf(owner)) as bigint;
+      const targetReceived = targetBalanceAfter - targetBalanceBefore;
+      if (targetReceived <= BigInt(0)) {
+        setV4Status("El swap no dejó saldo nuevo para sumar liquidez.");
+        return;
+      }
+
+      const amount0Text = ethers.formatUnits(
+        targetReceived,
+        v4Position.token0Decimals
+      );
+      const amount1Text = ethers.formatUnits(keepUsdRaw, v4Position.token1Decimals);
+      setV4AddAmount0(amount0Text);
+      setV4AddAmount1(amount1Text);
+
+      await ensureV4Erc20Allowance(
+        v4Position.currency0,
+        V4_ROBINHOOD_CONTRACTS.permit2,
+        targetReceived,
+        signer,
+        `${v4Position.token0Symbol} para sumar liquidez`
+      );
+      await ensureV4Erc20Allowance(
+        v4Position.currency1,
+        V4_ROBINHOOD_CONTRACTS.permit2,
+        keepUsdRaw,
+        signer,
+        `${v4Position.token1Symbol} para sumar liquidez`
+      );
+      await ensureV4Permit2Allowance(
+        v4Position.currency0,
+        V4_ROBINHOOD_CONTRACTS.positionManager,
+        addV4AmountBuffer(targetReceived),
+        signer,
+        `${v4Position.token0Symbol} hacia Position Manager`
+      );
+      await ensureV4Permit2Allowance(
+        v4Position.currency1,
+        V4_ROBINHOOD_CONTRACTS.positionManager,
+        addV4AmountBuffer(keepUsdRaw),
+        signer,
+        `${v4Position.token1Symbol} hacia Position Manager`
+      );
+
+      setV4Status(
+        `Preparando sumar liquidez al NFT #${v4Position.tokenId} con los montos reales del swap.`
+      );
+      const prepared = await prepareV4LiquidityCall(amount0Text, amount1Text);
+      if (!prepared) {
+        return;
+      }
+      const gas = (await prepared.manager.modifyLiquidities.estimateGas(
+        prepared.unlockData,
+        prepared.deadline,
+        { value: prepared.value }
+      )) as bigint;
+      if (gas > V4_MAX_REASONABLE_GAS) {
+        setV4GasEstimate({
+          status: gas > V4_DANGER_GAS ? "error" : "warn",
+          title: gas > V4_DANGER_GAS ? "Gas bloqueado" : "Gas alto",
+          detail: `${formatGasUnits(
+            gas
+          )} unidades después del swap. Operación detenida.`
+        });
+        setV4Status("Swap hecho, pero sumar liquidez quedó detenido por gas alto.");
+        return;
+      }
+      setV4GasEstimate({
+        status: "ok",
+        title: "Sumar liquidez listo",
+        detail: `${formatGasUnits(gas)} unidades estimadas después del swap.`
+      });
+
+      liquidityBefore = await readV4PositionLiquidity(v4Position.tokenId);
+      setV4Status(
+        `MetaMask va a pedir firma real para sumar liquidez al NFT #${v4Position.tokenId}.`
+      );
+      const addTx = await prepared.manager.modifyLiquidities(
+        prepared.unlockData,
+        prepared.deadline,
+        { value: prepared.value }
+      );
+      setV4LastTxHash(addTx.hash);
+      setV4Status(`Liquidez enviada: ${addTx.hash.slice(0, 10)}...`);
+      await waitForV3Receipt(addTx.hash, "robinhood", 300000);
+      const liquidityAfter = await readV4PositionLiquidity(v4Position.tokenId);
+      const delta =
+        liquidityAfter > liquidityBefore
+          ? liquidityAfter - liquidityBefore
+          : BigInt(0);
+      setV4Status(
+        delta > BigInt(0)
+          ? `Liquidez sumada al NFT V4 #${v4Position.tokenId} desde USDG.`
+          : `La tx confirmó, pero la liquidez del NFT #${v4Position.tokenId} no cambió.`
+      );
+      await handleV4ReadPosition();
+      setV4LastTxHash(addTx.hash);
+    } catch (error) {
+      console.error(error);
+      setV4Status(
+        error instanceof Error
+          ? `No se pudo sumar desde USDG: ${describeV4EstimateError(error)}`
+          : "No se pudo sumar desde USDG."
       );
     } finally {
       setV4AddingLiquidity(false);
@@ -7642,6 +7982,94 @@ export default function Home() {
                         ? "Retirando..."
                         : "Retirar liquidez V4"}
                     </button>
+                  </div>
+                  <div className={styles.v4MintPanel}>
+                    <div>
+                      <h4>Sumar desde USDG</h4>
+                      <p>
+                        Para NFTs token/USDG, Zumpay divide un monto único:
+                        swap interno al otro token y luego INCREASE_LIQUIDITY
+                        sobre este NFT.
+                      </p>
+                    </div>
+                    <div className={styles.v3ManualGrid}>
+                      <div className={styles.field}>
+                        <label>Total USDG</label>
+                        <input
+                          value={v4AddUsdAmount}
+                          onChange={(event) => {
+                            setV4AddUsdAmount(event.target.value);
+                            setV4GasEstimate(null);
+                          }}
+                          placeholder="Monto total en USDG"
+                          inputMode="decimal"
+                        />
+                      </div>
+                      <div className={styles.field}>
+                        <label>Slippage</label>
+                        <input
+                          value={v4AddSlippage}
+                          onChange={(event) =>
+                            setV4AddSlippage(event.target.value)
+                          }
+                          placeholder="1"
+                          inputMode="decimal"
+                        />
+                      </div>
+                    </div>
+                    {v4AddUsdAssistPlan ? (
+                      <div className={styles.v4UseBox}>
+                        <strong>
+                          Cambiar aprox{" "}
+                          {formatHumanTokenAmount(
+                            v4AddUsdAssistPlan.sourceToSwap,
+                            v4AddUsdAssistPlan.sourceSymbol
+                          )}{" "}
+                          {v4AddUsdAssistPlan.sourceSymbol} a{" "}
+                          {formatHumanTokenAmount(
+                            v4AddUsdAssistPlan.targetAmount,
+                            v4AddUsdAssistPlan.targetSymbol
+                          )}{" "}
+                          {v4AddUsdAssistPlan.targetSymbol}; mantener{" "}
+                          {formatHumanTokenAmount(
+                            v4AddUsdAssistPlan.sourceToKeep,
+                            v4AddUsdAssistPlan.sourceSymbol
+                          )}{" "}
+                          {v4AddUsdAssistPlan.sourceSymbol}.
+                        </strong>
+                        <span>
+                          Este camino evita ir a Uniswap para conseguir el otro
+                          token antes de sumar liquidez.
+                        </span>
+                      </div>
+                    ) : (
+                      <p className={styles.muted}>
+                        Disponible cuando el NFT cargado es ERC20/USDG y está
+                        dentro de rango.
+                      </p>
+                    )}
+                    <div className={styles.ctas}>
+                      <button
+                        className={styles.outline}
+                        onClick={handleV4ApplyAddUsdAssist}
+                        disabled={!v4AddUsdAssistPlan || v4AddingLiquidity}
+                      >
+                        Cargar montos
+                      </button>
+                      <button
+                        className={styles.primary}
+                        onClick={handleV4AddFromUsd}
+                        disabled={
+                          isLocked ||
+                          !v4AddUsdAssistPlan ||
+                          v4AddingLiquidity
+                        }
+                      >
+                        {v4AddingLiquidity
+                          ? "Ejecutando..."
+                          : `Swap + sumar al NFT #${v4Position.tokenId}`}
+                      </button>
+                    </div>
                   </div>
                   <div className={styles.v3ManualGrid}>
                     <div className={styles.field}>
