@@ -1748,6 +1748,11 @@ async function waitForV3Receipt(
       `La transacción ${txHash.slice(0, 10)}... no confirmó dentro del tiempo esperado.`
     );
   }
+  if (receipt.status === 0) {
+    throw new Error(
+      `La transacción ${txHash.slice(0, 10)}... confirmó revertida. No cambió balances.`
+    );
+  }
   return receipt;
 }
 
@@ -6064,7 +6069,6 @@ export default function Home() {
         const inputIsToken0 = inputSymbol === selectedV3Pool.token0;
         const inputTokenContract = inputIsToken0 ? token0Contract : token1Contract;
         const outputToken = inputIsToken0 ? token1 : token0;
-        const outputTokenContract = inputIsToken0 ? token1Contract : token0Contract;
         const requested = parseV3Amount(v3EntryAmount, inputToken.decimals);
         const inputBalance = (await inputTokenContract.balanceOf(owner)) as bigint;
         if (requested <= BigInt(0)) {
@@ -6116,7 +6120,12 @@ export default function Home() {
           v3Chain
         );
 
-        const outputBalanceBefore = (await outputTokenContract.balanceOf(
+        const outputReadTokenContract = new ethers.Contract(
+          outputToken.address,
+          ERC20_ABI,
+          v3Provider(v3Chain)
+        );
+        const outputBalanceBefore = (await outputReadTokenContract.balanceOf(
           owner
         )) as bigint;
         const router = new ethers.Contract(
@@ -6138,12 +6147,17 @@ export default function Home() {
         setV3Status(`Swap enviado: ${swapTx.hash.slice(0, 10)}...`);
         await waitForV3Receipt(swapTx.hash, v3Chain);
 
-        const outputBalanceAfter = (await outputTokenContract.balanceOf(
+        const outputBalanceAfter = (await outputReadTokenContract.balanceOf(
           owner
         )) as bigint;
         const outputReceived = outputBalanceAfter - outputBalanceBefore;
         if (outputReceived <= BigInt(0)) {
-          setV3Status("El swap no dejó saldo nuevo para el segundo token.");
+          setV3Status(
+            `El swap confirmó, pero el RPC todavía no muestra ${inputIsToken0 ? selectedV3Pool.token1 : selectedV3Pool.token0} recibido. Revisá la tx ${swapTx.hash.slice(
+              0,
+              10
+            )}... en el explorador antes de repetir.`
+          );
           return;
         }
         amount0Desired = inputIsToken0 ? keepAmount : outputReceived;
