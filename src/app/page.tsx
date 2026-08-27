@@ -7329,23 +7329,44 @@ export default function Home() {
               </div>
 
               <div className={styles.reserveRouteCard}>
-                <span>Avanzado</span>
-                <strong>BTC nativo</strong>
+                <span>BTC avanzado</span>
+                <strong>BounceBit / BBTC</strong>
                 <p>
-                  BTC no tiene staking nativo. Para DeFi hay que envolverlo, y
-                  eso suma riesgo de wrapper, bridge y protocolo.
+                  Entrada fija para estudiar BounceBit con la misma wallet BTC
+                  de Zumpay. BTC se transforma en una posicion tipo BBTC y los
+                  retiros pueden tener espera; usalo como ruta avanzada, no como
+                  reserva conservadora.
                 </p>
                 <div className={styles.reserveRouteActions}>
+                  <button
+                    className={styles.softButton}
+                    onClick={() =>
+                      copyToClipboard(
+                        btcAddress,
+                        "Dirección BTC de reserva copiada para BounceBit."
+                      )
+                    }
+                  >
+                    Copiar BTC de reserva
+                  </button>
+                  <a
+                    className={styles.outline}
+                    href="https://portal.bouncebit.io/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Abrir BounceBit Portal
+                  </a>
                   <button
                     className={styles.outline}
                     onClick={() => {
                       setBtcMode("send");
                       setBtcStatus(
-                        "BTC nativo queda como reserva. Envolver BTC para DeFi va a ir en un módulo avanzado, no en el flujo conservador."
+                        "BTC nativo queda como reserva principal. BounceBit/BBTC es avanzado: revisá red, token recibido, lock, retiro y fees antes de mover fondos."
                       );
                     }}
                   >
-                    Ver BTC como reserva
+                    Mantener como reserva
                   </button>
                 </div>
               </div>
