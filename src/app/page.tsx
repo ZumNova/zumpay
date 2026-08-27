@@ -7230,11 +7230,12 @@ export default function Home() {
             </p>
             <div className={styles.reserveRoutes}>
               <div className={styles.reserveRouteCard}>
-                <span>Bajo riesgo relativo</span>
-                <strong>Stablecoins a MetaMask Earn</strong>
+                <span>Explorar proveedores</span>
+                <strong>MetaMask Portfolio / Discover</strong>
                 <p>
-                  USDC, USDT o DAI pueden prestarse desde MetaMask Earn, que usa
-                  Aave por detrás.
+                  Abre el tablero de MetaMask para investigar Earn, staking,
+                  acciones tokenizadas y proveedores externos como Ondo,
+                  Everstake o Tortuga. Zumpay solo te lleva al punto de entrada.
                 </p>
                 <div className={styles.reserveRouteActions}>
                   {stableReserveAssets.length > 0 ? (
@@ -7256,7 +7257,7 @@ export default function Home() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Abrir Portfolio Earn
+                    Abrir MetaMask Portfolio
                   </a>
                 </div>
               </div>
