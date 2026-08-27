@@ -2019,6 +2019,13 @@ export default function Home() {
       ),
     [positiveEvmAssets]
   );
+  const wethReserveAssets = useMemo(
+    () =>
+      positiveEvmAssets.filter(
+        (asset) => asset.symbol.toUpperCase() === "WETH"
+      ),
+    [positiveEvmAssets]
+  );
   const wbtcReserveAssets = useMemo(
     () =>
       positiveEvmAssets.filter(
@@ -7296,15 +7303,16 @@ export default function Home() {
               </div>
 
               <div className={styles.reserveRouteCard}>
-                <span>Blue-chip</span>
-                <strong>WBTC/WETH LP</strong>
+                <span>WETH productivo</span>
+                <strong>Aave lending o WBTC/WETH LP</strong>
                 <p>
-                  No es stable lending. Sirve cuando aceptarías quedar expuesto
-                  a cualquiera de los dos activos.
+                  Para ser prestador, Aave permite supply de WETH sin tomar
+                  deuda. Si querés más actividad, la alternativa es LP
+                  WBTC/WETH V3 aceptando quedar en cualquiera de los dos activos.
                 </p>
                 <div className={styles.reserveRouteActions}>
-                  {wbtcReserveAssets.length > 0 ? (
-                    wbtcReserveAssets.map((asset) => (
+                  {wethReserveAssets.length > 0 ? (
+                    wethReserveAssets.map((asset) => (
                       <button
                         key={asset.key}
                         className={styles.softButton}
@@ -7314,8 +7322,16 @@ export default function Home() {
                       </button>
                     ))
                   ) : (
-                    <small>No detecto WBTC en la red seleccionada.</small>
+                    <small>No detecto WETH en la red seleccionada.</small>
                   )}
+                  <a
+                    className={styles.outline}
+                    href="https://app.aave.com/markets/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Ver WETH en Aave
+                  </a>
                   <button
                     className={styles.outline}
                     onClick={() => {
@@ -7330,6 +7346,9 @@ export default function Home() {
                   >
                     Cargar WBTC/WETH V3
                   </button>
+                  {wbtcReserveAssets.length > 0 ? null : (
+                    <small>Para LP WBTC/WETH también necesitás WBTC o swap interno.</small>
+                  )}
                 </div>
               </div>
 
