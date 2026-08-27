@@ -977,6 +977,28 @@ function formatHumanTokenAmount(value: number, symbol: string) {
   });
 }
 
+function formatWalletBalance(value: string, symbol: string) {
+  const parsed = parseBalanceValue(value);
+  if (!Number.isFinite(parsed) || parsed === 0) {
+    return "0";
+  }
+
+  const upper = symbol.toUpperCase();
+  const maximumFractionDigits =
+    upper === "BTC"
+      ? 8
+      : ["ETH", "WETH", "POL", "PAXG"].includes(upper)
+        ? 6
+        : parsed < 1
+          ? 6
+          : 4;
+
+  return parsed.toLocaleString("en-US", {
+    maximumFractionDigits,
+    minimumFractionDigits: parsed > 0 && parsed < 0.000001 ? 8 : 0
+  });
+}
+
 function formatV4Price(value: number, token0Symbol: string, token1Symbol: string) {
   return `${value.toLocaleString("en-US", {
     maximumFractionDigits: 2,
@@ -6998,8 +7020,8 @@ export default function Home() {
               <div className={styles.balanceRow}>
                 <div>
                   <p className={styles.label}>Balance</p>
-                  <h4>
-                    {balance} {network.symbol}
+                  <h4 title={`${balance} ${network.symbol}`}>
+                    {formatWalletBalance(balance, network.symbol)} {network.symbol}
                   </h4>
                 </div>
                 <button
@@ -7013,7 +7035,9 @@ export default function Home() {
                 {evmAssets.map((asset) => (
                   <div key={asset.key} className={styles.assetRow}>
                     <span>{asset.symbol}</span>
-                    <span>{asset.balance}</span>
+                    <span title={asset.balance}>
+                      {formatWalletBalance(asset.balance, asset.symbol)}
+                    </span>
                   </div>
                 ))}
               </div>
