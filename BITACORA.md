@@ -343,3 +343,20 @@ Objetivo:
 - En V3 y V4, mostrar validaciones, split sugerido, permisos, gas y errores al lado del formulario activo.
 - Mantener un log general abajo solo como historial, no como feedback principal.
 - Reducir saltos visuales: el usuario debe poder operar mirando una sola tarjeta.
+
+## Nota UX: separar Zumpay en vistas humanas
+
+Fecha: 2026-08-27.
+
+Cambio iniciado:
+
+- Convertir la pantalla larga en una navegacion por vistas: Entrada, Premium, Cuentas, Director, Pools V3, Robin V4, Actividad, ZUM y Seguridad.
+- Mantener intacta la logica on-chain que ya funciona: swaps internos, lectura V3/V4, gestion de NFTs y rutas de reserva.
+- Usar la entrada como puerta humana: logo Zumpay, descargo no-custodial y explicacion del pago premium de 100 ZUM.
+- Separar Mis cuentas del Director de reserva para que wallet, rutas externas, V3 y V4 no compitan en una sola tira.
+
+Pendiente de UX:
+
+- Revisar en navegador real el flujo de tabs.
+- Ajustar textos por vista si alguna tarjeta sigue quedando demasiado tecnica.
+- En una segunda pasada, acercar los mensajes de error/estado al formulario activo.

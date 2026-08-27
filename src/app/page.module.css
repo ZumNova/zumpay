@@ -20,15 +20,17 @@
   position: relative;
   z-index: 2;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 18px;
   padding: 18px 6vw 0;
 }
 
 .brandCenter {
   display: grid;
   place-items: center;
-  margin-top: 60px;
+  margin-top: 28px;
   position: relative;
   z-index: 3;
 }
@@ -39,6 +41,55 @@
   border-radius: 0;
   object-fit: cover;
   box-shadow: none;
+}
+
+.appNav {
+  width: min(1120px, 100%);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 18px;
+  background: rgba(5, 10, 20, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+}
+
+.appNavButton,
+.appNavActive {
+  min-width: 112px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 9px 12px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  cursor: pointer;
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.appNavButton span,
+.appNavActive span {
+  color: inherit;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.appNavButton small,
+.appNavActive small {
+  color: inherit;
+  font-size: 10px;
+  opacity: 0.72;
+}
+
+.appNavButton:hover,
+.appNavActive {
+  background: rgba(52, 211, 153, 0.11);
+  border-color: rgba(52, 211, 153, 0.34);
+  color: var(--ink);
 }
 
 .brandName {
@@ -284,9 +335,12 @@
   place-items: center;
   gap: 18px;
   text-align: center;
+  min-height: clamp(250px, 36vw, 410px);
 }
 
 .zRing {
+  position: relative;
+  z-index: 2;
   width: clamp(200px, 32vw, 320px);
   height: clamp(200px, 32vw, 320px);
   border-radius: 50%;
@@ -299,6 +353,57 @@
   place-items: center;
   box-shadow: 0 30px 80px rgba(5, 10, 20, 0.65);
   animation: float 6s ease-in-out infinite;
+}
+
+.orbit {
+  position: absolute;
+  width: clamp(245px, 38vw, 400px);
+  height: clamp(245px, 38vw, 400px);
+  border: 1px solid rgba(39, 213, 244, 0.24);
+  border-radius: 50%;
+  opacity: 0.88;
+  pointer-events: none;
+}
+
+.orbit span {
+  position: absolute;
+  left: 50%;
+  top: -5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--cyan);
+  box-shadow: 0 0 18px rgba(39, 213, 244, 0.9);
+}
+
+.orbitOne {
+  animation: orbitOne 9s linear infinite;
+}
+
+.orbitTwo {
+  width: clamp(225px, 35vw, 370px);
+  height: clamp(225px, 35vw, 370px);
+  border-color: rgba(52, 211, 153, 0.24);
+  animation: orbitTwo 11s linear infinite;
+}
+
+.orbitTwo span {
+  background: var(--green);
+  box-shadow: 0 0 18px rgba(52, 211, 153, 0.9);
+}
+
+.orbitThree {
+  width: clamp(270px, 41vw, 430px);
+  height: clamp(270px, 41vw, 430px);
+  border-color: rgba(255, 255, 255, 0.14);
+  animation: orbitThree 14s linear infinite;
+}
+
+.orbitThree span {
+  width: 8px;
+  height: 8px;
+  background: #e5f7ff;
+  box-shadow: 0 0 14px rgba(229, 247, 255, 0.75);
 }
 
 .zCore {
@@ -1623,6 +1728,33 @@
   }
 }
 
+@keyframes orbitOne {
+  from {
+    transform: rotateX(64deg) rotateZ(0deg);
+  }
+  to {
+    transform: rotateX(64deg) rotateZ(360deg);
+  }
+}
+
+@keyframes orbitTwo {
+  from {
+    transform: rotateX(64deg) rotateY(58deg) rotateZ(0deg);
+  }
+  to {
+    transform: rotateX(64deg) rotateY(58deg) rotateZ(-360deg);
+  }
+}
+
+@keyframes orbitThree {
+  from {
+    transform: rotateX(64deg) rotateY(-58deg) rotateZ(0deg);
+  }
+  to {
+    transform: rotateX(64deg) rotateY(-58deg) rotateZ(360deg);
+  }
+}
+
 @media (max-width: 900px) {
   .hero {
     grid-template-columns: 1fr;
@@ -1642,6 +1774,18 @@
 }
 
 @media (max-width: 600px) {
+  .appNav {
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 8px;
+  }
+
+  .appNavButton,
+  .appNavActive {
+    min-width: 118px;
+  }
+
   .navActions {
     display: none;
   }

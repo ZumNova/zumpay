@@ -49,6 +49,16 @@ type EvmAsset = {
 
 type V3ChainKey = "arbitrum" | "ethereum" | "polygon" | "robinhood";
 type V3EntryMode = "single" | "manual";
+type AppView =
+  | "home"
+  | "premium"
+  | "accounts"
+  | "reserve"
+  | "v3"
+  | "v4"
+  | "activity"
+  | "token"
+  | "security";
 
 type V3Pool = {
   id: string;
@@ -186,6 +196,18 @@ type V4LiquiditySimulation = {
   suggestedToken1: number;
 };
 
+const APP_VIEWS: { id: AppView; label: string; hint: string }[] = [
+  { id: "home", label: "Entrada", hint: "Acceso y descargo" },
+  { id: "premium", label: "Premium", hint: "Pago ZUM" },
+  { id: "accounts", label: "Cuentas", hint: "Wallet BTC/EVM" },
+  { id: "reserve", label: "Director", hint: "Rutas de reserva" },
+  { id: "v3", label: "Pools V3", hint: "Uniswap V3" },
+  { id: "v4", label: "Robin V4", hint: "Robinhood V4" },
+  { id: "activity", label: "Actividad", hint: "Movimientos" },
+  { id: "token", label: "ZUM", hint: "Token oficial" },
+  { id: "security", label: "Seguridad", hint: "Seed local" }
+];
+
 type V4PreflightCheck = {
   label: string;
   value: string;
@@ -246,6 +268,7 @@ type InjectedEthereum = {
 
 const STORAGE_KEY = "zumpay_wallet_v1";
 const TOKEN_KEY = "zumpay_tokens_v1";
+const TERMS_KEY = "zumpay_terms_accepted_v1";
 const TX_KEY = "zumpay_txs_v1";
 const V3_POSITION_KEY = "zumpay_v3_positions_v1";
 const V3_USED_POSITION_KEY = "zumpay_v3_used_positions_v1";
@@ -1875,6 +1898,7 @@ export default function Home() {
   const [checkingPremium, setCheckingPremium] = useState(false);
   const [payingPremium, setPayingPremium] = useState(false);
   const [premiumTermsAccepted, setPremiumTermsAccepted] = useState(false);
+  const [activeView, setActiveView] = useState<AppView>("home");
   const [payerAddress, setPayerAddress] = useState<string | null>(null);
   const [premiumAmount, setPremiumAmount] = useState(ZUM_PREMIUM_AMOUNT);
   const [premiumAmountRaw, setPremiumAmountRaw] = useState(
@@ -1992,6 +2016,15 @@ export default function Home() {
 
     loadPremiumPrice();
   }, []);
+
+  useEffect(() => {
+    setPremiumTermsAccepted(localStorage.getItem(TERMS_KEY) === "true");
+  }, []);
+
+  const updatePremiumTerms = (checked: boolean) => {
+    setPremiumTermsAccepted(checked);
+    localStorage.setItem(TERMS_KEY, checked ? "true" : "false");
+  };
 
   const explorerBase = EXPLORERS[networkKey] ?? EXPLORERS.polygon;
   const isLocked = !premiumPaid;
@@ -6552,9 +6585,27 @@ export default function Home() {
             alt="Zumpay"
           />
         </div>
+        <nav className={styles.appNav} aria-label="Navegación principal">
+          {APP_VIEWS.map((view) => (
+            <button
+              key={view.id}
+              className={
+                activeView === view.id
+                  ? styles.appNavActive
+                  : styles.appNavButton
+              }
+              onClick={() => setActiveView(view.id)}
+              type="button"
+            >
+              <span>{view.label}</span>
+              <small>{view.hint}</small>
+            </button>
+          ))}
+        </nav>
       </header>
 
       <main className={styles.main}>
+        {activeView === "home" ? (
         <section className={styles.hero}>
           <div className={styles.heroText}>
             <p className={styles.kicker}>Zumpay Premium</p>
@@ -6569,6 +6620,27 @@ export default function Home() {
               <span>Lectura de NFTs V3/V4</span>
               <span>Entrada desde stablecoins</span>
               <span>Firma siempre en MetaMask</span>
+            </div>
+          </div>
+
+          <div className={styles.heroMark} aria-hidden="true">
+            <div className={`${styles.orbit} ${styles.orbitOne}`}>
+              <span />
+            </div>
+            <div className={`${styles.orbit} ${styles.orbitTwo}`}>
+              <span />
+            </div>
+            <div className={`${styles.orbit} ${styles.orbitThree}`}>
+              <span />
+            </div>
+            <div className={styles.zRing}>
+              <div className={styles.zCore}>
+                <img
+                  className={styles.zLogo}
+                  src="/zumpay-token-logo.svg"
+                  alt=""
+                />
+              </div>
             </div>
           </div>
 
@@ -6600,9 +6672,7 @@ export default function Home() {
               <input
                 type="checkbox"
                 checked={premiumTermsAccepted}
-                onChange={(event) =>
-                  setPremiumTermsAccepted(event.target.checked)
-                }
+                onChange={(event) => updatePremiumTerms(event.target.checked)}
               />
               <span>
                 Entiendo que Zumpay es una herramienta no-custodial, que las
@@ -6633,6 +6703,13 @@ export default function Home() {
               <button className={styles.outline} onClick={() => checkPremium()}>
                 Verificar acceso
               </button>
+              <button
+                className={styles.outline}
+                onClick={() => setActiveView(premiumPaid ? "accounts" : "premium")}
+                type="button"
+              >
+                Entrar al tablero
+              </button>
             </div>
             <p className={styles.entryStatus}>
               {checkingPremium
@@ -6642,7 +6719,9 @@ export default function Home() {
             </p>
           </div>
         </section>
+        ) : null}
 
+        {activeView === "token" ? (
         <section className={styles.zumPublic}>
           <div className={styles.zumIntro}>
             <p className={styles.kicker}>ZUM Token</p>
@@ -6719,8 +6798,10 @@ export default function Home() {
             </div>
           </div>
         </section>
+        ) : null}
 
 
+        {activeView === "activity" ? (
         <section
           className={`${styles.sectionBlock} ${
             isLocked ? styles.sectionLocked : ""
@@ -6789,8 +6870,10 @@ export default function Home() {
             </div>
           </div>
         </section>
+        ) : null}
 
-                <section className={styles.sectionBlock}>
+        {activeView === "premium" ? (
+        <section className={styles.sectionBlock}>
           <div>
             <h2>Activar premium</h2>
             <p className={styles.subtitle}>
@@ -6835,20 +6918,11 @@ export default function Home() {
                   Verificar pago
                 </button>
               </div>
-              <label className={styles.termsCheck}>
-                <input
-                  type="checkbox"
-                  checked={premiumTermsAccepted}
-                  onChange={(event) =>
-                    setPremiumTermsAccepted(event.target.checked)
-                  }
-                />
-                <span>
-                  Entiendo que Zumpay no custodia fondos, no garantiza
-                  rendimientos y que cada operación depende de mi confirmación
-                  en MetaMask.
-                </span>
-              </label>
+              <p className={styles.entryStatus}>
+                {premiumTermsAccepted
+                  ? "Descargo aceptado desde la entrada."
+                  : "Volvé a Entrada y aceptá el descargo para habilitar el pago."}
+              </p>
               <div className={styles.stepList}>
                 <div>
                   <span>1</span>
@@ -6906,7 +6980,9 @@ export default function Home() {
             </div>
           </div>
         </section>
+        ) : null}
 
+        {activeView === "security" ? (
         <section className={styles.sectionBlock}>
           <div>
             <h2>Seguridad</h2>
@@ -6979,16 +7055,22 @@ export default function Home() {
             </div>
           </div>
         </section>
+        ) : null}
 
+        {activeView === "accounts" || activeView === "reserve" ? (
         <section
           className={`${styles.walletSection} ${
             isLocked ? styles.sectionLocked : ""
           }`}
         >
           <div>
-            <h2>Mis cuentas</h2>
+            <h2>
+              {activeView === "reserve" ? "Director de reserva" : "Mis cuentas"}
+            </h2>
             <p className={styles.subtitle}>
-              Direcciones y balances por red. Enviá o recibí en segundos.
+              {activeView === "reserve"
+                ? "Rutas simples para investigar rendimiento sin salir del panel."
+                : "Direcciones y balances por red. Enviá o recibí en segundos."}
             </p>
           </div>
           {isLocked ? (
@@ -6997,6 +7079,7 @@ export default function Home() {
             </div>
           ) : null}
 
+          {activeView === "accounts" ? (
           <div className={styles.walletGrid}>
             <div className={styles.walletCard}>
               <h3>Cuenta EVM</h3>
@@ -7237,7 +7320,9 @@ export default function Home() {
             </div>
 
           </div>
+          ) : null}
 
+          {activeView === "reserve" ? (
           <div className={styles.reserveRouter}>
             <div className={styles.reserveHeader}>
               <div>
@@ -7396,8 +7481,11 @@ export default function Home() {
               </div>
             </div>
           </div>
+          ) : null}
         </section>
+        ) : null}
 
+        {activeView === "v3" ? (
         <section
           className={`${styles.sectionBlock} ${
             isLocked ? styles.sectionLocked : ""
@@ -7873,7 +7961,9 @@ export default function Home() {
             </div>
           </div>
         </section>
+        ) : null}
 
+        {activeView === "v4" ? (
         <section className={styles.sectionBlock}>
           <div>
             <h2>Pools V4 Robinhood</h2>
@@ -9018,7 +9108,9 @@ export default function Home() {
             </div>
           </div>
         </section>
+        ) : null}
 
+        {activeView === "home" ? (
         <section className={styles.networks}>
           <div>
             <h2>Redes soportadas</h2>
@@ -9037,6 +9129,7 @@ export default function Home() {
             <span>BTC Native</span>
           </div>
         </section>
+        ) : null}
       </main>
       {showSeedModal ? (
         <div className={styles.modalBackdrop}>
