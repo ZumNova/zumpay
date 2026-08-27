@@ -933,6 +933,11 @@ function v3TokenByAddress(chain: V3ChainKey, address: string) {
   return { symbol: entry[0], decimals: entry[1].decimals };
 }
 
+function parseBalanceValue(value: string) {
+  const parsed = Number(value.replace(/,/g, "").trim());
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function matchV3Pool(
   chain: V3ChainKey,
   token0Address: string,
@@ -1847,6 +1852,7 @@ export default function Home() {
   const [premiumStatus, setPremiumStatus] = useState("");
   const [checkingPremium, setCheckingPremium] = useState(false);
   const [payingPremium, setPayingPremium] = useState(false);
+  const [premiumTermsAccepted, setPremiumTermsAccepted] = useState(false);
   const [payerAddress, setPayerAddress] = useState<string | null>(null);
   const [premiumAmount, setPremiumAmount] = useState(ZUM_PREMIUM_AMOUNT);
   const [premiumAmountRaw, setPremiumAmountRaw] = useState(
@@ -1995,6 +2001,31 @@ export default function Home() {
 
   const selectedAsset =
     evmAssets.find((asset) => asset.key === evmAssetKey) ?? evmAssets[0];
+  const positiveEvmAssets = useMemo(
+    () => evmAssets.filter((asset) => parseBalanceValue(asset.balance) > 0),
+    [evmAssets]
+  );
+  const stableReserveAssets = useMemo(
+    () =>
+      positiveEvmAssets.filter((asset) =>
+        ["USDC", "USDT", "DAI"].includes(asset.symbol.toUpperCase())
+      ),
+    [positiveEvmAssets]
+  );
+  const ethReserveAssets = useMemo(
+    () =>
+      positiveEvmAssets.filter((asset) =>
+        ["ETH", "WETH"].includes(asset.symbol.toUpperCase())
+      ),
+    [positiveEvmAssets]
+  );
+  const wbtcReserveAssets = useMemo(
+    () =>
+      positiveEvmAssets.filter(
+        (asset) => asset.symbol.toUpperCase() === "WBTC"
+      ),
+    [positiveEvmAssets]
+  );
   const v3PoolsForChain = useMemo(
     () => V3_POOLS.filter((pool) => pool.chain === v3Chain),
     [v3Chain]
@@ -3816,7 +3847,7 @@ export default function Home() {
     }
   };
 
-    const handleSendAllEvm = async () => {
+  const handleSendAllEvm = async () => {
     try {
       const selected = evmAssets.find((asset) => asset.key === evmAssetKey);
       if (!selected) return;
@@ -3840,6 +3871,20 @@ export default function Home() {
     } catch {
       setStatus("No se pudo calcular el máximo.");
     }
+  };
+
+  const prepareInternalToMetaMask = (asset: EvmAsset) => {
+    if (!payerAddress) {
+      setStatus("Conectá MetaMask para preparar el envío desde la wallet interna.");
+      return;
+    }
+    setEvmMode("send");
+    setEvmAssetKey(asset.key);
+    setSendTo(payerAddress);
+    setSendAmount("");
+    setStatus(
+      `Ruta preparada: enviar ${asset.symbol} desde la wallet interna a MetaMask. Revisá monto, red y gas antes de firmar.`
+    );
   };
 
   const connectMetaMask = async () => {
@@ -6490,33 +6535,89 @@ export default function Home() {
       <main className={styles.main}>
         <section className={styles.hero}>
           <div className={styles.heroText}>
-            <p className={styles.kicker}>Zumpay Wallet</p>
-            <h1>Tu billetera cripto privada para BTC, ETH y redes EVM.</h1>
+            <p className={styles.kicker}>Zumpay Premium</p>
+            <h1>Un tablero simple para dirigir tu capital cripto.</h1>
             <p className={styles.subtitle}>
-              No-custodial, multi-red y enfocada en simplicidad. Importá solo los
-              tokens que quieras ver y movete con total control.
+              Zumpay conecta wallet privada, lectura de posiciones y acciones
+              DeFi guiadas para operar pools V3 y V4 sin salir de la app. La
+              herramienta no custodia fondos: cada operación se confirma desde
+              tu MetaMask.
             </p>
             <div className={styles.trust}>
-              <span>Seed local cifrada</span>
-              <span>Sin servidores custodios</span>
-              <span>Soporte EVM + BTC</span>
+              <span>Lectura de NFTs V3/V4</span>
+              <span>Entrada desde stablecoins</span>
+              <span>Firma siempre en MetaMask</span>
             </div>
           </div>
 
-          <div className={styles.heroMark}>
-            <div className={styles.zRing}>
-              <div className={styles.zCore}>
-                <img
-                  className={styles.zLogo}
-                  src="/zumpay-logo.png"
-                  alt="ZumPay logo"
-                />
+          <div className={styles.entryPanel}>
+            <div className={styles.entryHeader}>
+              <span>Acceso</span>
+              <strong>{premiumPaid ? "Premium activo" : `${premiumAmount} ZUM`}</strong>
+            </div>
+            <p>
+              El pago premium habilita el uso completo de wallet, gestión de
+              pools, creación de posiciones y operaciones asistidas. No es una
+              promesa de rendimiento ni una custodia de fondos.
+            </p>
+            <div className={styles.entryChecklist}>
+              <div>
+                <span>Usuario</span>
+                <p>Decide montos, revisa riesgos y firma cada transacción.</p>
+              </div>
+              <div>
+                <span>Zumpay</span>
+                <p>Ordena datos, calcula estimaciones y prepara operaciones.</p>
+              </div>
+              <div>
+                <span>Riesgo</span>
+                <p>Precios, gas, liquidez y rangos pueden cambiar.</p>
               </div>
             </div>
-            <div className={styles.heroLogo}>
-              <span>ZUM</span>
-              <span className={styles.heroLogoAccent}>PAY</span>
+            <label className={styles.termsCheck}>
+              <input
+                type="checkbox"
+                checked={premiumTermsAccepted}
+                onChange={(event) =>
+                  setPremiumTermsAccepted(event.target.checked)
+                }
+              />
+              <span>
+                Entiendo que Zumpay es una herramienta no-custodial, que las
+                estimaciones pueden variar y que soy responsable de revisar y
+                firmar cada operación.
+              </span>
+            </label>
+            <div className={styles.ctas}>
+              <button className={styles.outline} onClick={connectMetaMask}>
+                Conectar MetaMask
+              </button>
+              <button
+                className={styles.primary}
+                onClick={payPremium}
+                disabled={
+                  payingPremium ||
+                  checkingPremium ||
+                  premiumPaid ||
+                  !premiumTermsAccepted
+                }
+              >
+                {premiumPaid
+                  ? "Premium activo"
+                  : payingPremium
+                    ? "Pagando..."
+                    : `Pagar ${premiumAmount} ZUM`}
+              </button>
+              <button className={styles.outline} onClick={() => checkPremium()}>
+                Verificar acceso
+              </button>
             </div>
+            <p className={styles.entryStatus}>
+              {checkingPremium
+                ? "Verificando acceso..."
+                : premiumStatus ||
+                  "Aceptá el descargo, conectá MetaMask y activá premium en Polygon."}
+            </p>
           </div>
         </section>
 
@@ -6702,7 +6803,9 @@ export default function Home() {
                 <button
                   className={styles.primary}
                   onClick={payPremium}
-                  disabled={payingPremium || checkingPremium}
+                  disabled={
+                    payingPremium || checkingPremium || !premiumTermsAccepted
+                  }
                 >
                   {payingPremium ? "Pagando..." : `Pagar ${premiumAmount} ZUM`}
                 </button>
@@ -6710,6 +6813,20 @@ export default function Home() {
                   Verificar pago
                 </button>
               </div>
+              <label className={styles.termsCheck}>
+                <input
+                  type="checkbox"
+                  checked={premiumTermsAccepted}
+                  onChange={(event) =>
+                    setPremiumTermsAccepted(event.target.checked)
+                  }
+                />
+                <span>
+                  Entiendo que Zumpay no custodia fondos, no garantiza
+                  rendimientos y que cada operación depende de mi confirmación
+                  en MetaMask.
+                </span>
+              </label>
               <div className={styles.stepList}>
                 <div>
                   <span>1</span>
@@ -7038,7 +7155,7 @@ export default function Home() {
                   {btcQr ? (
                     <img className={styles.qr} src={btcQr} alt="QR BTC" />
                   ) : null}
-                  <p className={styles.muted}>Usá esta dirección para POL/ETH y tokens EVM.</p>
+                  <p className={styles.muted}>Usá esta dirección para BTC nativo.</p>
                   <button
                     className={styles.outline}
                     onClick={() =>
@@ -7095,6 +7212,147 @@ export default function Home() {
               )}
             </div>
 
+          </div>
+
+          <div className={styles.reserveRouter}>
+            <div className={styles.reserveHeader}>
+              <div>
+                <p className={styles.kicker}>Director de reserva</p>
+                <h3>Rutas simples para poner capital a trabajar</h3>
+              </div>
+              <button className={styles.outline} onClick={connectMetaMask}>
+                {payerAddress ? shortAddress(payerAddress) : "Conectar MetaMask"}
+              </button>
+            </div>
+            <p className={styles.muted}>
+              Zumpay solo prepara el camino. La firma real queda en tu wallet y
+              el rendimiento depende de MetaMask, Aave o la pool elegida.
+            </p>
+            <div className={styles.reserveRoutes}>
+              <div className={styles.reserveRouteCard}>
+                <span>Bajo riesgo relativo</span>
+                <strong>Stablecoins a MetaMask Earn</strong>
+                <p>
+                  USDC, USDT o DAI pueden prestarse desde MetaMask Earn, que usa
+                  Aave por detrás.
+                </p>
+                <div className={styles.reserveRouteActions}>
+                  {stableReserveAssets.length > 0 ? (
+                    stableReserveAssets.map((asset) => (
+                      <button
+                        key={asset.key}
+                        className={styles.softButton}
+                        onClick={() => prepareInternalToMetaMask(asset)}
+                      >
+                        Enviar {asset.symbol} a MetaMask
+                      </button>
+                    ))
+                  ) : (
+                    <small>No detecto USDC, USDT o DAI en la red seleccionada.</small>
+                  )}
+                  <a
+                    className={styles.outline}
+                    href="https://metamask.io/earn"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Abrir MetaMask Earn
+                  </a>
+                </div>
+              </div>
+
+              <div className={styles.reserveRouteCard}>
+                <span>ETH</span>
+                <strong>Stake desde MetaMask</strong>
+                <p>
+                  ETH puede ir a staking. Si el saldo está como WETH, primero
+                  conviene desenvolver o usar una estrategia LP.
+                </p>
+                <div className={styles.reserveRouteActions}>
+                  {ethReserveAssets.length > 0 ? (
+                    ethReserveAssets.map((asset) => (
+                      <button
+                        key={asset.key}
+                        className={styles.softButton}
+                        onClick={() => prepareInternalToMetaMask(asset)}
+                      >
+                        Enviar {asset.symbol} a MetaMask
+                      </button>
+                    ))
+                  ) : (
+                    <small>No detecto ETH/WETH en la red seleccionada.</small>
+                  )}
+                  <a
+                    className={styles.outline}
+                    href="https://metamask.io/earn"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Abrir Stake
+                  </a>
+                </div>
+              </div>
+
+              <div className={styles.reserveRouteCard}>
+                <span>Blue-chip</span>
+                <strong>WBTC/WETH LP</strong>
+                <p>
+                  No es stable lending. Sirve cuando aceptarías quedar expuesto
+                  a cualquiera de los dos activos.
+                </p>
+                <div className={styles.reserveRouteActions}>
+                  {wbtcReserveAssets.length > 0 ? (
+                    wbtcReserveAssets.map((asset) => (
+                      <button
+                        key={asset.key}
+                        className={styles.softButton}
+                        onClick={() => prepareInternalToMetaMask(asset)}
+                      >
+                        Enviar {asset.symbol} a MetaMask
+                      </button>
+                    ))
+                  ) : (
+                    <small>No detecto WBTC en la red seleccionada.</small>
+                  )}
+                  <button
+                    className={styles.outline}
+                    onClick={() => {
+                      setV3Chain("arbitrum");
+                      setV3PoolId("arb-wbtc-weth-500");
+                      setV3Profile("conservative");
+                      setV3EntryMode("single");
+                      setV3Status(
+                        "Blue Chip Rotation cargada desde Director de reserva."
+                      );
+                    }}
+                  >
+                    Cargar WBTC/WETH V3
+                  </button>
+                </div>
+              </div>
+
+              <div className={styles.reserveRouteCard}>
+                <span>Avanzado</span>
+                <strong>BTC nativo</strong>
+                <p>
+                  BTC no tiene staking nativo. Para DeFi hay que envolverlo, y
+                  eso suma riesgo de wrapper, bridge y protocolo.
+                </p>
+                <div className={styles.reserveRouteActions}>
+                  <button
+                    className={styles.outline}
+                    onClick={() => {
+                      setBtcMode("send");
+                      setBtcStatus(
+                        "BTC nativo queda como reserva. Envolver BTC para DeFi va a ir en un módulo avanzado, no en el flujo conservador."
+                      );
+                    }}
+                  >
+                    Ver BTC como reserva
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 

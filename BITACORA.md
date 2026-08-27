@@ -333,3 +333,13 @@ Fases sugeridas:
 Conclusion:
 
 El camino mas sano es construir el administrador aparte, validarlo con datos reales pero controlados, y despues decidir si se conecta como modulo privado de Zumpay o queda como repo independiente.
+
+## Nota UX pendiente: mensajes cerca del monto
+
+En la mejora grande de UX/UI, cada operacion de entrada debe mostrar su estado y mensaje justo debajo del campo donde el usuario ingresa el monto. Hoy algunos mensajes aparecen lejos, debajo de las tarjetas de NFTs, y obliga a scrollear para entender que paso.
+
+Objetivo:
+
+- En V3 y V4, mostrar validaciones, split sugerido, permisos, gas y errores al lado del formulario activo.
+- Mantener un log general abajo solo como historial, no como feedback principal.
+- Reducir saltos visuales: el usuario debe poder operar mirando una sola tarjeta.
