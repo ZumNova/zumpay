@@ -2026,13 +2026,6 @@ export default function Home() {
       ),
     [positiveEvmAssets]
   );
-  const wbtcReserveAssets = useMemo(
-    () =>
-      positiveEvmAssets.filter(
-        (asset) => asset.symbol.toUpperCase() === "WBTC"
-      ),
-    [positiveEvmAssets]
-  );
   const v3PoolsForChain = useMemo(
     () => V3_POOLS.filter((pool) => pool.chain === v3Chain),
     [v3Chain]
@@ -7304,11 +7297,11 @@ export default function Home() {
 
               <div className={styles.reserveRouteCard}>
                 <span>WETH productivo</span>
-                <strong>Aave lending o WBTC/WETH LP</strong>
+                <strong>Aave lending WETH</strong>
                 <p>
                   Para ser prestador, Aave permite supply de WETH sin tomar
-                  deuda. Si querés más actividad, la alternativa es LP
-                  WBTC/WETH V3 aceptando quedar en cualquiera de los dos activos.
+                  deuda. Esta ruta usa solo el WETH disponible en MetaMask o el
+                  que envíes desde la wallet interna.
                 </p>
                 <div className={styles.reserveRouteActions}>
                   {wethReserveAssets.length > 0 ? (
@@ -7332,23 +7325,6 @@ export default function Home() {
                   >
                     Ver WETH en Aave
                   </a>
-                  <button
-                    className={styles.outline}
-                    onClick={() => {
-                      setV3Chain("arbitrum");
-                      setV3PoolId("arb-wbtc-weth-500");
-                      setV3Profile("conservative");
-                      setV3EntryMode("single");
-                      setV3Status(
-                        "Blue Chip Rotation cargada desde Director de reserva."
-                      );
-                    }}
-                  >
-                    Cargar WBTC/WETH V3
-                  </button>
-                  {wbtcReserveAssets.length > 0 ? null : (
-                    <small>Para LP WBTC/WETH también necesitás WBTC o swap interno.</small>
-                  )}
                 </div>
               </div>
 
