@@ -80,6 +80,10 @@ type V3Position = {
   fees1?: string;
   token0Symbol?: string;
   token1Symbol?: string;
+  amount0Estimate?: number;
+  amount1Estimate?: number;
+  valueEstimate?: number;
+  valueSymbol?: string;
 };
 
 type V3UsedPosition = V3Position & {
@@ -163,6 +167,10 @@ type V4PositionView = V4ScanResult & {
   inRange: boolean;
   rangePriceLower: number;
   rangePriceUpper: number;
+  amount0Estimate: number;
+  amount1Estimate: number;
+  valueEstimate: number;
+  valueSymbol: string;
 };
 
 type V4LiquiditySimulation = {
@@ -1105,6 +1113,53 @@ function assessV4PoolUsability(
 
 function priceFromTick(tick: number, token0Decimals: number, token1Decimals: number) {
   return Math.pow(1.0001, tick) * 10 ** (token0Decimals - token1Decimals);
+}
+
+function estimateConcentratedPositionAmounts(
+  liquidityValue: bigint | string,
+  tickCurrent: number,
+  tickLower: number,
+  tickUpper: number,
+  token0Decimals: number,
+  token1Decimals: number
+) {
+  const liquidity =
+    typeof liquidityValue === "bigint"
+      ? Number(liquidityValue)
+      : Number(liquidityValue);
+  const sqrtCurrent = Math.sqrt(Math.pow(1.0001, tickCurrent));
+  const sqrtLower = Math.sqrt(Math.pow(1.0001, tickLower));
+  const sqrtUpper = Math.sqrt(Math.pow(1.0001, tickUpper));
+  const scale0 = 10 ** token0Decimals;
+  const scale1 = 10 ** token1Decimals;
+
+  if (
+    liquidity <= 0 ||
+    sqrtLower <= 0 ||
+    sqrtUpper <= sqrtLower ||
+    !Number.isFinite(liquidity)
+  ) {
+    return { amount0: 0, amount1: 0 };
+  }
+
+  if (tickCurrent <= tickLower) {
+    const amount0Raw =
+      (liquidity * (sqrtUpper - sqrtLower)) / (sqrtLower * sqrtUpper);
+    return { amount0: amount0Raw / scale0, amount1: 0 };
+  }
+
+  if (tickCurrent >= tickUpper) {
+    const amount1Raw = liquidity * (sqrtUpper - sqrtLower);
+    return { amount0: 0, amount1: amount1Raw / scale1 };
+  }
+
+  const amount0Raw =
+    (liquidity * (sqrtUpper - sqrtCurrent)) / (sqrtCurrent * sqrtUpper);
+  const amount1Raw = liquidity * (sqrtCurrent - sqrtLower);
+  return {
+    amount0: amount0Raw / scale0,
+    amount1: amount1Raw / scale1
+  };
 }
 
 function decodeV4Signed24(value: bigint) {
@@ -4098,7 +4153,11 @@ export default function Home() {
       fees0: position.fees0,
       fees1: position.fees1,
       token0Symbol: position.token0Symbol,
-      token1Symbol: position.token1Symbol
+      token1Symbol: position.token1Symbol,
+      amount0Estimate: position.amount0Estimate,
+      amount1Estimate: position.amount1Estimate,
+      valueEstimate: position.valueEstimate,
+      valueSymbol: position.valueSymbol
     };
     const active = [
       restored,
@@ -4137,6 +4196,7 @@ export default function Home() {
       Number(position.fee)
     );
     let currentTick: number | undefined;
+    let currentPrice = knownPool?.price;
     try {
       const contracts = v3Contracts(chain);
       const factory = new ethers.Contract(
@@ -4157,6 +4217,11 @@ export default function Home() {
         );
         const slot0 = await pool.slot0();
         currentTick = Number(slot0.tick);
+        currentPrice = priceFromSqrtPriceX96(
+          slot0.sqrtPriceX96,
+          token0.decimals,
+          token1.decimals
+        );
       }
     } catch {
       currentTick = knownPool?.tick;
@@ -4176,6 +4241,21 @@ export default function Home() {
       collectible0 = position.tokensOwed0 as bigint;
       collectible1 = position.tokensOwed1 as bigint;
     }
+    const positionAmounts =
+      typeof currentTick === "number"
+        ? estimateConcentratedPositionAmounts(
+            position.liquidity as bigint,
+            currentTick,
+            Number(position.tickLower),
+            Number(position.tickUpper),
+            token0.decimals,
+            token1.decimals
+          )
+        : { amount0: 0, amount1: 0 };
+    const valueEstimate =
+      currentPrice && Number.isFinite(currentPrice)
+        ? positionAmounts.amount0 * currentPrice + positionAmounts.amount1
+        : 0;
 
     return {
       tokenId,
@@ -4194,7 +4274,11 @@ export default function Home() {
       fees0: formatV3RawAmount(collectible0, token0.decimals),
       fees1: formatV3RawAmount(collectible1, token1.decimals),
       token0Symbol: token0.symbol,
-      token1Symbol: token1.symbol
+      token1Symbol: token1.symbol,
+      amount0Estimate: positionAmounts.amount0,
+      amount1Estimate: positionAmounts.amount1,
+      valueEstimate,
+      valueSymbol: token1.symbol
     };
   };
 
@@ -4711,6 +4795,18 @@ export default function Home() {
       price,
       poolKey.hooks
     );
+    const positionAmounts = estimateConcentratedPositionAmounts(
+      positionLiquidity,
+      tick,
+      positionInfo.tickLower,
+      positionInfo.tickUpper,
+      meta0.decimals,
+      meta1.decimals
+    );
+    const valueEstimate =
+      Number.isFinite(price) && price > 0
+        ? positionAmounts.amount0 * price + positionAmounts.amount1
+        : 0;
     const position: V4PositionView = {
       status: poolActive ? "Activa" : "No activa",
       ...poolUsability,
@@ -4744,7 +4840,11 @@ export default function Home() {
         positionInfo.tickUpper,
         meta0.decimals,
         meta1.decimals
-      )
+      ),
+      amount0Estimate: positionAmounts.amount0,
+      amount1Estimate: positionAmounts.amount1,
+      valueEstimate,
+      valueSymbol: meta1.symbol
     };
 
     return { position, poolLiquidity };
@@ -7351,6 +7451,33 @@ export default function Home() {
                             Tick actual: {position.currentTick}
                           </p>
                         ) : null}
+                        {typeof position.valueEstimate === "number" &&
+                        position.valueEstimate > 0 ? (
+                          <>
+                            <p className={styles.txTime}>
+                              Valor estimado:{" "}
+                              {formatV4Value(
+                                position.valueEstimate,
+                                position.valueSymbol ??
+                                  position.token1Symbol ??
+                                  "token1"
+                              )}
+                            </p>
+                            <p className={styles.txTime}>
+                              Composición:{" "}
+                              {formatHumanTokenAmount(
+                                position.amount0Estimate ?? 0,
+                                position.token0Symbol ?? "token0"
+                              )}{" "}
+                              {position.token0Symbol ?? "token0"} /{" "}
+                              {formatHumanTokenAmount(
+                                position.amount1Estimate ?? 0,
+                                position.token1Symbol ?? "token1"
+                              )}{" "}
+                              {position.token1Symbol ?? "token1"}
+                            </p>
+                          </>
+                        ) : null}
                         <p className={styles.txTime}>
                           Fees cobrables: {position.fees0 ?? "0"}{" "}
                           {position.token0Symbol ?? "token0"} /{" "}
@@ -7755,6 +7882,30 @@ export default function Home() {
                           Tick actual: {position.tick} · Última lectura:{" "}
                           {position.checkedAt}
                         </p>
+                        {position.valueEstimate > 0 ? (
+                          <>
+                            <p className={styles.txTime}>
+                              Valor estimado:{" "}
+                              {formatV4Value(
+                                position.valueEstimate,
+                                position.valueSymbol
+                              )}
+                            </p>
+                            <p className={styles.txTime}>
+                              Composición:{" "}
+                              {formatHumanTokenAmount(
+                                position.amount0Estimate,
+                                position.token0Symbol
+                              )}{" "}
+                              {position.token0Symbol} /{" "}
+                              {formatHumanTokenAmount(
+                                position.amount1Estimate,
+                                position.token1Symbol
+                              )}{" "}
+                              {position.token1Symbol}
+                            </p>
+                          </>
+                        ) : null}
                       </div>
                       <div className={styles.v3Actions}>
                         <button
@@ -7854,6 +8005,31 @@ export default function Home() {
                       ? v4Position.inRange
                         ? "Dentro"
                         : "Fuera"
+                      : "—"}
+                  </strong>
+                </div>
+                <div>
+                  <span>Valor NFT</span>
+                  <strong>
+                    {v4Position && v4Position.valueEstimate > 0
+                      ? formatV4Value(
+                          v4Position.valueEstimate,
+                          v4Position.valueSymbol
+                        )
+                      : "—"}
+                  </strong>
+                </div>
+                <div>
+                  <span>Composición</span>
+                  <strong>
+                    {v4Position && v4Position.valueEstimate > 0
+                      ? `${formatHumanTokenAmount(
+                          v4Position.amount0Estimate,
+                          v4Position.token0Symbol
+                        )} ${v4Position.token0Symbol} / ${formatHumanTokenAmount(
+                          v4Position.amount1Estimate,
+                          v4Position.token1Symbol
+                        )} ${v4Position.token1Symbol}`
                       : "—"}
                   </strong>
                 </div>
