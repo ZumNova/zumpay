@@ -7252,11 +7252,11 @@ export default function Home() {
                   )}
                   <a
                     className={styles.outline}
-                    href="https://metamask.io/earn"
+                    href="https://portfolio.metamask.io/"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Abrir MetaMask Earn
+                    Abrir Portfolio Earn
                   </a>
                 </div>
               </div>
@@ -7284,11 +7284,11 @@ export default function Home() {
                   )}
                   <a
                     className={styles.outline}
-                    href="https://metamask.io/earn"
+                    href="https://portfolio.metamask.io/"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Abrir Stake
+                    Abrir Portfolio Stake
                   </a>
                 </div>
               </div>
