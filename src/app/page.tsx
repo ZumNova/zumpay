@@ -54,6 +54,7 @@ type AppView =
   | "premium"
   | "accounts"
   | "reserve"
+  | "positions"
   | "v3"
   | "v4"
   | "activity"
@@ -201,6 +202,7 @@ const APP_VIEWS: { id: AppView; label: string; hint: string }[] = [
   { id: "premium", label: "Premium", hint: "Pago ZUM" },
   { id: "accounts", label: "Cuentas", hint: "Wallet BTC/EVM" },
   { id: "reserve", label: "Director", hint: "Rutas de reserva" },
+  { id: "positions", label: "Posiciones", hint: "V3 + V4" },
   { id: "v3", label: "Pools V3", hint: "Uniswap V3" },
   { id: "v4", label: "Robin V4", hint: "Robinhood V4" },
   { id: "activity", label: "Actividad", hint: "Movimientos" },
@@ -2081,6 +2083,101 @@ export default function Home() {
       ),
     [positiveEvmAssets]
   );
+  const portfolioPositions = useMemo(() => {
+    const v3Items = v3Positions.map((position) => {
+      const liquidityEmpty = position.liquidity === "0";
+      const status = liquidityEmpty
+        ? "Sin liquidez"
+        : position.inRange === true
+          ? "En rango"
+          : position.inRange === false
+            ? "Fuera de rango"
+            : "Actualizar";
+      return {
+        key: `v3-${position.chain}-${position.tokenId}`,
+        protocol: "V3",
+        chain: position.chain,
+        tokenId: position.tokenId,
+        pair: position.label,
+        fee: position.feeLabel,
+        range: `${position.tickLower} / ${position.tickUpper}`,
+        status,
+        statusTone: liquidityEmpty
+          ? "neutral"
+          : position.inRange === false
+            ? "out"
+            : position.inRange === true
+              ? "in"
+              : "neutral",
+        value:
+          typeof position.valueEstimate === "number" &&
+          position.valueEstimate > 0
+            ? formatV4Value(
+                position.valueEstimate,
+                position.valueSymbol ?? position.token1Symbol ?? "valor"
+              )
+            : "Actualizar",
+        fees: `${position.fees0 ?? "0"} ${
+          position.token0Symbol ?? "token0"
+        } / ${position.fees1 ?? "0"} ${position.token1Symbol ?? "token1"}`,
+        composition:
+          typeof position.valueEstimate === "number" &&
+          position.valueEstimate > 0
+            ? `${formatHumanTokenAmount(
+                position.amount0Estimate ?? 0,
+                position.token0Symbol ?? "token0"
+              )} ${position.token0Symbol ?? "token0"} / ${formatHumanTokenAmount(
+                position.amount1Estimate ?? 0,
+                position.token1Symbol ?? "token1"
+              )} ${position.token1Symbol ?? "token1"}`
+            : "Sin estimación",
+        created: "Guardado",
+        raw: position
+      };
+    });
+
+    const v4Items = v4Positions.map((position) => {
+      const liquidityEmpty = position.liquidity === "0";
+      return {
+        key: `v4-robinhood-${position.tokenId}`,
+        protocol: "V4",
+        chain: "robinhood",
+        tokenId: position.tokenId,
+        pair: `${position.token0Symbol}/${position.token1Symbol}`,
+        fee: position.lpFee,
+        range: `${position.rangePriceLower.toLocaleString("en-US", {
+          maximumFractionDigits: 2
+        })} / ${position.rangePriceUpper.toLocaleString("en-US", {
+          maximumFractionDigits: 2
+        })} ${position.token1Symbol}`,
+        status: liquidityEmpty
+          ? "Sin liquidez"
+          : position.inRange
+            ? "En rango"
+            : "Fuera de rango",
+        statusTone: liquidityEmpty ? "neutral" : position.inRange ? "in" : "out",
+        value:
+          position.valueEstimate > 0
+            ? formatV4Value(position.valueEstimate, position.valueSymbol)
+            : "Sin estimación",
+        fees: "Ver en V4",
+        composition:
+          position.valueEstimate > 0
+            ? `${formatHumanTokenAmount(
+                position.amount0Estimate,
+                position.token0Symbol
+              )} ${position.token0Symbol} / ${formatHumanTokenAmount(
+                position.amount1Estimate,
+                position.token1Symbol
+              )} ${position.token1Symbol}`
+            : "Sin estimación",
+        created: position.checkedAt,
+        raw: position
+      };
+    });
+
+    return [...v4Items, ...v3Items];
+  }, [v3Positions, v4Positions]);
   const v3PoolsForChain = useMemo(
     () => V3_POOLS.filter((pool) => pool.chain === v3Chain),
     [v3Chain]
@@ -7482,6 +7579,205 @@ export default function Home() {
             </div>
           </div>
           ) : null}
+        </section>
+        ) : null}
+
+        {activeView === "positions" ? (
+        <section
+          className={`${styles.sectionBlock} ${
+            isLocked ? styles.sectionLocked : ""
+          }`}
+        >
+          <div className={styles.positionsHeader}>
+            <div>
+              <p className={styles.kicker}>Portfolio Zumpay</p>
+              <h2>Tus posiciones</h2>
+              <p className={styles.subtitle}>
+                Vista liviana de NFTs V3 y V4: rango, valor estimado, fees y
+                estado operativo.
+              </p>
+            </div>
+            <div className={styles.positionsActions}>
+              <button
+                className={styles.outline}
+                onClick={handleV3DiscoverPositions}
+                disabled={isLocked || v3Discovering}
+              >
+                {v3Discovering ? "Buscando V3..." : "Buscar V3"}
+              </button>
+              <button
+                className={styles.outline}
+                onClick={handleV4DiscoverPositions}
+                disabled={isLocked || v4Discovering || v4ReadingPosition}
+              >
+                {v4Discovering ? "Buscando V4..." : "Buscar V4"}
+              </button>
+              <button
+                className={styles.outline}
+                onClick={() => {
+                  handleV3RefreshPositions();
+                  handleV4RefreshPositions();
+                }}
+                disabled={
+                  isLocked ||
+                  v4ReadingPosition ||
+                  (v3Positions.length === 0 && v4Positions.length === 0)
+                }
+              >
+                Actualizar todo
+              </button>
+            </div>
+          </div>
+          {isLocked ? (
+            <div className={styles.lockOverlay}>
+              <p>Wallet bloqueada. Pagá {premiumAmount} ZUM para desbloquear.</p>
+            </div>
+          ) : null}
+          <div className={styles.positionsSummary}>
+            <div>
+              <span>Total NFTs</span>
+              <strong>{portfolioPositions.length}</strong>
+            </div>
+            <div>
+              <span>Dentro de rango</span>
+              <strong>
+                {
+                  portfolioPositions.filter(
+                    (position) => position.status === "En rango"
+                  ).length
+                }
+              </strong>
+            </div>
+            <div>
+              <span>Fuera de rango</span>
+              <strong>
+                {
+                  portfolioPositions.filter(
+                    (position) => position.status === "Fuera de rango"
+                  ).length
+                }
+              </strong>
+            </div>
+            <div>
+              <span>Sin liquidez</span>
+              <strong>
+                {
+                  portfolioPositions.filter(
+                    (position) => position.status === "Sin liquidez"
+                  ).length
+                }
+              </strong>
+            </div>
+          </div>
+          <div className={styles.positionsTableWrap}>
+            {portfolioPositions.length === 0 ? (
+              <div className={styles.emptyPositions}>
+                <h3>Todavía no hay posiciones cargadas</h3>
+                <p>
+                  Conectá MetaMask y usá Buscar V3 / Buscar V4. Zumpay trae tus
+                  NFTs y los muestra acá en un solo lugar.
+                </p>
+              </div>
+            ) : (
+              <table className={styles.positionsTable}>
+                <thead>
+                  <tr>
+                    <th>Pool</th>
+                    <th>Posición</th>
+                    <th>Estado</th>
+                    <th>Valor</th>
+                    <th>Fees</th>
+                    <th>Composición</th>
+                    <th>Leído</th>
+                    <th>Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {portfolioPositions.map((position) => (
+                    <tr key={position.key}>
+                      <td>
+                        <strong>{position.pair}</strong>
+                        <span>
+                          {position.protocol} · {position.fee} ·{" "}
+                          {position.chain}
+                        </span>
+                      </td>
+                      <td>
+                        <strong>NFT #{position.tokenId}</strong>
+                        <span>{position.range}</span>
+                      </td>
+                      <td>
+                        <span
+                          className={`${styles.v3RangeBadge} ${
+                            position.statusTone === "in"
+                              ? styles.v3RangeIn
+                              : position.statusTone === "out"
+                                ? styles.v3RangeOut
+                                : styles.v3RangeNeutral
+                          }`}
+                        >
+                          {position.status}
+                        </span>
+                      </td>
+                      <td>
+                        <strong>{position.value}</strong>
+                      </td>
+                      <td>{position.fees}</td>
+                      <td>{position.composition}</td>
+                      <td>{position.created}</td>
+                      <td>
+                        <div className={styles.positionRowActions}>
+                          {position.protocol === "V3" ? (
+                            <>
+                              <button
+                                className={styles.outline}
+                                onClick={() =>
+                                  handleV3Collect(position.raw as V3Position)
+                                }
+                                disabled={
+                                  isLocked ||
+                                  !v3HasCollectibleFees(
+                                    position.raw as V3Position
+                                  )
+                                }
+                              >
+                                Cobrar
+                              </button>
+                              <button
+                                className={styles.outline}
+                                onClick={() =>
+                                  handleV3Withdraw(position.raw as V3Position)
+                                }
+                                disabled={
+                                  isLocked ||
+                                  (position.raw as V3Position).liquidity === "0"
+                                }
+                              >
+                                Retirar
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              className={styles.outline}
+                              onClick={() => {
+                                handleV4LoadSavedPosition(
+                                  position.raw as V4PositionView
+                                );
+                                setActiveView("v4");
+                              }}
+                              disabled={isLocked}
+                            >
+                              Abrir V4
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </section>
         ) : null}
 

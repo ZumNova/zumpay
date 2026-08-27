@@ -1593,6 +1593,107 @@
   border: 1px solid rgba(148, 163, 184, 0.18);
 }
 
+.positionsHeader {
+  display: flex;
+  gap: 18px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.positionsActions,
+.positionRowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.positionsSummary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.positionsSummary div {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(12, 18, 32, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.positionsSummary span,
+.positionsTable th {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.positionsSummary strong {
+  color: var(--ink);
+  font-size: 24px;
+  font-family: var(--font-display);
+}
+
+.positionsTableWrap {
+  overflow-x: auto;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(7, 12, 24, 0.72);
+}
+
+.positionsTable {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+}
+
+.positionsTable th,
+.positionsTable td {
+  padding: 14px 16px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.positionsTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.positionsTable td {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.positionsTable td strong {
+  display: block;
+  color: var(--ink);
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.positionsTable td span {
+  display: block;
+}
+
+.emptyPositions {
+  display: grid;
+  gap: 8px;
+  padding: 24px;
+}
+
+.emptyPositions h3 {
+  color: var(--ink);
+  font-size: 18px;
+}
+
+.emptyPositions p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
 .v3Actions {
   display: flex;
   flex-wrap: wrap;
@@ -1768,6 +1869,19 @@
     order: -1;
   }
 
+  .positionsHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .positionsActions {
+    justify-content: flex-start;
+  }
+
+  .positionsSummary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .nav {
     padding: 22px 6vw;
   }
@@ -1831,6 +1945,10 @@
   }
 
   .v4LiquidityChange {
+    grid-template-columns: 1fr;
+  }
+
+  .positionsSummary {
     grid-template-columns: 1fr;
   }
 
