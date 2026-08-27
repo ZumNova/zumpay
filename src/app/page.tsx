@@ -6526,8 +6526,8 @@ export default function Home() {
         <div className={styles.brandCenter}>
           <img
             className={styles.brandLogo}
-            src="/zumnova-logo.svg"
-            alt="Zumnova"
+            src="/zumpay-logo.png"
+            alt="Zumpay"
           />
         </div>
       </header>
