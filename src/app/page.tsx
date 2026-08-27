@@ -7263,11 +7263,12 @@ export default function Home() {
               </div>
 
               <div className={styles.reserveRouteCard}>
-                <span>ETH</span>
-                <strong>Stake desde MetaMask</strong>
+                <span>Ruta ETH</span>
+                <strong>Stake ETH nativo</strong>
                 <p>
-                  ETH puede ir a staking. Si el saldo está como WETH, primero
-                  conviene desenvolver o usar una estrategia LP.
+                  Lleva ETH nativo a MetaMask y entrá a Stake / MetaMask Pool.
+                  Si el saldo está como WETH, primero hay que desenvolverlo a
+                  ETH o usarlo en una estrategia LP.
                 </p>
                 <div className={styles.reserveRouteActions}>
                   {ethReserveAssets.length > 0 ? (
@@ -7285,11 +7286,11 @@ export default function Home() {
                   )}
                   <a
                     className={styles.outline}
-                    href="https://portfolio.metamask.io/"
+                    href="https://portfolio.metamask.io/stake"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Abrir Portfolio Stake
+                    Abrir Stake ETH
                   </a>
                 </div>
               </div>
