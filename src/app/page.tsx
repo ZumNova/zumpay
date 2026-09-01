@@ -182,6 +182,8 @@ type V4PositionView = V4ScanResult & {
   amount1Estimate: number;
   valueEstimate: number;
   valueSymbol: string;
+  fees0?: string;
+  fees1?: string;
 };
 
 type V4LiquiditySimulation = {
@@ -821,7 +823,9 @@ const PERMIT2_ABI = [
 
 const V4_STATE_VIEW_ABI = [
   "function getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96,int24 tick,uint24 protocolFee,uint24 lpFee)",
-  "function getLiquidity(bytes32 poolId) view returns (uint128 liquidity)"
+  "function getLiquidity(bytes32 poolId) view returns (uint128 liquidity)",
+  "function getPositionInfo(bytes32 poolId,address owner,int24 tickLower,int24 tickUpper,bytes32 salt) view returns (uint128 liquidity,uint256 feeGrowthInside0LastX128,uint256 feeGrowthInside1LastX128)",
+  "function getFeeGrowthInside(bytes32 poolId,int24 tickLower,int24 tickUpper) view returns (uint256 feeGrowthInside0X128,uint256 feeGrowthInside1X128)"
 ];
 
 const V4_POSITION_MANAGER_VIEW_ABI = [
@@ -990,6 +994,21 @@ function formatV3RawAmount(value: bigint, decimals: number) {
   return Number(ethers.formatUnits(value, decimals)).toLocaleString("en-US", {
     maximumFractionDigits: decimals <= 8 ? 6 : 8
   });
+}
+
+function calculateV4UncollectedFee(
+  currentFeeGrowthX128: bigint,
+  lastFeeGrowthX128: bigint,
+  liquidity: bigint
+) {
+  if (liquidity <= BigInt(0) || currentFeeGrowthX128 <= lastFeeGrowthX128) {
+    return BigInt(0);
+  }
+
+  return (
+    ((currentFeeGrowthX128 - lastFeeGrowthX128) * liquidity) /
+    (BigInt(1) << BigInt(128))
+  );
 }
 
 function formatHumanTokenAmount(value: number, symbol: string) {
@@ -2186,7 +2205,9 @@ export default function Home() {
           position.valueEstimate > 0
             ? formatV4Value(position.valueEstimate, position.valueSymbol)
             : "Sin estimación",
-        fees: "Pendiente de lectura V4",
+        fees: `${position.fees0 ?? "No leído"} ${
+          position.token0Symbol
+        } / ${position.fees1 ?? "No leído"} ${position.token1Symbol}`,
         composition:
           position.valueEstimate > 0
             ? `${formatHumanTokenAmount(
@@ -5041,6 +5062,44 @@ export default function Home() {
       Number.isFinite(price) && price > 0
         ? positionAmounts.amount0 * price + positionAmounts.amount1
         : 0;
+    let fees0 = "0";
+    let fees1 = "0";
+    try {
+      const salt = ethers.toBeHex(BigInt(tokenId), 32);
+      const [, feeGrowthInside0Last, feeGrowthInside1Last] =
+        (await stateView.getPositionInfo(
+          poolId,
+          V4_ROBINHOOD_CONTRACTS.positionManager,
+          positionInfo.tickLower,
+          positionInfo.tickUpper,
+          salt
+        )) as [bigint, bigint, bigint];
+      const [feeGrowthInside0, feeGrowthInside1] =
+        (await stateView.getFeeGrowthInside(
+          poolId,
+          positionInfo.tickLower,
+          positionInfo.tickUpper
+        )) as [bigint, bigint];
+      fees0 = formatV3RawAmount(
+        calculateV4UncollectedFee(
+          feeGrowthInside0,
+          feeGrowthInside0Last,
+          positionLiquidity
+        ),
+        meta0.decimals
+      );
+      fees1 = formatV3RawAmount(
+        calculateV4UncollectedFee(
+          feeGrowthInside1,
+          feeGrowthInside1Last,
+          positionLiquidity
+        ),
+        meta1.decimals
+      );
+    } catch {
+      fees0 = "No leído";
+      fees1 = "No leído";
+    }
     const position: V4PositionView = {
       status: poolActive ? "Activa" : "No activa",
       ...poolUsability,
@@ -5078,7 +5137,9 @@ export default function Home() {
       amount0Estimate: positionAmounts.amount0,
       amount1Estimate: positionAmounts.amount1,
       valueEstimate,
-      valueSymbol: meta1.symbol
+      valueSymbol: meta1.symbol,
+      fees0,
+      fees1
     };
 
     return { position, poolLiquidity };
@@ -8665,6 +8726,12 @@ export default function Home() {
                                 position.amount1Estimate,
                                 position.token1Symbol
                               )}{" "}
+                              {position.token1Symbol}
+                            </p>
+                            <p className={styles.txTime}>
+                              Fees cobrables: {position.fees0 ?? "No leído"}{" "}
+                              {position.token0Symbol} /{" "}
+                              {position.fees1 ?? "No leído"}{" "}
                               {position.token1Symbol}
                             </p>
                           </>
