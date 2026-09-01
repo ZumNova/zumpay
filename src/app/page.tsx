@@ -2186,7 +2186,7 @@ export default function Home() {
           position.valueEstimate > 0
             ? formatV4Value(position.valueEstimate, position.valueSymbol)
             : "Sin estimación",
-        fees: "Ver en V4",
+        fees: "Pendiente de lectura V4",
         composition:
           position.valueEstimate > 0
             ? `${formatHumanTokenAmount(
@@ -7789,18 +7789,49 @@ export default function Home() {
                               </button>
                             </>
                           ) : (
-                            <button
-                              className={styles.outline}
-                              onClick={() => {
-                                handleV4LoadSavedPosition(
-                                  position.raw as V4PositionView
-                                );
-                                setActiveView("v4");
-                              }}
-                              disabled={isLocked}
-                            >
-                              Abrir V4
-                            </button>
+                            <>
+                              <button
+                                className={styles.outline}
+                                onClick={async () => {
+                                  await handleV4LoadSavedPosition(
+                                    position.raw as V4PositionView
+                                  );
+                                  setActiveView("v4");
+                                }}
+                                disabled={isLocked}
+                              >
+                                Abrir
+                              </button>
+                              <button
+                                className={styles.outline}
+                                onClick={async () => {
+                                  await handleV4LoadSavedPosition(
+                                    position.raw as V4PositionView
+                                  );
+                                  setActiveView("v4");
+                                }}
+                                disabled={isLocked || v4ReadingPosition}
+                              >
+                                Cobrar en V4
+                              </button>
+                              <button
+                                className={styles.outline}
+                                onClick={async () => {
+                                  await handleV4LoadSavedPosition(
+                                    position.raw as V4PositionView
+                                  );
+                                  setActiveView("v4");
+                                }}
+                                disabled={
+                                  isLocked ||
+                                  v4ReadingPosition ||
+                                  (position.raw as V4PositionView).liquidity ===
+                                    "0"
+                                }
+                              >
+                                Retirar en V4
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
