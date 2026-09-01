@@ -1543,17 +1543,43 @@ function encodeV4SwapExactInputSingleData(
 
 function describeV4EstimateError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
+  const lowerMessage = message.toLowerCase();
   if (message.includes("0x31e30ad0")) {
-    return "MaximumAmountExceeded: el contrato pidió más token que el máximo permitido. Se corrige aumentando margen o reduciendo liquidez.";
+    return "El mint pidió más tokens que el máximo permitido. Qué cambiar: bajá un poco el monto, subí el slippage a 1.5%-2% o volvé a cargar el split para recalcular con precio nuevo.";
   }
   if (message.includes("0x0ca968d8")) {
-    return "NotApproved: la wallet no está aprobada para operar ese NFT.";
+    return "La wallet no está aprobada para operar ese NFT. Qué cambiar: verificá que el NFT sea tuyo y volvé a aprobar permisos desde el paso Permit2.";
   }
   if (message.includes("0xf4d678b8")) {
-    return "InsufficientBalance: saldo insuficiente para la estimación.";
+    return "Saldo insuficiente para armar la posición. Qué cambiar: reducí el monto o cargá saldo de los dos tokens que pide el split.";
   }
   if (message.includes("0xd81b2f2e")) {
-    return "Permit2 AllowanceExpired: falta aprobar Permit2 hacia el contrato que ejecuta la operación.";
+    return "Permit2 vencido o insuficiente. Qué cambiar: tocá Aprobar Permit2 mint una vez y después volvé a estimar gas.";
+  }
+  if (
+    lowerMessage.includes("gas required exceeds allowance") ||
+    lowerMessage.includes("gas de mint alto") ||
+    lowerMessage.includes("gas too high")
+  ) {
+    return "El gas estimado es demasiado alto para firmar seguro. Qué cambiar: reducí el monto, usá un rango más amplio/centrado, recargá la pool y volvé a estimar antes de abrir MetaMask.";
+  }
+  if (
+    lowerMessage.includes("execution reverted") &&
+    lowerMessage.includes("no data present")
+  ) {
+    return "El contrato rechazó la simulación sin explicar el motivo. Qué cambiar: refrescá la pool, recalculá el split, probá con menos monto y confirmá que fee, tick spacing y hooks salieron de una pool cargada por el scanner.";
+  }
+  if (lowerMessage.includes("unknown custom error")) {
+    return "La pool devolvió un error interno no reconocido. Qué cambiar: no firmes; primero recargá el scanner, revisá que el rango esté dentro del precio actual y probá con menor monto/slippage más alto.";
+  }
+  if (lowerMessage.includes("insufficient funds")) {
+    return "Falta gas nativo en Robinhood Chain para pagar la transacción. Qué cambiar: cargá ETH/gas de la red o bajá operaciones hasta tener saldo suficiente.";
+  }
+  if (lowerMessage.includes("user rejected")) {
+    return "Operación cancelada en MetaMask. No se movieron fondos.";
+  }
+  if (lowerMessage.includes("network changed") || lowerMessage.includes("chain")) {
+    return "MetaMask está en otra red o cambió de red durante la operación. Qué cambiar: seleccioná Robinhood Chain y repetí solo la estimación.";
   }
   return message;
 }
@@ -2397,6 +2423,14 @@ export default function Home() {
   }, [v4MintRange, v4MintUsdAmount, v4Result]);
   const v4CanSimulateMint =
     v4Result?.usability === "Usable" && Boolean(v4MintRange);
+  const v4MintPermitReady = useMemo(() => {
+    const permitChecks = v4MintPreflightChecks.filter(
+      (check) =>
+        check.label.startsWith("Permiso ") ||
+        check.label.startsWith("Permit2 PM ")
+    );
+    return permitChecks.length > 0 && permitChecks.every((check) => check.ok);
+  }, [v4MintPreflightChecks]);
   const v4AddUsdAssistPlan = useMemo<V4UsdAssistPlan | null>(() => {
     if (!v4Position || v4Position.price <= 0) {
       return null;
@@ -2961,7 +2995,9 @@ export default function Home() {
       setV4Status("Aprobando permisos Permit2 para crear NFT V4.");
       const approved = await approveV4MintPermit2();
       if (approved) {
-        setV4Status("Permisos Permit2 para mint V4 listos. Ya podés estimar gas.");
+        setV4Status(
+          "Permisos Permit2 para mint V4 listos y reutilizables. Ya podés estimar gas."
+        );
         await handleV4MintPreflight();
       }
     } catch (error) {
@@ -3053,11 +3089,7 @@ export default function Home() {
         return;
       }
 
-      setV4Status("Verificando permisos Permit2 antes de crear NFT V4.");
-      const approved = await approveV4MintPermit2();
-      if (!approved) {
-        return;
-      }
+      setV4Status("Creando NFT V4 con permisos y gas ya validados.");
       const prepared = await prepareV4MintCall();
       if (!prepared) {
         return;
@@ -4571,7 +4603,7 @@ export default function Home() {
       return;
     }
 
-    const permitAmount = amount > MAX_UINT160 ? MAX_UINT160 : amount;
+    const permitAmount = MAX_UINT160;
     setV4Status(`Aprobando Permit2 para ${label}.`);
     const gas = (await permit2.approve.estimateGas(
       tokenAddress,
@@ -8965,9 +8997,15 @@ export default function Home() {
                     <button
                       className={styles.outline}
                       onClick={handleV4MintApprovePermit2}
-                      disabled={!v4CanSimulateMint || v4Minting}
+                      disabled={
+                        !v4CanSimulateMint || v4Minting || v4MintPermitReady
+                      }
                     >
-                      {v4Minting ? "Aprobando..." : "Aprobar Permit2 mint"}
+                      {v4Minting
+                        ? "Aprobando..."
+                        : v4MintPermitReady
+                          ? "Permit2 listo"
+                          : "Aprobar Permit2 mint"}
                     </button>
                     <button
                       className={styles.primary}
