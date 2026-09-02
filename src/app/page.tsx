@@ -270,6 +270,7 @@ type InjectedEthereum = {
     method: string;
     params?: unknown[] | object;
   }) => Promise<unknown>;
+  isMetaMask?: boolean;
   on?: (event: "accountsChanged", handler: (accounts: string[]) => void) => void;
   removeListener?: (
     event: "accountsChanged",
@@ -4258,12 +4259,58 @@ export default function Home() {
     );
   };
 
+  const isMobileBrowser = () =>
+    /Android|iPhone|iPad|iPod/i.test(window.navigator.userAgent);
+
+  const openInMetaMaskMobile = () => {
+    const dappUrl = window.location.href.replace(/^https?:\/\//, "");
+    window.location.href = `https://metamask.app.link/dapp/${dappUrl}`;
+  };
+
+  const getInjectedEthereum = async (waitMs = 900) => {
+    const current = (window as unknown as { ethereum?: InjectedEthereum })
+      .ethereum;
+    if (current) {
+      return current;
+    }
+
+    return new Promise<InjectedEthereum | undefined>((resolve) => {
+      let settled = false;
+      const finish = (ethereum?: InjectedEthereum) => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener("ethereum#initialized", handleInitialized);
+        resolve(ethereum);
+      };
+      const handleInitialized = () => {
+        finish(
+          (window as unknown as { ethereum?: InjectedEthereum }).ethereum
+        );
+      };
+
+      window.addEventListener("ethereum#initialized", handleInitialized, {
+        once: true
+      });
+      window.setTimeout(
+        () =>
+          finish(
+            (window as unknown as { ethereum?: InjectedEthereum }).ethereum
+          ),
+        waitMs
+      );
+    });
+  };
+
   const connectMetaMask = async () => {
     try {
-      const ethereum = (window as unknown as { ethereum?: InjectedEthereum })
-        .ethereum;
+      const ethereum = await getInjectedEthereum();
       if (!ethereum) {
-        setPremiumStatus("MetaMask no está instalado.");
+        if (isMobileBrowser()) {
+          setPremiumStatus("Abriendo Zumpay dentro de MetaMask Mobile.");
+          openInMetaMaskMobile();
+          return null;
+        }
+        setPremiumStatus("MetaMask no está instalado en este navegador.");
         return null;
       }
       const accounts = (await ethereum.request({
