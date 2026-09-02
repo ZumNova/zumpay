@@ -474,6 +474,10 @@ const V3_TOKENS: Record<
     AAPL: {
       address: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
       decimals: 18
+    },
+    NVDA: {
+      address: "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
+      decimals: 18
     }
   }
 };
@@ -753,6 +757,16 @@ const V4_ROBINHOOD_POOL_CANDIDATES: V4PoolCandidate[] = [
     label: "AAPL/USDG",
     currencyA: V3_TOKENS.robinhood.USDG.address,
     currencyB: V3_TOKENS.robinhood.AAPL.address,
+    fee: 3000,
+    tickSpacing: 60,
+    hooks: ZERO_ADDRESS,
+    note: "Acción tokenizada contra USDG"
+  },
+  {
+    id: "rh-v4-nvda-usdg-3000",
+    label: "NVDA/USDG",
+    currencyA: V3_TOKENS.robinhood.USDG.address,
+    currencyB: V3_TOKENS.robinhood.NVDA.address,
     fee: 3000,
     tickSpacing: 60,
     hooks: ZERO_ADDRESS,
