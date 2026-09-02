@@ -207,7 +207,7 @@ const APP_VIEWS: { id: AppView; label: string; hint: string }[] = [
   { id: "positions", label: "Posiciones", hint: "V3 + V4" },
   { id: "v3", label: "Pools V3", hint: "Uniswap V3" },
   { id: "v4", label: "Robin V4", hint: "Robinhood V4" },
-  { id: "activity", label: "Actividad", hint: "Movimientos" },
+  { id: "activity", label: "Mi balance", hint: "Resumen y movimientos" },
   { id: "token", label: "ZUM", hint: "Token oficial" },
   { id: "security", label: "Seguridad", hint: "Seed local" }
 ];
@@ -2008,6 +2008,9 @@ export default function Home() {
   const [v4Fee, setV4Fee] = useState("500");
   const [v4TickSpacing, setV4TickSpacing] = useState("10");
   const [v4Hooks, setV4Hooks] = useState(ZERO_ADDRESS);
+  const [v4SimpleCandidateId, setV4SimpleCandidateId] = useState(
+    "rh-v4-usde-usdg-100"
+  );
   const [v4Result, setV4Result] = useState<V4ScanResult | null>(null);
   const [v4Scanning, setV4Scanning] = useState(false);
   const [v4MultiScanning, setV4MultiScanning] = useState(false);
@@ -2192,6 +2195,12 @@ export default function Home() {
                 position.valueSymbol ?? position.token1Symbol ?? "valor"
               )
             : "Actualizar",
+        valueAmount:
+          typeof position.valueEstimate === "number" &&
+          position.valueEstimate > 0
+            ? position.valueEstimate
+            : 0,
+        valueSymbol: position.valueSymbol ?? position.token1Symbol ?? "valor",
         fees: `${position.fees0 ?? "0"} ${
           position.token0Symbol ?? "token0"
         } / ${position.fees1 ?? "0"} ${position.token1Symbol ?? "token1"}`,
@@ -2235,6 +2244,8 @@ export default function Home() {
           position.valueEstimate > 0
             ? formatV4Value(position.valueEstimate, position.valueSymbol)
             : "Sin estimación",
+        valueAmount: position.valueEstimate > 0 ? position.valueEstimate : 0,
+        valueSymbol: position.valueSymbol,
         fees: `${position.fees0 ?? "No leído"} ${
           position.token0Symbol
         } / ${position.fees1 ?? "No leído"} ${position.token1Symbol}`,
@@ -2255,6 +2266,63 @@ export default function Home() {
 
     return [...v4Items, ...v3Items];
   }, [v3Positions, v4Positions]);
+  const v4SimpleCandidates = useMemo(
+    () =>
+      V4_ROBINHOOD_POOL_CANDIDATES.filter((candidate) => {
+        const usdgAddress = V3_TOKENS.robinhood.USDG.address.toLowerCase();
+        return (
+          candidate.hooks.toLowerCase() === ZERO_ADDRESS &&
+          candidate.currencyA !== ZERO_ADDRESS &&
+          candidate.currencyB !== ZERO_ADDRESS &&
+          (candidate.currencyA.toLowerCase() === usdgAddress ||
+            candidate.currencyB.toLowerCase() === usdgAddress)
+        );
+      }),
+    []
+  );
+  const v4SimpleCandidate =
+    v4SimpleCandidates.find(
+      (candidate) => candidate.id === v4SimpleCandidateId
+    ) ?? v4SimpleCandidates[0];
+  const portfolioBalance = useMemo(() => {
+    const stableSymbols = new Set(["USD", "USDG", "USDC", "USDT", "DAI"]);
+    const investedStable = portfolioPositions.reduce((total, position) => {
+      return stableSymbols.has(position.valueSymbol.toUpperCase())
+        ? total + position.valueAmount
+        : total;
+    }, 0);
+    const investedOther = portfolioPositions.filter(
+      (position) =>
+        position.valueAmount > 0 &&
+        !stableSymbols.has(position.valueSymbol.toUpperCase())
+    );
+    const availableStable = positiveEvmAssets.reduce((total, asset) => {
+      return stableSymbols.has(asset.symbol.toUpperCase())
+        ? total + parseBalanceValue(asset.balance)
+        : total;
+    }, 0);
+    const otherAssets = positiveEvmAssets.filter(
+      (asset) => !stableSymbols.has(asset.symbol.toUpperCase())
+    );
+    const inRange = portfolioPositions.filter(
+      (position) => position.status === "En rango"
+    ).length;
+    const outOfRange = portfolioPositions.filter(
+      (position) => position.status === "Fuera de rango"
+    ).length;
+
+    return {
+      investedStable,
+      availableStable,
+      visibleStable: investedStable + availableStable,
+      btcReserve: parseBalanceValue(btcBalance),
+      otherAssets,
+      investedOther,
+      inRange,
+      outOfRange,
+      activityCount: txs.length
+    };
+  }, [btcBalance, portfolioPositions, positiveEvmAssets, txs.length]);
   const v3PoolsForChain = useMemo(
     () => V3_POOLS.filter((pool) => pool.chain === v3Chain),
     [v3Chain]
@@ -3258,10 +3326,10 @@ export default function Home() {
       const sourceDecimals = sourceIsToken0
         ? v4Result.token0Decimals
         : v4Result.token1Decimals;
-      const targetDecimals = sourceIsToken0
-        ? v4Result.token1Decimals
-        : v4Result.token0Decimals;
-      if (sourceCurrency.toLowerCase() !== usdgAddress || targetCurrency.toLowerCase() === ZERO_ADDRESS) {
+      if (
+        sourceCurrency.toLowerCase() !== usdgAddress ||
+        targetCurrency.toLowerCase() === ZERO_ADDRESS
+      ) {
         setV4Status(
           "Crear desde USDG automático está habilitado para pools ERC20/USDG. ETH nativo queda para el siguiente módulo."
         );
@@ -5059,6 +5127,65 @@ export default function Home() {
       return;
     }
     setV4Status(`Preset cargado: ${candidate.label}.`);
+  };
+
+  const handleV4PrepareSimpleUsd = async () => {
+    if (!v4SimpleCandidate) {
+      setV4Status("No hay una pool simple seleccionada.");
+      return;
+    }
+    if (!v4MintUsdAmount || (parseHumanAmount(v4MintUsdAmount) || 0) <= 0) {
+      setV4Status("Ingresá primero el monto USDG que querés trabajar.");
+      return;
+    }
+
+    const usdAmount = v4MintUsdAmount;
+    const slippage = v4MintSlippage;
+    try {
+      setV4Scanning(true);
+      setV4Status(`Preparando ${v4SimpleCandidate.label} desde USDG.`);
+      resetV4LoadedPosition();
+      setV4MintUsdAmount(usdAmount);
+      setV4MintSlippage(slippage);
+      setV4CurrencyA(v4SimpleCandidate.currencyA);
+      setV4CurrencyB(v4SimpleCandidate.currencyB);
+      setV4Fee(v4SimpleCandidate.fee.toString());
+      setV4TickSpacing(v4SimpleCandidate.tickSpacing.toString());
+      setV4Hooks(v4SimpleCandidate.hooks);
+      setV4MintProfile("moderate");
+
+      const readProvider = v3Provider("robinhood");
+      const stateView = new ethers.Contract(
+        V4_ROBINHOOD_CONTRACTS.stateView,
+        V4_STATE_VIEW_ABI,
+        readProvider
+      );
+      const result = await scanV4Pool(
+        readProvider,
+        stateView,
+        v4SimpleCandidate.currencyA,
+        v4SimpleCandidate.currencyB,
+        v4SimpleCandidate.fee,
+        v4SimpleCandidate.tickSpacing,
+        v4SimpleCandidate.hooks
+      );
+      setV4Result(result);
+      setV4Status(
+        result.usability === "Usable"
+          ? `${result.token0Symbol}/${result.token1Symbol} lista. Revisá el split y ejecutá Swap + Crear desde USDG.`
+          : `${result.token0Symbol}/${result.token1Symbol}: ${result.usabilityDetail}`
+      );
+    } catch (error) {
+      console.error(error);
+      setV4Result(null);
+      setV4Status(
+        error instanceof Error
+          ? `No se pudo preparar la pool simple: ${error.message}`
+          : "No se pudo preparar la pool simple."
+      );
+    } finally {
+      setV4Scanning(false);
+    }
   };
 
   const readV4PositionSnapshot = async (
@@ -7068,9 +7195,10 @@ export default function Home() {
           }`}
         >
           <div>
-            <h2>Actividad</h2>
+            <h2>Mi balance</h2>
             <p className={styles.subtitle}>
-              Últimas transacciones en la red seleccionada.
+              Resumen operativo de tu wallet, posiciones cargadas y últimos
+              movimientos.
             </p>
           </div>
           {isLocked ? (
@@ -7078,7 +7206,61 @@ export default function Home() {
               <p>Wallet bloqueada. Pagá {premiumAmount} ZUM para desbloquear.</p>
             </div>
           ) : null}
+          <div className={styles.miniBalance}>
+            <div className={styles.miniBalanceHero}>
+              <span>Capital visible</span>
+              <strong>
+                {formatV4Value(portfolioBalance.visibleStable, "USD aprox")}
+              </strong>
+              <small>
+                LP valorizadas en stable + stables disponibles ·{" "}
+                {portfolioBalance.activityCount} tx recientes.
+              </small>
+            </div>
+            <div>
+              <span>Invertido en pools</span>
+              <strong>
+                {formatV4Value(portfolioBalance.investedStable, "USD aprox")}
+              </strong>
+              <small>
+                {portfolioBalance.investedOther.length > 0
+                  ? `${portfolioBalance.investedOther.length} posición(es) con valor en otro token.`
+                  : "Todo lo valorizado está en stable/USDG."}
+              </small>
+            </div>
+            <div>
+              <span>Disponible EVM</span>
+              <strong>
+                {formatV4Value(portfolioBalance.availableStable, "USD aprox")}
+              </strong>
+              <small>
+                {portfolioBalance.otherAssets.length > 0
+                  ? `${portfolioBalance.otherAssets.length} activo(s) no stable aparte.`
+                  : "Sin otros activos EVM detectados."}
+              </small>
+            </div>
+            <div>
+              <span>Reserva BTC</span>
+              <strong>
+                {portfolioBalance.btcReserve.toLocaleString("en-US", {
+                  maximumFractionDigits: 8
+                })}{" "}
+                BTC
+              </strong>
+              <small>Se muestra separado porque no usamos precio externo.</small>
+            </div>
+          </div>
           <div className={styles.sectionGrid}>
+            <div className={styles.walletCard}>
+              <h3>Resumen Zumpay</h3>
+              <p className={styles.muted}>
+                Este balance suma lo que Zumpay puede leer en tu navegador:
+                posiciones V3/V4 cargadas, stables de la cuenta EVM y reserva
+                BTC. Para medir el volumen global de todas las wallets Zumpay
+                más adelante vamos a necesitar un indexador de eventos o una
+                base de datos de actividad agregada.
+              </p>
+            </div>
             <div className={styles.walletCard}>
               <h3>Últimas transacciones</h3>
               <div className={styles.txList}>
@@ -7803,23 +7985,11 @@ export default function Home() {
             </div>
             <div>
               <span>Dentro de rango</span>
-              <strong>
-                {
-                  portfolioPositions.filter(
-                    (position) => position.status === "En rango"
-                  ).length
-                }
-              </strong>
+              <strong>{portfolioBalance.inRange}</strong>
             </div>
             <div>
               <span>Fuera de rango</span>
-              <strong>
-                {
-                  portfolioPositions.filter(
-                    (position) => position.status === "Fuera de rango"
-                  ).length
-                }
-              </strong>
+              <strong>{portfolioBalance.outOfRange}</strong>
             </div>
             <div>
               <span>Sin liquidez</span>
@@ -8460,6 +8630,98 @@ export default function Home() {
             <p className={styles.subtitle}>
               Scanner read-only para oportunidades V4. No firma ni mueve fondos.
             </p>
+          </div>
+          <div className={styles.v4SimplePanel}>
+            <div>
+              <span>Entrada simple</span>
+              <strong>Crear desde USDG</strong>
+              <small>
+                Elegí una pool activa, cargá USDG y Zumpay prepara el split.
+              </small>
+            </div>
+            <div className={styles.field}>
+              <label>Pool</label>
+              <select
+                value={v4SimpleCandidateId}
+                onChange={(event) => {
+                  setV4SimpleCandidateId(event.target.value);
+                  setV4MintGasEstimate(null);
+                  setV4MintPreflightChecks([]);
+                }}
+                disabled={v4Scanning || v4Minting}
+              >
+                {v4SimpleCandidates.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.label} · {candidate.fee / 10000}%
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.field}>
+              <label>Monto USDG</label>
+              <input
+                value={v4MintUsdAmount}
+                onChange={(event) => {
+                  setV4MintUsdAmount(event.target.value);
+                  setV4MintGasEstimate(null);
+                  setV4MintPreflightChecks([]);
+                }}
+                placeholder="Ej: 100"
+                inputMode="decimal"
+                disabled={v4Scanning || v4Minting}
+              />
+            </div>
+            <div className={styles.field}>
+              <label>Slippage</label>
+              <input
+                value={v4MintSlippage}
+                onChange={(event) => setV4MintSlippage(event.target.value)}
+                placeholder="1"
+                inputMode="decimal"
+                disabled={v4Scanning || v4Minting}
+              />
+            </div>
+            <div className={styles.v4SimpleActions}>
+              <button
+                className={styles.outline}
+                onClick={handleV4PrepareSimpleUsd}
+                disabled={isLocked || v4Scanning || v4Minting}
+              >
+                {v4Scanning ? "Preparando..." : "Preparar pool"}
+              </button>
+              <button
+                className={styles.primary}
+                onClick={handleV4CreateFromUsd}
+                disabled={
+                  isLocked ||
+                  !v4CanSimulateMint ||
+                  v4Minting ||
+                  !v4UsdAssistPlan
+                }
+              >
+                {v4Minting ? "Operando..." : "Swap + crear"}
+              </button>
+            </div>
+            {v4UsdAssistPlan ? (
+              <small className={styles.v4SimpleHint}>
+                Cambiar aprox{" "}
+                {formatHumanTokenAmount(
+                  v4UsdAssistPlan.sourceToSwap,
+                  v4UsdAssistPlan.sourceSymbol
+                )}{" "}
+                {v4UsdAssistPlan.sourceSymbol} a{" "}
+                {formatHumanTokenAmount(
+                  v4UsdAssistPlan.targetAmount,
+                  v4UsdAssistPlan.targetSymbol
+                )}{" "}
+                {v4UsdAssistPlan.targetSymbol}; mantener{" "}
+                {formatHumanTokenAmount(
+                  v4UsdAssistPlan.sourceToKeep,
+                  v4UsdAssistPlan.sourceSymbol
+                )}{" "}
+                {v4UsdAssistPlan.sourceSymbol}.
+              </small>
+            ) : null}
           </div>
           <div className={styles.sectionGrid}>
             <div className={styles.walletCard}>
