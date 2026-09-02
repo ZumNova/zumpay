@@ -248,6 +248,8 @@ type V4MintRange = {
 type V4UsdAssistPlan = {
   sourceSymbol: string;
   targetSymbol: string;
+  sourceSide: "token0" | "token1";
+  targetSide: "token0" | "token1";
   targetAmount: number;
   sourceToSwap: number;
   sourceToKeep: number;
@@ -467,6 +469,10 @@ const V3_TOKENS: Record<
     },
     SPCX: {
       address: "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
+      decimals: 18
+    },
+    AAPL: {
+      address: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
       decimals: 18
     }
   }
@@ -741,6 +747,16 @@ const V4_ROBINHOOD_POOL_CANDIDATES: V4PoolCandidate[] = [
     tickSpacing: 60,
     hooks: ZERO_ADDRESS,
     note: "Token contra USDG"
+  },
+  {
+    id: "rh-v4-aapl-usdg-3000",
+    label: "AAPL/USDG",
+    currencyA: V3_TOKENS.robinhood.USDG.address,
+    currencyB: V3_TOKENS.robinhood.AAPL.address,
+    fee: 3000,
+    tickSpacing: 60,
+    hooks: ZERO_ADDRESS,
+    note: "Acción tokenizada contra USDG"
   },
   {
     id: "rh-v4-spcx-usdg-10000",
@@ -2401,24 +2417,43 @@ export default function Home() {
       return null;
     }
     const usdgAddress = V3_TOKENS.robinhood.USDG.address.toLowerCase();
+    const sourceIsToken0 =
+      v4Result.currency0.toLowerCase() === usdgAddress ||
+      v4Result.token0Symbol.toUpperCase() === "USDG";
     const sourceIsToken1 =
       v4Result.currency1.toLowerCase() === usdgAddress ||
       v4Result.token1Symbol.toUpperCase() === "USDG";
-    if (!sourceIsToken1) {
+    if (!sourceIsToken0 && !sourceIsToken1) {
       return null;
     }
+    const sourceSide = sourceIsToken0 ? "token0" : "token1";
+    const targetSide = sourceIsToken0 ? "token1" : "token0";
+    const sourceSymbol = sourceIsToken0
+      ? v4Result.token0Symbol
+      : v4Result.token1Symbol;
+    const targetSymbol = sourceIsToken0
+      ? v4Result.token1Symbol
+      : v4Result.token0Symbol;
+    const sourceDecimals = sourceIsToken0
+      ? v4Result.token0Decimals
+      : v4Result.token1Decimals;
+    const targetDecimals = sourceIsToken0
+      ? v4Result.token1Decimals
+      : v4Result.token0Decimals;
 
     const totalSource = Math.max(parseHumanAmount(v4MintUsdAmount) || 0, 0);
     const sourcePerOneTarget = estimateV4CounterpartAmount(
       1,
-      "token0",
+      targetSide,
       v4Result.tick,
       v4MintRange.lowerTick,
       v4MintRange.upperTick,
-      v4Result.token0Decimals,
-      v4Result.token1Decimals
+      targetDecimals,
+      sourceDecimals
     );
-    const costPerOneTarget = v4Result.price;
+    const costPerOneTarget = sourceIsToken0
+      ? 1 / v4Result.price
+      : v4Result.price;
     const totalPerOneTarget = costPerOneTarget + sourcePerOneTarget;
     if (
       totalSource <= 0 ||
@@ -2434,8 +2469,10 @@ export default function Home() {
     const sourceToSwap = Math.max(totalSource - sourceToKeep, 0);
 
     return {
-      sourceSymbol: v4Result.token1Symbol,
-      targetSymbol: v4Result.token0Symbol,
+      sourceSymbol,
+      targetSymbol,
+      sourceSide,
+      targetSide,
       targetAmount,
       sourceToSwap,
       sourceToKeep,
@@ -2492,6 +2529,8 @@ export default function Home() {
     return {
       sourceSymbol: v4Position.token1Symbol,
       targetSymbol: v4Position.token0Symbol,
+      sourceSide: "token1",
+      targetSide: "token0",
       targetAmount,
       sourceToSwap,
       sourceToKeep,
@@ -2652,13 +2691,17 @@ export default function Home() {
 
     setV4MintAmount0(
       formatTokenInputAmount(
-        v4UsdAssistPlan.targetAmount,
+        v4UsdAssistPlan.targetSide === "token0"
+          ? v4UsdAssistPlan.targetAmount
+          : v4UsdAssistPlan.sourceToKeep,
         v4Result.token0Symbol
       )
     );
     setV4MintAmount1(
       formatTokenInputAmount(
-        v4UsdAssistPlan.sourceToKeep,
+        v4UsdAssistPlan.targetSide === "token1"
+          ? v4UsdAssistPlan.targetAmount
+          : v4UsdAssistPlan.sourceToKeep,
         v4Result.token1Symbol
       )
     );
@@ -3191,10 +3234,20 @@ export default function Home() {
         return;
       }
       const usdgAddress = V3_TOKENS.robinhood.USDG.address.toLowerCase();
-      if (
-        v4Result.currency1.toLowerCase() !== usdgAddress ||
-        v4Result.currency0.toLowerCase() === ZERO_ADDRESS
-      ) {
+      const sourceIsToken0 = v4UsdAssistPlan.sourceSide === "token0";
+      const sourceCurrency = sourceIsToken0
+        ? v4Result.currency0
+        : v4Result.currency1;
+      const targetCurrency = sourceIsToken0
+        ? v4Result.currency1
+        : v4Result.currency0;
+      const sourceDecimals = sourceIsToken0
+        ? v4Result.token0Decimals
+        : v4Result.token1Decimals;
+      const targetDecimals = sourceIsToken0
+        ? v4Result.token1Decimals
+        : v4Result.token0Decimals;
+      if (sourceCurrency.toLowerCase() !== usdgAddress || targetCurrency.toLowerCase() === ZERO_ADDRESS) {
         setV4Status(
           "Crear desde USDG automático está habilitado para pools ERC20/USDG. ETH nativo queda para el siguiente módulo."
         );
@@ -3214,14 +3267,14 @@ export default function Home() {
 
       const totalUsdRaw = parseTokenUnits(
         v4MintUsdAmount,
-        v4Result.token1Decimals
+        sourceDecimals
       );
       const swapUsdRaw = parseTokenUnits(
         v4UsdAssistPlan.sourceToSwap
-          .toFixed(Math.min(v4Result.token1Decimals, 8))
+          .toFixed(Math.min(sourceDecimals, 8))
           .replace(/(\.\d*?[1-9])0+$/, "$1")
           .replace(/\.0+$/, ""),
-        v4Result.token1Decimals
+        sourceDecimals
       );
       const keepUsdRaw =
         totalUsdRaw > swapUsdRaw ? totalUsdRaw - swapUsdRaw : BigInt(0);
@@ -3230,15 +3283,15 @@ export default function Home() {
         return;
       }
 
-      const usdg = new ethers.Contract(v4Result.currency1, ERC20_ABI, signer);
-      const target = new ethers.Contract(v4Result.currency0, ERC20_ABI, signer);
+      const usdg = new ethers.Contract(sourceCurrency, ERC20_ABI, signer);
+      const target = new ethers.Contract(targetCurrency, ERC20_ABI, signer);
       const usdgBalance = (await usdg.balanceOf(owner)) as bigint;
       if (usdgBalance < totalUsdRaw) {
         setV4Status(
           `Saldo insuficiente. Tenés ${formatV3RawAmount(
             usdgBalance,
-            v4Result.token1Decimals
-          )} ${v4Result.token1Symbol}.`
+            sourceDecimals
+          )} ${v4UsdAssistPlan.sourceSymbol}.`
         );
         return;
       }
@@ -3250,7 +3303,7 @@ export default function Home() {
 
       const slippagePct = Math.min(Math.max(Number(v4MintSlippage) || 1, 0.1), 5);
       setV4Status(
-        `Consultando quote V4 para cambiar ${v4Result.token1Symbol} a ${v4Result.token0Symbol}.`
+        `Consultando quote V4 para cambiar ${v4UsdAssistPlan.sourceSymbol} a ${v4UsdAssistPlan.targetSymbol}.`
       );
       const quoter = new ethers.Contract(
         V4_ROBINHOOD_CONTRACTS.quoter,
@@ -3258,7 +3311,7 @@ export default function Home() {
         signer
       );
       const poolKey = v4PoolKeyTuple(v4Result);
-      const zeroForOne = false;
+      const zeroForOne = sourceIsToken0;
       const quoteResult = (await quoter.quoteExactInputSingle.staticCall([
         poolKey,
         zeroForOne,
@@ -3271,18 +3324,18 @@ export default function Home() {
         BigInt(10000);
 
       await ensureV4Erc20Allowance(
-        v4Result.currency1,
+        sourceCurrency,
         V4_ROBINHOOD_CONTRACTS.permit2,
         swapUsdRaw,
         signer,
-        `${v4Result.token1Symbol} para Permit2`
+        `${v4UsdAssistPlan.sourceSymbol} para Permit2`
       );
       await ensureV4Permit2Allowance(
-        v4Result.currency1,
+        sourceCurrency,
         V4_ROBINHOOD_CONTRACTS.universalRouter,
         swapUsdRaw,
         signer,
-        `${v4Result.token1Symbol} hacia Universal Router`
+        `${v4UsdAssistPlan.sourceSymbol} hacia Universal Router`
       );
 
       const targetBalanceBefore = (await target.balanceOf(owner)) as bigint;
@@ -3292,11 +3345,11 @@ export default function Home() {
         signer
       );
       setV4Status(
-        `Ejecutando swap V4 ${v4Result.token1Symbol} -> ${v4Result.token0Symbol}.`
+        `Ejecutando swap V4 ${v4UsdAssistPlan.sourceSymbol} -> ${v4UsdAssistPlan.targetSymbol}.`
       );
       const swapPayload = encodeV4SwapExactInputSingleData(
         v4Result,
-        v4Result.currency1,
+        sourceCurrency,
         swapUsdRaw,
         minOutput
       );
@@ -3326,40 +3379,43 @@ export default function Home() {
       }
 
       const amount0Text = ethers.formatUnits(
-        targetReceived,
+        sourceIsToken0 ? keepUsdRaw : targetReceived,
         v4Result.token0Decimals
       );
-      const amount1Text = ethers.formatUnits(keepUsdRaw, v4Result.token1Decimals);
+      const amount1Text = ethers.formatUnits(
+        sourceIsToken0 ? targetReceived : keepUsdRaw,
+        v4Result.token1Decimals
+      );
       setV4MintAmount0(amount0Text);
       setV4MintAmount1(amount1Text);
 
       await ensureV4Erc20Allowance(
-        v4Result.currency0,
+        targetCurrency,
         V4_ROBINHOOD_CONTRACTS.permit2,
         targetReceived,
         signer,
-        `${v4Result.token0Symbol} para mint V4`
+        `${v4UsdAssistPlan.targetSymbol} para mint V4`
       );
       await ensureV4Erc20Allowance(
-        v4Result.currency1,
+        sourceCurrency,
         V4_ROBINHOOD_CONTRACTS.permit2,
         keepUsdRaw,
         signer,
-        `${v4Result.token1Symbol} para mint V4`
+        `${v4UsdAssistPlan.sourceSymbol} para mint V4`
       );
       await ensureV4Permit2Allowance(
-        v4Result.currency0,
+        targetCurrency,
         V4_ROBINHOOD_CONTRACTS.positionManager,
         addV4AmountBuffer(targetReceived),
         signer,
-        `${v4Result.token0Symbol} hacia Position Manager`
+        `${v4UsdAssistPlan.targetSymbol} hacia Position Manager`
       );
       await ensureV4Permit2Allowance(
-        v4Result.currency1,
+        sourceCurrency,
         V4_ROBINHOOD_CONTRACTS.positionManager,
         addV4AmountBuffer(keepUsdRaw),
         signer,
-        `${v4Result.token1Symbol} hacia Position Manager`
+        `${v4UsdAssistPlan.sourceSymbol} hacia Position Manager`
       );
 
       setV4Status("Preparando MINT_POSITION con los montos reales del swap.");
@@ -8936,7 +8992,8 @@ export default function Home() {
                       </div>
                     </div>
                   ) : null}
-                  {v4Result.token1Symbol.toUpperCase() === "USDG" ? (
+                  {v4Result.token0Symbol.toUpperCase() === "USDG" ||
+                  v4Result.token1Symbol.toUpperCase() === "USDG" ? (
                     <div className={styles.v4UseBox}>
                       <strong>Paso 1 · Split desde USDG</strong>
                       <span>
