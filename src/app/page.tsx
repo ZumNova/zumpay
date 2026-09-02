@@ -270,6 +270,11 @@ type InjectedEthereum = {
     method: string;
     params?: unknown[] | object;
   }) => Promise<unknown>;
+  on?: (event: "accountsChanged", handler: (accounts: string[]) => void) => void;
+  removeListener?: (
+    event: "accountsChanged",
+    handler: (accounts: string[]) => void
+  ) => void;
 };
 
 const STORAGE_KEY = "zumpay_wallet_v1";
@@ -3738,6 +3743,29 @@ export default function Home() {
     }
   }, [address, payerAddress]);
 
+  useEffect(() => {
+    const ethereum = (window as unknown as { ethereum?: InjectedEthereum })
+      .ethereum;
+    if (!ethereum?.on) {
+      return;
+    }
+
+    const handleAccountsChanged = (accounts: string[]) => {
+      const nextAccount = accounts[0] ?? null;
+      setPayerAddress(nextAccount);
+      setPremiumStatus(
+        nextAccount
+          ? "Wallet MetaMask actualizada."
+          : "MetaMask desconectado."
+      );
+    };
+
+    ethereum.on("accountsChanged", handleAccountsChanged);
+    return () => {
+      ethereum.removeListener?.("accountsChanged", handleAccountsChanged);
+    };
+  }, []);
+
   const refreshBtc = async () => {
     if (!btcAddress) return;
     try {
@@ -4236,7 +4264,7 @@ export default function Home() {
         .ethereum;
       if (!ethereum) {
         setPremiumStatus("MetaMask no está instalado.");
-        return;
+        return null;
       }
       const accounts = (await ethereum.request({
         method: "eth_requestAccounts"
@@ -4244,11 +4272,23 @@ export default function Home() {
       if (accounts?.length) {
         setPayerAddress(accounts[0]);
         setPremiumStatus("Wallet conectada. Verificá el pago.");
+        return accounts[0];
       }
+      return null;
     } catch (error) {
       console.error(error);
       setPremiumStatus("No se pudo conectar MetaMask.");
+      return null;
     }
+  };
+
+  const openMetaMaskPortfolio = async (path = "") => {
+    const connectedAccount = await connectMetaMask();
+    if (!connectedAccount) {
+      setStatus("No abrí MetaMask Portfolio porque no hay wallet conectada.");
+      return;
+    }
+    window.open(`https://portfolio.metamask.io/${path}`, "_blank", "noreferrer");
   };
 
   const ensurePolygonNetwork = async (ethereum: InjectedEthereum) => {
@@ -7788,6 +7828,12 @@ export default function Home() {
                   acciones tokenizadas y proveedores externos como Ondo,
                   Everstake o Tortuga. Zumpay solo te lleva al punto de entrada.
                 </p>
+                <small>
+                  Wallet detectada:{" "}
+                  {payerAddress
+                    ? shortAddress(payerAddress)
+                    : "conectá MetaMask antes de salir"}
+                </small>
                 <div className={styles.reserveRouteActions}>
                   {stableReserveAssets.length > 0 ? (
                     stableReserveAssets.map((asset) => (
@@ -7802,14 +7848,12 @@ export default function Home() {
                   ) : (
                     <small>No detecto USDC, USDT o DAI en la red seleccionada.</small>
                   )}
-                  <a
+                  <button
                     className={styles.outline}
-                    href="https://portfolio.metamask.io/"
-                    target="_blank"
-                    rel="noreferrer"
+                    onClick={() => openMetaMaskPortfolio()}
                   >
                     Abrir MetaMask Portfolio
-                  </a>
+                  </button>
                 </div>
               </div>
 
@@ -7835,14 +7879,12 @@ export default function Home() {
                   ) : (
                     <small>No detecto ETH/WETH en la red seleccionada.</small>
                   )}
-                  <a
+                  <button
                     className={styles.outline}
-                    href="https://portfolio.metamask.io/stake"
-                    target="_blank"
-                    rel="noreferrer"
+                    onClick={() => openMetaMaskPortfolio("stake")}
                   >
                     Abrir Stake ETH
-                  </a>
+                  </button>
                 </div>
               </div>
 
@@ -7875,6 +7917,47 @@ export default function Home() {
                     rel="noreferrer"
                   >
                     Ver WETH en Aave
+                  </a>
+                </div>
+              </div>
+
+              <div className={styles.reserveRouteCard}>
+                <span>Entrada fiat</span>
+                <strong>Pesos argentinos a USDT</strong>
+                <p>
+                  Ruta simple para entrar desde ARS: comprar USDT en Binance
+                  P2P, retirarlo a MetaMask por la red correcta y después usar
+                  Zumpay para bridge, lending o LP. Binance ejecuta esa compra;
+                  Zumpay solo ordena el camino.
+                </p>
+                <div className={styles.reserveRouteActions}>
+                  <a
+                    className={styles.outline}
+                    href="https://p2p.binance.com/es-AR/trade/buy/USDT"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Abrir Binance P2P
+                  </a>
+                </div>
+              </div>
+
+              <div className={styles.reserveRouteCard}>
+                <span>Bridge entre redes</span>
+                <strong>Across</strong>
+                <p>
+                  Ruta externa para mover USDC, ETH/WETH u otros activos entre
+                  Arbitrum, Ethereum, Base, Optimism, Polygon y redes
+                  compatibles. Zumpay no firma ni custodia el puente.
+                </p>
+                <div className={styles.reserveRouteActions}>
+                  <a
+                    className={styles.outline}
+                    href="https://across.to/?from=arbitrum&input"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Abrir Across desde Arbitrum
                   </a>
                 </div>
               </div>
