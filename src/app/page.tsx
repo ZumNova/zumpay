@@ -8975,6 +8975,14 @@ export default function Home() {
               />
             </div>
             <div className={styles.v4SimpleActions}>
+              <a
+                className={styles.outline}
+                href="https://rh-scan.com/gastracker"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Gas RH
+              </a>
               <button
                 className={styles.outline}
                 onClick={handleV4PrepareSimpleUsd}
