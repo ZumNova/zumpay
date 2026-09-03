@@ -8913,11 +8913,23 @@ export default function Home() {
 
         {activeView === "v4" ? (
         <section className={styles.sectionBlock}>
-          <div>
-            <h2>Pools V4 Robinhood</h2>
-            <p className={styles.subtitle}>
-              Scanner read-only para oportunidades V4. No firma ni mueve fondos.
-            </p>
+          <div className={styles.positionsHeader}>
+            <div>
+              <h2>Pools V4 Robinhood</h2>
+              <p className={styles.subtitle}>
+                Scanner read-only para oportunidades V4. No firma ni mueve fondos.
+              </p>
+            </div>
+            <div className={styles.positionsActions}>
+              <a
+                className={styles.outline}
+                href="https://rh-scan.com/gastracker"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Gas RH
+              </a>
+            </div>
           </div>
           <div className={styles.v4SimplePanel}>
             <div>
