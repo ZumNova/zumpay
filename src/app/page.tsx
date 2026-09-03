@@ -1599,6 +1599,12 @@ function encodeV4SwapExactInputSingleData(
 function describeV4EstimateError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   const lowerMessage = message.toLowerCase();
+  if (
+    lowerMessage.includes("transacción pendiente") ||
+    lowerMessage.includes("transaccion pendiente")
+  ) {
+    return message;
+  }
   if (message.includes("0x31e30ad0")) {
     return "El mint pidió más tokens que el máximo permitido. Qué cambiar: bajá un poco el monto, subí el slippage a 1.5%-2% o volvé a cargar el split para recalcular con precio nuevo.";
   }
@@ -1637,6 +1643,27 @@ function describeV4EstimateError(error: unknown) {
     return "MetaMask está en otra red o cambió de red durante la operación. Qué cambiar: seleccioná Robinhood Chain y repetí solo la estimación.";
   }
   return message;
+}
+
+async function readPendingTxCount(provider: ethers.Provider, owner: string) {
+  try {
+    const [latestNonce, pendingNonce] = await Promise.all([
+      provider.getTransactionCount(owner, "latest"),
+      provider.getTransactionCount(owner, "pending")
+    ]);
+    return Math.max(pendingNonce - latestNonce, 0);
+  } catch {
+    return 0;
+  }
+}
+
+async function assertNoPendingTx(provider: ethers.Provider, owner: string) {
+  const pendingCount = await readPendingTxCount(provider, owner);
+  if (pendingCount > 0) {
+    throw new Error(
+      `Hay ${pendingCount} transacción pendiente en esta wallet. Qué hacer: abrí MetaMask, resolvé o cancelá la operación en espera y después volvé a intentar desde Zumpay.`
+    );
+  }
 }
 
 function v4NativeValue(
@@ -3266,7 +3293,10 @@ export default function Home() {
         return;
       }
 
+      await assertNoPendingTx(prepared.provider, owner);
       setV4Status("MetaMask va a pedir firma real para crear un NFT V4 nuevo.");
+      const preparedOwner = await prepared.signer.getAddress();
+      await assertNoPendingTx(prepared.provider, preparedOwner);
       const tx = await prepared.manager.modifyLiquidities(
         prepared.unlockData,
         prepared.deadline,
@@ -3352,6 +3382,9 @@ export default function Home() {
 
       const signer = await getV3Signer("robinhood");
       const owner = await signer.getAddress();
+      if (signer.provider) {
+        await assertNoPendingTx(signer.provider, owner);
+      }
 
       const totalUsdRaw = parseTokenUnits(
         v4MintUsdAmount,
@@ -4172,6 +4205,7 @@ export default function Home() {
         undefined,
         "m/44'/60'/0'/0/0"
       ).connect(provider);
+      await assertNoPendingTx(provider, signer.address);
       const selected = evmAssets.find((asset) => asset.key === evmAssetKey);
       if (!selected) {
         setStatus("Activo inválido.");
@@ -6234,6 +6268,9 @@ export default function Home() {
 
       const signer = await getV3Signer("robinhood");
       const owner = await signer.getAddress();
+      if (signer.provider) {
+        await assertNoPendingTx(signer.provider, owner);
+      }
       const totalUsdRaw = parseTokenUnits(
         v4AddUsdAmount,
         v4Position.token1Decimals
@@ -6411,6 +6448,9 @@ export default function Home() {
       });
 
       liquidityBefore = await readV4PositionLiquidity(v4Position.tokenId);
+      if (signer.provider) {
+        await assertNoPendingTx(signer.provider, owner);
+      }
       setV4Status(
         `MetaMask va a pedir firma real para sumar liquidez al NFT #${v4Position.tokenId}.`
       );
@@ -6615,6 +6655,9 @@ export default function Home() {
 
       const signer = await getV3Signer(v3Chain);
       const owner = await signer.getAddress();
+      if (signer.provider) {
+        await assertNoPendingTx(signer.provider, owner);
+      }
       const token0Contract = new ethers.Contract(token0.address, ERC20_ABI, signer);
       const token1Contract = new ethers.Contract(token1.address, ERC20_ABI, signer);
       const token0Balance = (await token0Contract.balanceOf(owner)) as bigint;
@@ -6986,6 +7029,9 @@ export default function Home() {
         V3_POSITION_MANAGER_ABI,
         signer
       );
+      if (signer.provider) {
+        await assertNoPendingTx(signer.provider, recipient);
+      }
       const tx = await manager.collect({
         tokenId: position.tokenId,
         recipient,
@@ -7020,6 +7066,9 @@ export default function Home() {
       if (liquidity <= BigInt(0)) {
         setV3Status("La posición ya no tiene liquidez activa.");
         return;
+      }
+      if (signer.provider) {
+        await assertNoPendingTx(signer.provider, recipient);
       }
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
       const removeTx = await manager.decreaseLiquidity({
