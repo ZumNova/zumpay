@@ -1351,6 +1351,78 @@
   font-size: 12px;
 }
 
+.positionReady {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.positionReady strong {
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: 14px;
+}
+
+.positionReady span {
+  color: #d8ecff;
+  font-size: 13px;
+  letter-spacing: 0;
+  line-height: 1.4;
+  text-transform: none;
+}
+
+.positionReady b {
+  color: var(--muted);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.positionReady em {
+  font-family: var(--font-display);
+  font-style: normal;
+  font-weight: 900;
+}
+
+.readyArbitrum {
+  background: rgba(18, 111, 216, 0.14);
+  border-color: rgba(18, 111, 216, 0.42);
+}
+
+.readyArbitrum em {
+  color: #8cc8ff;
+}
+
+.readyEthereum {
+  background: rgba(148, 163, 184, 0.12);
+  border-color: rgba(148, 163, 184, 0.36);
+}
+
+.readyEthereum em {
+  color: #e2e8f0;
+}
+
+.readyPolygon {
+  background: rgba(130, 71, 229, 0.14);
+  border-color: rgba(130, 71, 229, 0.42);
+}
+
+.readyPolygon em {
+  color: #c4b5fd;
+}
+
+.readyRobinhood {
+  background: rgba(247, 181, 0, 0.13);
+  border-color: rgba(247, 181, 0, 0.42);
+}
+
+.readyRobinhood em {
+  color: #ffd166;
+}
+
 .v4AssistGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

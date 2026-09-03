@@ -49,6 +49,10 @@ type EvmAsset = {
 
 type V3ChainKey = "arbitrum" | "ethereum" | "polygon" | "robinhood";
 type V3EntryMode = "single" | "manual";
+type ReadyPositionNotice = {
+  chain: V3ChainKey;
+  tokenId: string;
+};
 type AppView =
   | "home"
   | "premium"
@@ -1666,6 +1670,14 @@ async function assertNoPendingTx(provider: ethers.Provider, owner: string) {
   }
 }
 
+function txHasNativeValue(tx: TxItem) {
+  try {
+    return BigInt(tx.value) > BigInt(0);
+  } catch {
+    return false;
+  }
+}
+
 function v4NativeValue(
   position: V4PositionView,
   amount0Raw: bigint,
@@ -2032,6 +2044,8 @@ export default function Home() {
   const [v3Discovering, setV3Discovering] = useState(false);
   const [v3Executing, setV3Executing] = useState(false);
   const [v3Status, setV3Status] = useState("");
+  const [v3ReadyMessage, setV3ReadyMessage] =
+    useState<ReadyPositionNotice | null>(null);
   const [v4CurrencyA, setV4CurrencyA] = useState(
     V3_TOKENS.robinhood.WETH.address
   );
@@ -2044,6 +2058,8 @@ export default function Home() {
   const [v4SimpleCandidateId, setV4SimpleCandidateId] = useState(
     "rh-v4-usde-usdg-100"
   );
+  const [v4SimpleReadyMessage, setV4SimpleReadyMessage] =
+    useState<ReadyPositionNotice | null>(null);
   const [v4Result, setV4Result] = useState<V4ScanResult | null>(null);
   const [v4Scanning, setV4Scanning] = useState(false);
   const [v4MultiScanning, setV4MultiScanning] = useState(false);
@@ -2317,6 +2333,18 @@ export default function Home() {
     v4SimpleCandidates.find(
       (candidate) => candidate.id === v4SimpleCandidateId
     ) ?? v4SimpleCandidates[0];
+  const readyNetworkLabel = (chain: V3ChainKey) => {
+    if (chain === "arbitrum") return "arb";
+    if (chain === "ethereum") return "eth";
+    if (chain === "polygon") return "pol";
+    return "rh";
+  };
+  const readyNetworkClass = (chain: V3ChainKey) => {
+    if (chain === "arbitrum") return styles.readyArbitrum;
+    if (chain === "ethereum") return styles.readyEthereum;
+    if (chain === "polygon") return styles.readyPolygon;
+    return styles.readyRobinhood;
+  };
   const portfolioBalance = useMemo(() => {
     const stableSymbols = new Set(["USD", "USDG", "USDC", "USDT", "DAI"]);
     const investedStable = portfolioPositions.reduce((total, position) => {
@@ -2356,6 +2384,14 @@ export default function Home() {
       activityCount: txs.length
     };
   }, [btcBalance, portfolioPositions, positiveEvmAssets, txs.length]);
+  const visibleBalanceTxs = useMemo(
+    () =>
+      txs
+        .filter(txHasNativeValue)
+        .sort((a, b) => Number(b.timeStamp) - Number(a.timeStamp))
+        .slice(0, 6),
+    [txs]
+  );
   const v3PoolsForChain = useMemo(
     () => V3_POOLS.filter((pool) => pool.chain === v3Chain),
     [v3Chain]
@@ -3347,6 +3383,7 @@ export default function Home() {
       setV4LastTxHash("");
       setV4LiquidityChange(null);
       setV4MintGasEstimate(null);
+      setV4SimpleReadyMessage(null);
       if (!v4Result || !v4MintRange || !v4UsdAssistPlan) {
         setV4Status("Cargá una pool token/USDG y un total USDG válido.");
         return;
@@ -3583,6 +3620,10 @@ export default function Home() {
       if (mintedTokenId) {
         setV4TokenId(mintedTokenId);
         setV4MintPreflightChecks([]);
+        setV4SimpleReadyMessage({
+          chain: "robinhood",
+          tokenId: mintedTokenId
+        });
         try {
           await readAndSaveV4Position(mintedTokenId);
         } catch (readError) {
@@ -3683,6 +3724,20 @@ export default function Home() {
 
   const refreshEvm = () => {
     setEvmRefreshTick((prev) => prev + 1);
+  };
+
+  const clearLocalTxHistory = () => {
+    let all: Record<string, TxItem[]> = {};
+    try {
+      const raw = localStorage.getItem(TX_KEY);
+      all = raw ? (JSON.parse(raw) as Record<string, TxItem[]>) : {};
+    } catch {
+      all = {};
+    }
+    all[networkKey] = [];
+    localStorage.setItem(TX_KEY, JSON.stringify(all));
+    setTxs([]);
+    setStatus("Historial local de Mi balance limpiado para esta red.");
   };
 
   useEffect(() => {
@@ -5235,6 +5290,7 @@ export default function Home() {
     result: V4ScanResult | null
   ) => {
     resetV4LoadedPosition();
+    setV4SimpleReadyMessage(null);
     setV4CurrencyA(candidate.currencyA);
     setV4CurrencyB(candidate.currencyB);
     setV4Fee(candidate.fee.toString());
@@ -5264,6 +5320,7 @@ export default function Home() {
     const slippage = v4MintSlippage;
     try {
       setV4Scanning(true);
+      setV4SimpleReadyMessage(null);
       setV4Status(`Preparando ${v4SimpleCandidate.label} desde USDG.`);
       resetV4LoadedPosition();
       setV4MintUsdAmount(usdAmount);
@@ -6631,6 +6688,7 @@ export default function Home() {
   const handleV3CreatePosition = async () => {
     try {
       setV3Executing(true);
+      setV3ReadyMessage(null);
       if (!selectedV3Scan) {
         setV3Status("Actualizá el scanner antes de operar esta pool.");
         return;
@@ -6861,6 +6919,10 @@ export default function Home() {
         contracts.positionManager
       );
       if (mintedTokenId) {
+        setV3ReadyMessage({
+          chain: v3Chain,
+          tokenId: mintedTokenId
+        });
         const position = await readV3Position(
           manager,
           mintedTokenId,
@@ -7398,12 +7460,29 @@ export default function Home() {
               </p>
             </div>
             <div className={styles.walletCard}>
-              <h3>Últimas transacciones</h3>
+              <div className={styles.v3PositionHeader}>
+                <div>
+                  <h3>Movimientos con valor</h3>
+                  <p className={styles.muted}>
+                    Oculta operaciones viejas de valor cero que no sirven para
+                    el balance.
+                  </p>
+                </div>
+                <button
+                  className={styles.outline}
+                  onClick={clearLocalTxHistory}
+                  type="button"
+                >
+                  Limpiar historial local
+                </button>
+              </div>
               <div className={styles.txList}>
-                {txs.length === 0 ? (
-                  <p className={styles.muted}>Sin movimientos recientes.</p>
+                {visibleBalanceTxs.length === 0 ? (
+                  <p className={styles.muted}>
+                    Sin movimientos con valor nativo en esta red.
+                  </p>
                 ) : (
-                  txs.map((tx) => {
+                  visibleBalanceTxs.map((tx) => {
                     const isOutgoing =
                       address &&
                       tx.from.toLowerCase() === address.toLowerCase();
@@ -8361,6 +8440,7 @@ export default function Home() {
                       setV3PoolId("arb-wbtc-weth-500");
                       setV3Profile("conservative");
                       setV3EntryMode("single");
+                      setV3ReadyMessage(null);
                       setV3Status(
                         "Blue Chip Rotation cargada: WBTC/WETH 0.05% en Arbitrum."
                       );
@@ -8375,7 +8455,10 @@ export default function Home() {
                 <label>Red</label>
                 <select
                   value={v3Chain}
-                  onChange={(event) => setV3Chain(event.target.value as V3ChainKey)}
+                  onChange={(event) => {
+                    setV3Chain(event.target.value as V3ChainKey);
+                    setV3ReadyMessage(null);
+                  }}
                 >
                   <option value="arbitrum">Arbitrum</option>
                   <option value="ethereum">Ethereum</option>
@@ -8387,7 +8470,10 @@ export default function Home() {
                 <label>Pool</label>
                 <select
                   value={selectedV3Pool.id}
-                  onChange={(event) => setV3PoolId(event.target.value)}
+                  onChange={(event) => {
+                    setV3PoolId(event.target.value);
+                    setV3ReadyMessage(null);
+                  }}
                 >
                   {v3PoolsForChain.map((pool) => (
                     <option key={pool.id} value={pool.id}>
@@ -8401,9 +8487,10 @@ export default function Home() {
                 <label>Perfil</label>
                 <select
                   value={v3Profile}
-                  onChange={(event) =>
-                    setV3Profile(event.target.value as keyof typeof V3_PROFILES)
-                  }
+                  onChange={(event) => {
+                    setV3Profile(event.target.value as keyof typeof V3_PROFILES);
+                    setV3ReadyMessage(null);
+                  }}
                 >
                   {Object.entries(V3_PROFILES).map(([key, profile]) => (
                     <option key={key} value={key}>
@@ -8416,9 +8503,10 @@ export default function Home() {
                 <label>Modo de entrada</label>
                 <select
                   value={v3EntryMode}
-                  onChange={(event) =>
-                    setV3EntryMode(event.target.value as V3EntryMode)
-                  }
+                  onChange={(event) => {
+                    setV3EntryMode(event.target.value as V3EntryMode);
+                    setV3ReadyMessage(null);
+                  }}
                 >
                   <option value="single">Un token + swap interno</option>
                   <option value="manual">Manual dos tokens</option>
@@ -8429,7 +8517,10 @@ export default function Home() {
                   <label>Monto de entrada ({selectedV3Pool.inputToken})</label>
                   <input
                     value={v3EntryAmount}
-                    onChange={(event) => setV3EntryAmount(event.target.value)}
+                    onChange={(event) => {
+                      setV3EntryAmount(event.target.value);
+                      setV3ReadyMessage(null);
+                    }}
                     placeholder={`Monto en ${selectedV3Pool.inputToken}`}
                     inputMode="decimal"
                   />
@@ -8441,9 +8532,10 @@ export default function Home() {
                       <label>Monto {selectedV3Pool.token0}</label>
                       <input
                         value={v3ManualAmount0}
-                        onChange={(event) =>
-                          setV3ManualAmount0(event.target.value)
-                        }
+                        onChange={(event) => {
+                          setV3ManualAmount0(event.target.value);
+                          setV3ReadyMessage(null);
+                        }}
                         placeholder={`Monto en ${selectedV3Pool.token0}`}
                         inputMode="decimal"
                       />
@@ -8452,9 +8544,10 @@ export default function Home() {
                       <label>Monto {selectedV3Pool.token1}</label>
                       <input
                         value={v3ManualAmount1}
-                        onChange={(event) =>
-                          setV3ManualAmount1(event.target.value)
-                        }
+                        onChange={(event) => {
+                          setV3ManualAmount1(event.target.value);
+                          setV3ReadyMessage(null);
+                        }}
                         placeholder={`Monto en ${selectedV3Pool.token1}`}
                         inputMode="decimal"
                       />
@@ -8468,7 +8561,10 @@ export default function Home() {
                   <label>Slippage máximo (%)</label>
                   <input
                     value={v3Slippage}
-                    onChange={(event) => setV3Slippage(event.target.value)}
+                    onChange={(event) => {
+                      setV3Slippage(event.target.value);
+                      setV3ReadyMessage(null);
+                    }}
                     placeholder="1"
                     inputMode="decimal"
                   />
@@ -8499,6 +8595,19 @@ export default function Home() {
                   {v3Executing ? "Operando..." : "Operar / Crear posición"}
                 </button>
               </div>
+              {v3ReadyMessage ? (
+                <div
+                  className={`${styles.positionReady} ${readyNetworkClass(
+                    v3ReadyMessage.chain
+                  )}`}
+                >
+                  <strong>NFT listo</strong>
+                  <span>
+                    <b>{readyNetworkLabel(v3ReadyMessage.chain)}</b>{" "}
+                    <em>#{v3ReadyMessage.tokenId}</em>
+                  </span>
+                </div>
+              ) : null}
               {v3Chain === "robinhood" ? (
                 <p className={styles.v3ManualHint}>
                   Robinhood está en modo experimental: usá modo manual dos
@@ -8826,6 +8935,7 @@ export default function Home() {
                   setV4SimpleCandidateId(event.target.value);
                   setV4MintGasEstimate(null);
                   setV4MintPreflightChecks([]);
+                  setV4SimpleReadyMessage(null);
                 }}
                 disabled={v4Scanning || v4Minting}
               >
@@ -8844,6 +8954,7 @@ export default function Home() {
                   setV4MintUsdAmount(event.target.value);
                   setV4MintGasEstimate(null);
                   setV4MintPreflightChecks([]);
+                  setV4SimpleReadyMessage(null);
                 }}
                 placeholder="Ej: 100"
                 inputMode="decimal"
@@ -8854,7 +8965,10 @@ export default function Home() {
               <label>Slippage</label>
               <input
                 value={v4MintSlippage}
-                onChange={(event) => setV4MintSlippage(event.target.value)}
+                onChange={(event) => {
+                  setV4MintSlippage(event.target.value);
+                  setV4SimpleReadyMessage(null);
+                }}
                 placeholder="1"
                 inputMode="decimal"
                 disabled={v4Scanning || v4Minting}
@@ -8900,6 +9014,19 @@ export default function Home() {
                 )}{" "}
                 {v4UsdAssistPlan.sourceSymbol}.
               </small>
+            ) : null}
+            {v4SimpleReadyMessage ? (
+              <div
+                className={`${styles.positionReady} ${readyNetworkClass(
+                  v4SimpleReadyMessage.chain
+                )}`}
+              >
+                <strong>NFT listo</strong>
+                <span>
+                  <b>{readyNetworkLabel(v4SimpleReadyMessage.chain)}</b>{" "}
+                  <em>#{v4SimpleReadyMessage.tokenId}</em>
+                </span>
+              </div>
             ) : null}
           </div>
           <div className={styles.sectionGrid}>
