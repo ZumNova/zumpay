@@ -1304,9 +1304,10 @@
   padding: 16px;
   border-radius: 16px;
   background:
-    linear-gradient(145deg, rgba(39, 213, 244, 0.1), rgba(52, 211, 153, 0.08)),
+    radial-gradient(circle at top right, rgba(191, 255, 0, 0.18), transparent 42%),
+    linear-gradient(145deg, rgba(191, 255, 0, 0.1), rgba(52, 211, 153, 0.06)),
     rgba(7, 12, 24, 0.82);
-  border: 1px solid rgba(52, 211, 153, 0.18);
+  border: 1px solid rgba(191, 255, 0, 0.24);
 }
 
 .v3SimplePanel {
@@ -1350,9 +1351,10 @@
 }
 
 .v4SimplePanel strong {
-  color: var(--ink);
+  color: #d9ff66;
   font-family: var(--font-display);
   font-size: 20px;
+  text-shadow: 0 0 14px rgba(191, 255, 0, 0.14);
 }
 
 .v3SimplePanel strong {
@@ -1454,8 +1456,9 @@
 
 .v4SimpleHint {
   grid-column: 1 / -1;
-  color: var(--muted);
+  color: #eaff9b;
   font-size: 12px;
+  text-shadow: 0 0 10px rgba(191, 255, 0, 0.1);
 }
 
 .positionReady {
