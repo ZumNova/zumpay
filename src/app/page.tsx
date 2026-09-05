@@ -2404,10 +2404,19 @@ export default function Home() {
     () => V3_POOLS.filter((pool) => pool.chain === v3Chain),
     [v3Chain]
   );
+  const v3SimplePools = useMemo(
+    () => V3_POOLS.filter((pool) => pool.chain !== "robinhood"),
+    []
+  );
   const selectedV3Pool =
     V3_POOLS.find((pool) => pool.id === v3PoolId) ??
     v3PoolsForChain[0] ??
     V3_POOLS[0];
+  const selectedV3SimplePoolId = v3SimplePools.some(
+    (pool) => pool.id === selectedV3Pool.id
+  )
+    ? selectedV3Pool.id
+    : "";
   const selectedV3Scan = v3Scans[selectedV3Pool.id];
   const v3RequiresManualEntry = v3Chain === "robinhood";
   const canOperateV3 =
@@ -8445,9 +8454,170 @@ export default function Home() {
               <p>Wallet bloqueada. Pagá {premiumAmount} ZUM para desbloquear.</p>
             </div>
           ) : null}
+          <div className={styles.v3SimplePanel}>
+            <div>
+              <span>Entrada simple</span>
+              <strong>Crear posición V3</strong>
+              <small>
+                Elegí estrategia, cargá monto y Zumpay prepara scanner, rango y
+                split.
+              </small>
+            </div>
+            <div className={styles.field}>
+              <label>Estrategia</label>
+              <select
+                value={selectedV3SimplePoolId}
+                onChange={(event) => {
+                  const pool = V3_POOLS.find(
+                    (item) => item.id === event.target.value
+                  );
+                  if (!pool) return;
+                  setV3Chain(pool.chain);
+                  setV3PoolId(pool.id);
+                  setV3EntryMode("single");
+                  setV3ReadyMessage(null);
+                  setV3Status(`Estrategia V3 cargada: ${pool.label}.`);
+                }}
+                disabled={isLocked || v3Scanning || v3Executing}
+              >
+                {selectedV3SimplePoolId ? null : (
+                  <option value="">Elegí estrategia V3</option>
+                )}
+                {v3SimplePools.map((pool) => (
+                  <option key={pool.id} value={pool.id}>
+                    {readyNetworkLabel(pool.chain)} · {pool.label} ·{" "}
+                    {pool.feeLabel}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.field}>
+              <label>Monto ({selectedV3Pool.inputToken})</label>
+              <input
+                value={v3EntryAmount}
+                onChange={(event) => {
+                  setV3EntryAmount(event.target.value);
+                  setV3ReadyMessage(null);
+                }}
+                placeholder={`Monto en ${selectedV3Pool.inputToken}`}
+                inputMode="decimal"
+                disabled={isLocked || v3Scanning || v3Executing}
+              />
+            </div>
+            <div className={styles.field}>
+              <label>Slippage</label>
+              <input
+                value={v3Slippage}
+                onChange={(event) => {
+                  setV3Slippage(event.target.value);
+                  setV3ReadyMessage(null);
+                }}
+                placeholder="1"
+                inputMode="decimal"
+                disabled={isLocked || v3Scanning || v3Executing}
+              />
+            </div>
+            <div className={styles.v4SimpleActions}>
+              <button
+                className={styles.outline}
+                onClick={handleV3ScanPool}
+                disabled={isLocked || v3Scanning}
+              >
+                {v3Scanning ? "Leyendo..." : "Ver preview"}
+              </button>
+              <button
+                className={styles.primary}
+                onClick={handleV3CreatePosition}
+                disabled={isLocked || v3Executing || !canOperateV3}
+              >
+                {v3Executing ? "Operando..." : "Firmar paso a paso"}
+              </button>
+            </div>
+            <div className={styles.v3SimplePreview}>
+              <div>
+                <span>Pool</span>
+                <strong>
+                  {readyNetworkLabel(selectedV3Pool.chain)} ·{" "}
+                  {selectedV3Pool.label}
+                </strong>
+                <small>
+                  {selectedV3Pool.feeLabel} ·{" "}
+                  {selectedV3Scan
+                    ? `${selectedV3Scan.status} · ${selectedV3Scan.reserve}`
+                    : `${selectedV3Pool.activity} · sin preview`}
+                </small>
+              </div>
+              <div>
+                <span>Rango</span>
+                <strong>
+                  {v3Range.lowerPrice.toLocaleString("en-US", {
+                    maximumFractionDigits: 2
+                  })}{" "}
+                  /{" "}
+                  {v3Range.upperPrice.toLocaleString("en-US", {
+                    maximumFractionDigits: 2
+                  })}
+                </strong>
+                <small>
+                  Precio actual{" "}
+                  {effectiveV3Price.toLocaleString("en-US", {
+                    maximumFractionDigits: 4
+                  })}
+                </small>
+              </div>
+              <div>
+                <span>Split estimado</span>
+                <strong>
+                  {v3EntryEstimate.amount0.toLocaleString("en-US", {
+                    maximumFractionDigits: 8
+                  })}{" "}
+                  {selectedV3Pool.token0}
+                </strong>
+                <small>
+                  +{" "}
+                  {v3EntryEstimate.amount1.toLocaleString("en-US", {
+                    maximumFractionDigits: 6
+                  })}{" "}
+                  {selectedV3Pool.token1}
+                </small>
+              </div>
+              <div>
+                <span>Swap interno</span>
+                <strong>
+                  {v3EntryEstimate.swapAmount.toLocaleString("en-US", {
+                    maximumFractionDigits: 6
+                  })}{" "}
+                  {selectedV3Pool.inputToken}
+                </strong>
+                <small>
+                  Mínimo{" "}
+                  {v3EntryEstimate.minAfterSlippage.toLocaleString("en-US", {
+                    maximumFractionDigits: 6
+                  })}{" "}
+                  {selectedV3Pool.inputToken}
+                </small>
+              </div>
+            </div>
+            {v3ReadyMessage ? (
+              <div
+                className={`${styles.positionReady} ${readyNetworkClass(
+                  v3ReadyMessage.chain
+                )}`}
+              >
+                <strong>NFT listo</strong>
+                <span>
+                  <b>{readyNetworkLabel(v3ReadyMessage.chain)}</b>{" "}
+                  <em>#{v3ReadyMessage.tokenId}</em>
+                </span>
+              </div>
+            ) : null}
+          </div>
           <div className={styles.sectionGrid}>
             <div className={styles.walletCard}>
-              <h3>Preparar rango</h3>
+              <h3>Herramientas V3</h3>
+              <details className={styles.advancedDetails}>
+                <summary>Técnica avanzada V3</summary>
+                <div className={styles.advancedDetailsBody}>
               <div className={styles.strategyGrid}>
                 <div className={styles.strategyCard}>
                   <div>
@@ -8620,19 +8790,6 @@ export default function Home() {
                   {v3Executing ? "Operando..." : "Operar / Crear posición"}
                 </button>
               </div>
-              {v3ReadyMessage ? (
-                <div
-                  className={`${styles.positionReady} ${readyNetworkClass(
-                    v3ReadyMessage.chain
-                  )}`}
-                >
-                  <strong>NFT listo</strong>
-                  <span>
-                    <b>{readyNetworkLabel(v3ReadyMessage.chain)}</b>{" "}
-                    <em>#{v3ReadyMessage.tokenId}</em>
-                  </span>
-                </div>
-              ) : null}
               {v3Chain === "robinhood" ? (
                 <p className={styles.v3ManualHint}>
                   Robinhood está en modo experimental: usá modo manual dos
@@ -8736,6 +8893,8 @@ export default function Home() {
                 approvals, swap y NonfungiblePositionManager en la siguiente
                 fase.
               </p>
+                </div>
+              </details>
             </div>
 
             <div className={styles.walletCard}>
