@@ -912,6 +912,49 @@
   resize: vertical;
 }
 
+.passwordField {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.passwordField input {
+  padding-right: 48px;
+}
+
+.passwordToggle {
+  position: absolute;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 184, 107, 0.26);
+  border-radius: 10px;
+  background: rgba(255, 184, 107, 0.08);
+  cursor: pointer;
+}
+
+.passwordToggle span {
+  position: relative;
+  width: 18px;
+  height: 12px;
+  border: 1.7px solid #ffb86b;
+  border-radius: 999px / 720px;
+}
+
+.passwordToggle span::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #ffb86b;
+  transform: translate(-50%, -50%);
+}
+
 .seedBox {
   margin-top: 16px;
   padding: 16px;

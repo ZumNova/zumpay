@@ -1990,6 +1990,7 @@ export default function Home() {
   const [networkKey, setNetworkKey] = useState("polygon");
   const [mnemonicInput, setMnemonicInput] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [walletMnemonic, setWalletMnemonic] = useState<string | null>(null);
   const [revealedMnemonic, setRevealedMnemonic] = useState<string | null>(null);
   const [seedConfirmed, setSeedConfirmed] = useState(false);
@@ -7669,12 +7670,31 @@ export default function Home() {
               <h3>Crear / Traer billetera</h3>
               <div className={styles.field}>
                 <label>Contraseña de bloqueo</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Tu frase de desbloqueo"
-                />
+                <div className={styles.passwordField}>
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="Tu frase de desbloqueo"
+                  />
+                  <button
+                    type="button"
+                    className={styles.passwordToggle}
+                    onClick={() => setShowPassword((value) => !value)}
+                    aria-label={
+                      showPassword
+                        ? "Ocultar contraseña"
+                        : "Mostrar contraseña"
+                    }
+                    title={
+                      showPassword
+                        ? "Ocultar contraseña"
+                        : "Mostrar contraseña"
+                    }
+                  >
+                    <span aria-hidden="true" />
+                  </button>
+                </div>
               </div>
               <div className={styles.field}>
                 <label>Seed (12/24 palabras)</label>
