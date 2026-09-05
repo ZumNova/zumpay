@@ -7328,7 +7328,9 @@ export default function Home() {
         <section className={styles.zumPublic}>
           <div className={styles.zumIntro}>
             <p className={styles.kicker}>ZUM Token</p>
-            <h2>Token oficial de Zumpay en Polygon</h2>
+            <h2 className={styles.polygonTitle}>
+              Token oficial de Zumpay en Polygon
+            </h2>
             <p className={styles.subtitle}>
               ZUM opera en Polygon con contrato verificado y pool pública
               ZUM/USDC. Usá siempre el contrato oficial y USDC nativo de

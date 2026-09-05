@@ -257,6 +257,11 @@
   margin-bottom: 10px;
 }
 
+.polygonTitle {
+  color: #c4a3ff;
+  text-shadow: 0 0 18px rgba(130, 71, 229, 0.2);
+}
+
 .zumGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
