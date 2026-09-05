@@ -2213,6 +2213,9 @@ export default function Home() {
   const portfolioPositions = useMemo(() => {
     const v3Items = v3Positions.map((position) => {
       const liquidityEmpty = position.liquidity === "0";
+      const hasFees =
+        (parseHumanAmount(position.fees0 ?? "0") || 0) > 0 ||
+        (parseHumanAmount(position.fees1 ?? "0") || 0) > 0;
       const status = liquidityEmpty
         ? "Sin liquidez"
         : position.inRange === true
@@ -2253,6 +2256,7 @@ export default function Home() {
         fees: `${position.fees0 ?? "0"} ${
           position.token0Symbol ?? "token0"
         } / ${position.fees1 ?? "0"} ${position.token1Symbol ?? "token1"}`,
+        hasFees,
         composition:
           typeof position.valueEstimate === "number" &&
           position.valueEstimate > 0
@@ -2271,6 +2275,9 @@ export default function Home() {
 
     const v4Items = v4Positions.map((position) => {
       const liquidityEmpty = position.liquidity === "0";
+      const hasFees =
+        (parseHumanAmount(position.fees0 ?? "0") || 0) > 0 ||
+        (parseHumanAmount(position.fees1 ?? "0") || 0) > 0;
       return {
         key: `v4-robinhood-${position.tokenId}`,
         protocol: "V4",
@@ -2298,6 +2305,7 @@ export default function Home() {
         fees: `${position.fees0 ?? "No leído"} ${
           position.token0Symbol
         } / ${position.fees1 ?? "No leído"} ${position.token1Symbol}`,
+        hasFees,
         composition:
           position.valueEstimate > 0
             ? `${formatHumanTokenAmount(
@@ -8285,7 +8293,16 @@ export default function Home() {
                 </thead>
                 <tbody>
                   {portfolioPositions.map((position) => (
-                    <tr key={position.key}>
+                    <tr
+                      key={position.key}
+                      className={
+                        position.statusTone === "out"
+                          ? styles.positionOutRow
+                          : position.statusTone === "in"
+                            ? styles.positionInRow
+                            : styles.positionNeutralRow
+                      }
+                    >
                       <td>
                         <strong>{position.pair}</strong>
                         <span>
@@ -8313,7 +8330,15 @@ export default function Home() {
                       <td>
                         <strong>{position.value}</strong>
                       </td>
-                      <td>{position.fees}</td>
+                      <td
+                        className={
+                          position.hasFees
+                            ? styles.positionFeesPositive
+                            : styles.positionFeesNeutral
+                        }
+                      >
+                        {position.fees}
+                      </td>
                       <td>{position.composition}</td>
                       <td>{position.created}</td>
                       <td>
