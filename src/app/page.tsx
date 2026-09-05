@@ -7413,7 +7413,14 @@ export default function Home() {
           }`}
         >
           <div>
-            <h2>Mi balance</h2>
+            <div className={styles.sectionTitleWithLogo}>
+              <img
+                src="/zumpay-token-logo.svg"
+                alt=""
+                aria-hidden="true"
+              />
+              <h2>Mi balance</h2>
+            </div>
             <p className={styles.subtitle}>
               Resumen operativo de tu wallet, posiciones cargadas y últimos
               movimientos.
@@ -7426,12 +7433,6 @@ export default function Home() {
           ) : null}
           <div className={styles.miniBalance}>
             <div className={styles.miniBalanceHero}>
-              <img
-                className={styles.miniBalanceLogo}
-                src="/zumpay-logo.png"
-                alt=""
-                aria-hidden="true"
-              />
               <span>Capital visible</span>
               <strong>
                 {formatV4Value(portfolioBalance.visibleStable, "USD aprox")}
