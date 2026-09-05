@@ -1989,11 +1989,25 @@
 }
 
 .miniBalanceHero {
+  position: relative;
+  overflow: hidden;
   background:
     radial-gradient(circle at top right, rgba(52, 211, 153, 0.24), transparent 42%),
     linear-gradient(145deg, rgba(39, 213, 244, 0.16), rgba(52, 211, 153, 0.1)),
     rgba(12, 18, 32, 0.82) !important;
   border-color: rgba(52, 211, 153, 0.34) !important;
+}
+
+.miniBalanceLogo {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  opacity: 0.78;
+  filter: drop-shadow(0 0 12px rgba(52, 211, 153, 0.28));
+  pointer-events: none;
 }
 
 .miniBalance div:nth-child(2) {

@@ -7426,6 +7426,12 @@ export default function Home() {
           ) : null}
           <div className={styles.miniBalance}>
             <div className={styles.miniBalanceHero}>
+              <img
+                className={styles.miniBalanceLogo}
+                src="/zumpay-logo.png"
+                alt=""
+                aria-hidden="true"
+              />
               <span>Capital visible</span>
               <strong>
                 {formatV4Value(portfolioBalance.visibleStable, "USD aprox")}
