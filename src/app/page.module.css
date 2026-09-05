@@ -1747,15 +1747,40 @@
   min-height: 118px;
   padding: 16px;
   border-radius: 14px;
-  background: rgba(12, 18, 32, 0.76);
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.06), transparent 42%),
+    rgba(12, 18, 32, 0.76);
   border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .miniBalanceHero {
   background:
-    linear-gradient(145deg, rgba(39, 213, 244, 0.12), rgba(52, 211, 153, 0.08)),
+    radial-gradient(circle at top right, rgba(52, 211, 153, 0.24), transparent 42%),
+    linear-gradient(145deg, rgba(39, 213, 244, 0.16), rgba(52, 211, 153, 0.1)),
     rgba(12, 18, 32, 0.82) !important;
-  border-color: rgba(52, 211, 153, 0.22) !important;
+  border-color: rgba(52, 211, 153, 0.34) !important;
+}
+
+.miniBalance div:nth-child(2) {
+  background:
+    radial-gradient(circle at top right, rgba(191, 255, 0, 0.18), transparent 44%),
+    rgba(12, 18, 32, 0.78);
+  border-color: rgba(191, 255, 0, 0.18);
+}
+
+.miniBalance div:nth-child(3) {
+  background:
+    radial-gradient(circle at top right, rgba(18, 111, 216, 0.22), transparent 44%),
+    rgba(12, 18, 32, 0.78);
+  border-color: rgba(18, 111, 216, 0.22);
+}
+
+.miniBalance div:nth-child(4) {
+  background:
+    radial-gradient(circle at top right, rgba(247, 181, 0, 0.18), transparent 44%),
+    rgba(12, 18, 32, 0.78);
+  border-color: rgba(247, 181, 0, 0.2);
 }
 
 .miniBalance span {
@@ -1769,6 +1794,12 @@
   color: var(--ink);
   font-family: var(--font-display);
   font-size: clamp(1.35rem, 1rem + 1vw, 2rem);
+  letter-spacing: 0;
+}
+
+.miniBalanceHero strong {
+  color: #d7fff0;
+  text-shadow: 0 0 26px rgba(52, 211, 153, 0.28);
 }
 
 .miniBalance small {
@@ -1788,8 +1819,26 @@
   gap: 4px;
   padding: 14px;
   border-radius: 12px;
-  background: rgba(12, 18, 32, 0.72);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015)),
+    rgba(12, 18, 32, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.positionsSummary div:nth-child(2) {
+  border-color: rgba(52, 211, 153, 0.22);
+}
+
+.positionsSummary div:nth-child(2) strong {
+  color: #34d399;
+}
+
+.positionsSummary div:nth-child(3) {
+  border-color: rgba(247, 181, 0, 0.24);
+}
+
+.positionsSummary div:nth-child(3) strong {
+  color: #ffd166;
 }
 
 .positionsSummary span,
@@ -1810,7 +1859,9 @@
   overflow-x: auto;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(7, 12, 24, 0.72);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
+    rgba(7, 12, 24, 0.72);
 }
 
 .positionsTable {
@@ -1821,10 +1872,23 @@
 
 .positionsTable th,
 .positionsTable td {
-  padding: 14px 16px;
+  padding: 16px;
   text-align: left;
   vertical-align: middle;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.positionsTable tbody tr {
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.positionsTable tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.positionsTable tbody tr:hover {
+  background: rgba(39, 213, 244, 0.045);
+  box-shadow: inset 3px 0 0 rgba(39, 213, 244, 0.38);
 }
 
 .positionsTable tbody tr:last-child td {
@@ -1841,6 +1905,18 @@
   color: var(--ink);
   font-size: 14px;
   margin-bottom: 4px;
+}
+
+.positionsTable td:nth-child(4) strong {
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-size: 16px;
+  text-shadow: 0 0 20px rgba(39, 213, 244, 0.22);
+}
+
+.positionsTable td:nth-child(5) {
+  color: #d7fff0;
+  font-weight: 700;
 }
 
 .positionsTable td span {
