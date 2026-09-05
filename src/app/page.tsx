@@ -8035,7 +8035,15 @@ export default function Home() {
             </p>
             <div className={styles.reserveRoutes}>
               <div className={styles.reserveRouteCard}>
-                <span>Explorar proveedores</span>
+                <div className={styles.reserveRouteTop}>
+                  <div
+                    className={`${styles.reserveIcon} ${styles.reserveIconMetaMask}`}
+                    aria-hidden="true"
+                  >
+                    MM
+                  </div>
+                  <span>Explorar proveedores</span>
+                </div>
                 <strong>MetaMask Portfolio / Discover</strong>
                 <p>
                   Abre el tablero de MetaMask para investigar Earn, staking,
@@ -8072,7 +8080,15 @@ export default function Home() {
               </div>
 
               <div className={styles.reserveRouteCard}>
-                <span>Ruta ETH</span>
+                <div className={styles.reserveRouteTop}>
+                  <div
+                    className={`${styles.reserveIcon} ${styles.reserveIconEth}`}
+                    aria-hidden="true"
+                  >
+                    Ξ
+                  </div>
+                  <span>Ruta ETH</span>
+                </div>
                 <strong>Stake ETH nativo</strong>
                 <p>
                   Lleva ETH nativo a MetaMask y entrá a Stake / MetaMask Pool.
@@ -8103,7 +8119,15 @@ export default function Home() {
               </div>
 
               <div className={styles.reserveRouteCard}>
-                <span>WETH productivo</span>
+                <div className={styles.reserveRouteTop}>
+                  <div
+                    className={`${styles.reserveIcon} ${styles.reserveIconAave}`}
+                    aria-hidden="true"
+                  >
+                    A
+                  </div>
+                  <span>WETH productivo</span>
+                </div>
                 <strong>Aave lending WETH</strong>
                 <p>
                   Para ser prestador, Aave permite supply de WETH sin tomar
@@ -8136,7 +8160,13 @@ export default function Home() {
               </div>
 
               <div className={styles.reserveRouteCard}>
-                <span>Entrada fiat</span>
+                <div className={styles.reserveRouteTop}>
+                  <div
+                    className={`${styles.reserveIcon} ${styles.reserveIconArgentina}`}
+                    aria-hidden="true"
+                  />
+                  <span>Entrada fiat</span>
+                </div>
                 <strong>Pesos argentinos a USDT</strong>
                 <p>
                   Ruta simple para entrar desde ARS: comprar USDT en Binance
@@ -8157,7 +8187,15 @@ export default function Home() {
               </div>
 
               <div className={styles.reserveRouteCard}>
-                <span>Bridge entre redes</span>
+                <div className={styles.reserveRouteTop}>
+                  <div
+                    className={`${styles.reserveIcon} ${styles.reserveIconAcross}`}
+                    aria-hidden="true"
+                  >
+                    AC
+                  </div>
+                  <span>Bridge entre redes</span>
+                </div>
                 <strong>Across</strong>
                 <p>
                   Ruta externa para mover USDC, ETH/WETH u otros activos entre
@@ -8177,7 +8215,15 @@ export default function Home() {
               </div>
 
               <div className={styles.reserveRouteCard}>
-                <span>BTC avanzado</span>
+                <div className={styles.reserveRouteTop}>
+                  <div
+                    className={`${styles.reserveIcon} ${styles.reserveIconBtc}`}
+                    aria-hidden="true"
+                  >
+                    ₿
+                  </div>
+                  <span>BTC avanzado</span>
+                </div>
                 <strong>BounceBit / BBTC</strong>
                 <p>
                   Entrada fija para estudiar BounceBit con la misma wallet BTC
