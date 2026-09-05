@@ -1908,10 +1908,10 @@
 }
 
 .positionsTable td:nth-child(4) strong {
-  color: #ffffff;
+  color: #edf6ff;
   font-family: var(--font-display);
   font-size: 16px;
-  text-shadow: 0 0 20px rgba(39, 213, 244, 0.22);
+  text-shadow: 0 0 16px rgba(39, 213, 244, 0.16);
 }
 
 .positionsTable td:nth-child(5) {
