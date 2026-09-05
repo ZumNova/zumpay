@@ -1356,9 +1356,10 @@
 }
 
 .v3SimplePanel strong {
-  color: var(--ink);
+  color: #ffb86b;
   font-family: var(--font-display);
   font-size: 20px;
+  text-shadow: 0 0 14px rgba(255, 138, 76, 0.14);
 }
 
 .v4SimplePanel small {
@@ -1399,8 +1400,10 @@
 }
 
 .v3SimplePreview strong {
+  color: #ffd099;
   font-size: 14px;
   line-height: 1.3;
+  text-shadow: 0 0 10px rgba(255, 138, 76, 0.1);
   word-break: break-word;
 }
 
