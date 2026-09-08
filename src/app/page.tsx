@@ -191,6 +191,10 @@ type V4PositionView = V4ScanResult & {
   fees1?: string;
 };
 
+type V4UsedPosition = V4PositionView & {
+  hiddenAt: string;
+};
+
 type PortfolioPosition = {
   key: string;
   protocol: "V3" | "V4";
@@ -310,6 +314,7 @@ const TX_KEY = "zumpay_txs_v1";
 const V3_POSITION_KEY = "zumpay_v3_positions_v1";
 const V3_USED_POSITION_KEY = "zumpay_v3_used_positions_v1";
 const V4_POSITION_KEY = "zumpay_v4_positions_v1";
+const V4_USED_POSITION_KEY = "zumpay_v4_used_positions_v1";
 
 const NETWORKS: Network[] = [
   {
@@ -2099,6 +2104,7 @@ export default function Home() {
   const [v4TokenId, setV4TokenId] = useState("");
   const [v4Position, setV4Position] = useState<V4PositionView | null>(null);
   const [v4Positions, setV4Positions] = useState<V4PositionView[]>([]);
+  const [v4UsedPositions, setV4UsedPositions] = useState<V4UsedPosition[]>([]);
   const [v4MintProfile, setV4MintProfile] =
     useState<keyof typeof V3_PROFILES>("moderate");
   const [v4MintUsdAmount, setV4MintUsdAmount] = useState("");
@@ -4665,19 +4671,64 @@ export default function Home() {
   };
 
   useEffect(() => {
+    const owner = v4Wallet?.toLowerCase() ?? "local";
     const raw = localStorage.getItem(V4_POSITION_KEY);
     if (!raw) {
       setV4Positions([]);
+    } else {
+      try {
+        const parsed = JSON.parse(raw) as Record<string, V4PositionView[]>;
+        setV4Positions(parsed[owner] ?? []);
+      } catch {
+        setV4Positions([]);
+      }
+    }
+
+    const usedRaw = localStorage.getItem(V4_USED_POSITION_KEY);
+    if (!usedRaw) {
+      setV4UsedPositions([]);
       return;
     }
     try {
-      const parsed = JSON.parse(raw) as Record<string, V4PositionView[]>;
-      const owner = v4Wallet?.toLowerCase() ?? "local";
-      setV4Positions(parsed[owner] ?? []);
+      const parsed = JSON.parse(usedRaw) as Record<string, V4UsedPosition[]>;
+      setV4UsedPositions(parsed[owner] ?? []);
     } catch {
-      setV4Positions([]);
+      setV4UsedPositions([]);
     }
   }, [v4Wallet]);
+
+  const saveV4PositionLists = (
+    active: V4PositionView[],
+    used: V4UsedPosition[],
+    ownerAddress?: string
+  ) => {
+    const owner =
+      ownerAddress?.toLowerCase() ?? v4Wallet?.toLowerCase() ?? "local";
+    let parsed: Record<string, V4PositionView[]> = {};
+    try {
+      const raw = localStorage.getItem(V4_POSITION_KEY);
+      parsed = raw ? (JSON.parse(raw) as Record<string, V4PositionView[]>) : {};
+    } catch {
+      parsed = {};
+    }
+    parsed[owner] = active;
+    localStorage.setItem(V4_POSITION_KEY, JSON.stringify(parsed));
+
+    let usedParsed: Record<string, V4UsedPosition[]> = {};
+    try {
+      const usedRaw = localStorage.getItem(V4_USED_POSITION_KEY);
+      usedParsed = usedRaw
+        ? (JSON.parse(usedRaw) as Record<string, V4UsedPosition[]>)
+        : {};
+    } catch {
+      usedParsed = {};
+    }
+    usedParsed[owner] = used;
+    localStorage.setItem(V4_USED_POSITION_KEY, JSON.stringify(usedParsed));
+
+    setV4Positions(active);
+    setV4UsedPositions(used);
+  };
 
   const saveV4Position = (
     position: V4PositionView,
@@ -4695,16 +4746,142 @@ export default function Home() {
     } catch {
       parsed = {};
     }
-    const current = parsed[owner] ?? [];
-    const next = current.some((item) => item.tokenId === position.tokenId)
-      ? current.map((item) =>
-          item.tokenId === position.tokenId ? position : item
-        )
+    const current = (parsed[owner] ?? []).filter(
+      (item) => item.tokenId !== position.tokenId
+    );
+    let usedParsed: Record<string, V4UsedPosition[]> = {};
+    try {
+      const usedRaw = localStorage.getItem(V4_USED_POSITION_KEY);
+      usedParsed = usedRaw
+        ? (JSON.parse(usedRaw) as Record<string, V4UsedPosition[]>)
+        : {};
+    } catch {
+      usedParsed = {};
+    }
+    const currentUsed = (usedParsed[owner] ?? []).filter(
+      (item) => item.tokenId !== position.tokenId
+    );
+    const isUsed = position.liquidity === "0";
+    const next = isUsed
+      ? current
       : [position, ...current];
+    const nextUsed = isUsed
+      ? [{ ...position, hiddenAt: new Date().toISOString() }, ...currentUsed]
+      : currentUsed;
     parsed[owner] = next;
+    usedParsed[owner] = nextUsed;
     localStorage.setItem(V4_POSITION_KEY, JSON.stringify(parsed));
+    localStorage.setItem(V4_USED_POSITION_KEY, JSON.stringify(usedParsed));
     setV4Wallet(position.owner);
     setV4Positions(next);
+    setV4UsedPositions(nextUsed);
+  };
+
+  const handleV4HidePosition = (position: V4PositionView) => {
+    const active = v4Positions.filter(
+      (item) => item.tokenId !== position.tokenId
+    );
+    const hidden: V4UsedPosition = {
+      ...position,
+      hiddenAt: new Date().toISOString()
+    };
+    const used = [
+      hidden,
+      ...v4UsedPositions.filter((item) => item.tokenId !== position.tokenId)
+    ];
+    saveV4PositionLists(active, used, position.owner);
+    setV4Status(`NFT V4 #${position.tokenId} movido a sin liquidez. No se gastó gas.`);
+  };
+
+  const handleV4RestorePosition = (position: V4UsedPosition) => {
+    const { hiddenAt: _hiddenAt, ...restored } = position;
+    const active = [
+      restored,
+      ...v4Positions.filter((item) => item.tokenId !== position.tokenId)
+    ];
+    const used = v4UsedPositions.filter(
+      (item) => item.tokenId !== position.tokenId
+    );
+    saveV4PositionLists(active, used, position.owner);
+    setV4Status(`NFT V4 #${position.tokenId} restaurado a posiciones activas.`);
+  };
+
+  const mergeV4PositionLists = (
+    positions: V4PositionView[],
+    ownerAddress?: string
+  ) => {
+    const owner =
+      ownerAddress?.toLowerCase() ?? v4Wallet?.toLowerCase() ?? "local";
+    const currentActive = v4Positions.filter(
+      (item) => !positions.some((position) => position.tokenId === item.tokenId)
+    );
+    const currentUsed = v4UsedPositions.filter(
+      (item) => !positions.some((position) => position.tokenId === item.tokenId)
+    );
+    const active = [
+      ...positions.filter((position) => position.liquidity !== "0"),
+      ...currentActive
+    ];
+    const used = [
+      ...positions
+        .filter((position) => position.liquidity === "0")
+        .map((position) => ({ ...position, hiddenAt: new Date().toISOString() })),
+      ...currentUsed
+    ];
+    saveV4PositionLists(active, used, owner);
+    return { active, used };
+  };
+
+  const getV4StoredLists = (owner: string) => {
+    let active: V4PositionView[] = [];
+    let used: V4UsedPosition[] = [];
+    try {
+      const raw = localStorage.getItem(V4_POSITION_KEY);
+      const parsed = raw
+        ? (JSON.parse(raw) as Record<string, V4PositionView[]>)
+        : {};
+      active = parsed[owner] ?? [];
+    } catch {
+      active = [];
+    }
+    try {
+      const usedRaw = localStorage.getItem(V4_USED_POSITION_KEY);
+      const parsed = usedRaw
+        ? (JSON.parse(usedRaw) as Record<string, V4UsedPosition[]>)
+        : {};
+      used = parsed[owner] ?? [];
+    } catch {
+      used = [];
+    }
+    return { active, used };
+  };
+
+  const saveV4StoredLists = (
+    owner: string,
+    active: V4PositionView[],
+    used: V4UsedPosition[]
+  ) => {
+    let parsed: Record<string, V4PositionView[]> = {};
+    try {
+      const raw = localStorage.getItem(V4_POSITION_KEY);
+      parsed = raw ? (JSON.parse(raw) as Record<string, V4PositionView[]>) : {};
+    } catch {
+      parsed = {};
+    }
+    parsed[owner] = active;
+    localStorage.setItem(V4_POSITION_KEY, JSON.stringify(parsed));
+
+    let usedParsed: Record<string, V4UsedPosition[]> = {};
+    try {
+      const usedRaw = localStorage.getItem(V4_USED_POSITION_KEY);
+      usedParsed = usedRaw
+        ? (JSON.parse(usedRaw) as Record<string, V4UsedPosition[]>)
+        : {};
+    } catch {
+      usedParsed = {};
+    }
+    usedParsed[owner] = used;
+    localStorage.setItem(V4_USED_POSITION_KEY, JSON.stringify(usedParsed));
   };
 
   const loadV4PositionOnScreen = (position: V4PositionView) => {
@@ -5636,17 +5813,11 @@ export default function Home() {
         })
       );
       const owner = v4Wallet ?? refreshed[0]?.owner;
-      if (owner) {
-        const raw = localStorage.getItem(V4_POSITION_KEY);
-        const parsed = raw
-          ? (JSON.parse(raw) as Record<string, V4PositionView[]>)
-          : {};
-        parsed[owner.toLowerCase()] = refreshed;
-        localStorage.setItem(V4_POSITION_KEY, JSON.stringify(parsed));
-      }
-      setV4Positions(refreshed);
+      const { active } = owner
+        ? mergeV4PositionLists(refreshed, owner)
+        : { active: refreshed.filter((position) => position.liquidity !== "0") };
       if (v4Position) {
-        const current = refreshed.find(
+        const current = [...active, ...refreshed].find(
           (position) => position.tokenId === v4Position.tokenId
         );
         if (current) {
@@ -5679,12 +5850,8 @@ export default function Home() {
       const balance = (await manager.balanceOf(owner)) as bigint;
       if (balance === BigInt(0)) {
         const ownerKey = owner.toLowerCase();
-        const raw = localStorage.getItem(V4_POSITION_KEY);
-        const parsed = raw
-          ? (JSON.parse(raw) as Record<string, V4PositionView[]>)
-          : {};
-        parsed[ownerKey] = [];
-        localStorage.setItem(V4_POSITION_KEY, JSON.stringify(parsed));
+        const { used } = getV4StoredLists(ownerKey);
+        saveV4StoredLists(ownerKey, [], used);
         setV4Positions([]);
         setV4Status(`No hay NFTs V4 para ${shortAddress(owner)} en Robinhood.`);
         return;
@@ -5741,11 +5908,7 @@ export default function Home() {
       }
 
       const ownerKey = owner.toLowerCase();
-      const raw = localStorage.getItem(V4_POSITION_KEY);
-      const parsed = raw
-        ? (JSON.parse(raw) as Record<string, V4PositionView[]>)
-        : {};
-      const existing = parsed[ownerKey] ?? [];
+      const { active: existing } = getV4StoredLists(ownerKey);
       const merged = [
         ...discovered,
         ...existing.filter(
@@ -5755,14 +5918,12 @@ export default function Home() {
             )
         )
       ];
-      parsed[ownerKey] = merged;
-      localStorage.setItem(V4_POSITION_KEY, JSON.stringify(parsed));
-      setV4Positions(merged);
+      const { active } = mergeV4PositionLists(merged, ownerKey);
       if (discovered[0]) {
         loadV4PositionOnScreen(discovered[0]);
       }
       setV4Status(
-        `Encontrados ${discovered.length} de ${balance.toString()} NFT(s) V4 en Robinhood.`
+        `Encontrados ${discovered.length} de ${balance.toString()} NFT(s) V4 en Robinhood. Activos: ${active.length}.`
       );
     } catch (error) {
       console.error(error);
@@ -8630,6 +8791,20 @@ export default function Home() {
                                     >
                                       Preparar retiro V4
                                     </button>
+                                    {(position.raw as V4PositionView)
+                                      .liquidity === "0" ? (
+                                      <button
+                                        className={styles.outline}
+                                        onClick={() =>
+                                          handleV4HidePosition(
+                                            position.raw as V4PositionView
+                                          )
+                                        }
+                                        disabled={isLocked}
+                                      >
+                                        Mover a sin liquidez
+                                      </button>
+                                    ) : null}
                                   </>
                                 )}
                               </div>
@@ -9872,11 +10047,61 @@ export default function Home() {
                         >
                           Cargar
                         </button>
+                        {position.liquidity === "0" ? (
+                          <button
+                            className={styles.outline}
+                            onClick={() => handleV4HidePosition(position)}
+                            disabled={isLocked}
+                          >
+                            Mover a sin liquidez
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   ))
                 )}
               </div>
+              {v4UsedPositions.length > 0 ? (
+                <div className={styles.v3UsedBox}>
+                  <div>
+                    <h4>NFTs V4 sin liquidez</h4>
+                    <p>
+                      Ocultos solo en Zumpay. Siguen existiendo on-chain; más
+                      adelante podemos quemarlos en lote si conviene pagar gas.
+                    </p>
+                  </div>
+                  <div className={styles.v3PositionList}>
+                    {v4UsedPositions.map((position) => (
+                      <div
+                        key={`used-v4-${position.tokenId}`}
+                        className={styles.v3UsedRow}
+                      >
+                        <div>
+                          <strong>NFT #{position.tokenId}</strong>
+                          <span>
+                            {position.token0Symbol}/{position.token1Symbol} ·{" "}
+                            {position.lpFee} · Robinhood
+                          </span>
+                          <small>
+                            Liquidez: {position.liquidity} · Fees:{" "}
+                            {position.fees0 ?? "No leído"}{" "}
+                            {position.token0Symbol} /{" "}
+                            {position.fees1 ?? "No leído"}{" "}
+                            {position.token1Symbol}
+                          </small>
+                        </div>
+                        <button
+                          className={styles.outline}
+                          onClick={() => handleV4RestorePosition(position)}
+                          disabled={isLocked}
+                        >
+                          Restaurar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <div className={styles.field}>
                 <label>Leer NFT V4</label>
                 <input
@@ -10393,7 +10618,7 @@ export default function Home() {
                         onClick={handleV4ApplyAddUsdAssist}
                         disabled={!v4AddUsdAssistPlan || v4AddingLiquidity}
                       >
-                        Cargar montos
+                        Ver split
                       </button>
                       <button
                         className={styles.primary}
@@ -10410,184 +10635,193 @@ export default function Home() {
                       </button>
                     </div>
                   </div>
-                  <div className={styles.v3ManualGrid}>
-                    <div className={styles.field}>
-                      <label>Monto {v4Position.token0Symbol}</label>
-                      <input
-                        value={v4AddAmount0}
-                        onChange={(event) =>
-                          handleV4AddAmount0Change(event.target.value)
-                        }
-                        placeholder={`Monto en ${v4Position.token0Symbol}`}
-                        inputMode="decimal"
-                      />
-                    </div>
-                    <div className={styles.field}>
-                      <label>Monto {v4Position.token1Symbol}</label>
-                      <input
-                        value={v4AddAmount1}
-                        onChange={(event) =>
-                          handleV4AddAmount1Change(event.target.value)
-                        }
-                        placeholder={`Monto en ${v4Position.token1Symbol}`}
-                        inputMode="decimal"
-                      />
-                    </div>
-                  </div>
-                  <button
-                    className={styles.primary}
-                    onClick={handleV4TwoTokenPreflight}
-                    disabled={isLocked || v4Preflighting}
-                  >
-                    {v4Preflighting
-                      ? "Probando balances..."
-                      : "Probar balances y permisos"}
-                  </button>
-                  <button
-                    className={styles.outline}
-                    onClick={handleV4ApproveLiquidityPermit2}
-                    disabled={isLocked || v4AddingLiquidity}
-                  >
-                    {v4AddingLiquidity
-                      ? "Aprobando..."
-                      : "Aprobar Permit2 liquidez"}
-                  </button>
-                  {v4LiquiditySimulation ? (
-                    <div className={styles.v4BalanceGrid}>
-                      <div>
-                        <span>Desde {v4Position.token0Symbol}</span>
-                        <strong>
-                          {formatHumanTokenAmount(
-                            parseHumanAmount(v4AddAmount0) || 0,
-                            v4Position.token0Symbol
-                          )}{" "}
-                          {v4Position.token0Symbol} +{" "}
-                          {formatHumanTokenAmount(
-                            v4LiquiditySimulation.suggestedToken1,
-                            v4Position.token1Symbol
-                          )}{" "}
-                          {v4Position.token1Symbol}
-                        </strong>
-                        <small>
-                          Colocá también{" "}
-                          {formatHumanTokenAmount(
-                            v4LiquiditySimulation.suggestedToken1,
-                            v4Position.token1Symbol
-                          )}{" "}
-                          {v4Position.token1Symbol}.
-                        </small>
-                      </div>
-                      <div>
-                        <span>Desde {v4Position.token1Symbol}</span>
-                        <strong>
-                          {formatHumanTokenAmount(
-                            v4LiquiditySimulation.suggestedToken0,
-                            v4Position.token0Symbol
-                          )}{" "}
-                          {v4Position.token0Symbol} +{" "}
-                          {formatHumanTokenAmount(
-                            parseHumanAmount(v4AddAmount1) || 0,
-                            v4Position.token1Symbol
-                          )}{" "}
-                          {v4Position.token1Symbol}
-                        </strong>
-                        <small>
-                          Colocá también{" "}
-                          {formatHumanTokenAmount(
-                            v4LiquiditySimulation.suggestedToken0,
-                            v4Position.token0Symbol
-                          )}{" "}
-                          {v4Position.token0Symbol}.
-                        </small>
-                      </div>
-                    </div>
-                  ) : null}
-                  {v4ValueEstimate ? (
-                    <div className={styles.v4ValueGrid}>
-                      <div>
-                        <span>Valor NFT ahora</span>
-                        <strong>
-                          {formatV4Value(
-                            v4ValueEstimate.currentValue,
-                            v4ValueEstimate.currency
-                          )}
-                        </strong>
-                        <small>Estimado por liquidez actual.</small>
-                      </div>
-                      <div>
-                        <span>Valor a sumar</span>
-                        <strong>
-                          {formatV4Value(
-                            v4ValueEstimate.addValue,
-                            v4ValueEstimate.currency
-                          )}
-                        </strong>
-                        <small>Según montos cargados.</small>
-                      </div>
-                      <div>
-                        <span>Total aproximado</span>
-                        <strong>
-                          {formatV4Value(
-                            v4ValueEstimate.totalValue,
-                            v4ValueEstimate.currency
-                          )}
-                        </strong>
-                        <small>Después de agregar.</small>
-                      </div>
-                    </div>
-                  ) : null}
-                  {v4PreflightChecks.length > 0 ? (
-                    <div className={styles.v4PreflightGrid}>
-                      {v4PreflightChecks.map((check) => (
-                        <div
-                          key={check.label}
-                          className={
-                            check.ok
-                              ? styles.v4PreflightOk
-                              : styles.v4PreflightWarn
+                  <details className={styles.v4Advanced}>
+                    <summary>Entrada avanzada con dos tokens</summary>
+                    <p>
+                      Usá esta parte solo si ya tenés los dos tokens y querés
+                      controlar montos, Permit2 y gas manualmente.
+                    </p>
+                    <div className={styles.v3ManualGrid}>
+                      <div className={styles.field}>
+                        <label>Monto {v4Position.token0Symbol}</label>
+                        <input
+                          value={v4AddAmount0}
+                          onChange={(event) =>
+                            handleV4AddAmount0Change(event.target.value)
                           }
-                        >
-                          <span>{check.ok ? "OK" : "Revisar"}</span>
-                          <strong>{check.label}</strong>
-                          <small>{check.value}</small>
+                          placeholder={`Monto en ${v4Position.token0Symbol}`}
+                          inputMode="decimal"
+                        />
+                      </div>
+                      <div className={styles.field}>
+                        <label>Monto {v4Position.token1Symbol}</label>
+                        <input
+                          value={v4AddAmount1}
+                          onChange={(event) =>
+                            handleV4AddAmount1Change(event.target.value)
+                          }
+                          placeholder={`Monto en ${v4Position.token1Symbol}`}
+                          inputMode="decimal"
+                        />
+                      </div>
+                    </div>
+                    <div className={styles.ctas}>
+                      <button
+                        className={styles.primary}
+                        onClick={handleV4TwoTokenPreflight}
+                        disabled={isLocked || v4Preflighting}
+                      >
+                        {v4Preflighting
+                          ? "Probando balances..."
+                          : "Probar balances y permisos"}
+                      </button>
+                      <button
+                        className={styles.outline}
+                        onClick={handleV4ApproveLiquidityPermit2}
+                        disabled={isLocked || v4AddingLiquidity}
+                      >
+                        {v4AddingLiquidity
+                          ? "Aprobando..."
+                          : "Aprobar Permit2 liquidez"}
+                      </button>
+                    </div>
+                    {v4LiquiditySimulation ? (
+                      <div className={styles.v4BalanceGrid}>
+                        <div>
+                          <span>Desde {v4Position.token0Symbol}</span>
+                          <strong>
+                            {formatHumanTokenAmount(
+                              parseHumanAmount(v4AddAmount0) || 0,
+                              v4Position.token0Symbol
+                            )}{" "}
+                            {v4Position.token0Symbol} +{" "}
+                            {formatHumanTokenAmount(
+                              v4LiquiditySimulation.suggestedToken1,
+                              v4Position.token1Symbol
+                            )}{" "}
+                            {v4Position.token1Symbol}
+                          </strong>
+                          <small>
+                            Colocá también{" "}
+                            {formatHumanTokenAmount(
+                              v4LiquiditySimulation.suggestedToken1,
+                              v4Position.token1Symbol
+                            )}{" "}
+                            {v4Position.token1Symbol}.
+                          </small>
                         </div>
-                      ))}
-                    </div>
-                  ) : null}
-                  <button
-                    className={styles.outline}
-                    onClick={handleV4EstimateGas}
-                    disabled={isLocked || v4EstimatingGas}
-                  >
-                    {v4EstimatingGas ? "Estimando gas..." : "Estimar gas V4"}
-                  </button>
-                  {v4GasEstimate ? (
-                    <div
-                      className={`${styles.v4GasBox} ${
-                        v4GasEstimate.status === "ok"
-                          ? styles.v4GasOk
-                          : v4GasEstimate.status === "warn"
-                            ? styles.v4GasWarn
-                            : styles.v4GasError
-                      }`}
+                        <div>
+                          <span>Desde {v4Position.token1Symbol}</span>
+                          <strong>
+                            {formatHumanTokenAmount(
+                              v4LiquiditySimulation.suggestedToken0,
+                              v4Position.token0Symbol
+                            )}{" "}
+                            {v4Position.token0Symbol} +{" "}
+                            {formatHumanTokenAmount(
+                              parseHumanAmount(v4AddAmount1) || 0,
+                              v4Position.token1Symbol
+                            )}{" "}
+                            {v4Position.token1Symbol}
+                          </strong>
+                          <small>
+                            Colocá también{" "}
+                            {formatHumanTokenAmount(
+                              v4LiquiditySimulation.suggestedToken0,
+                              v4Position.token0Symbol
+                            )}{" "}
+                            {v4Position.token0Symbol}.
+                          </small>
+                        </div>
+                      </div>
+                    ) : null}
+                    {v4ValueEstimate ? (
+                      <div className={styles.v4ValueGrid}>
+                        <div>
+                          <span>Valor NFT ahora</span>
+                          <strong>
+                            {formatV4Value(
+                              v4ValueEstimate.currentValue,
+                              v4ValueEstimate.currency
+                            )}
+                          </strong>
+                          <small>Estimado por liquidez actual.</small>
+                        </div>
+                        <div>
+                          <span>Valor a sumar</span>
+                          <strong>
+                            {formatV4Value(
+                              v4ValueEstimate.addValue,
+                              v4ValueEstimate.currency
+                            )}
+                          </strong>
+                          <small>Según montos cargados.</small>
+                        </div>
+                        <div>
+                          <span>Total aproximado</span>
+                          <strong>
+                            {formatV4Value(
+                              v4ValueEstimate.totalValue,
+                              v4ValueEstimate.currency
+                            )}
+                          </strong>
+                          <small>Después de agregar.</small>
+                        </div>
+                      </div>
+                    ) : null}
+                    {v4PreflightChecks.length > 0 ? (
+                      <div className={styles.v4PreflightGrid}>
+                        {v4PreflightChecks.map((check) => (
+                          <div
+                            key={check.label}
+                            className={
+                              check.ok
+                                ? styles.v4PreflightOk
+                                : styles.v4PreflightWarn
+                            }
+                          >
+                            <span>{check.ok ? "OK" : "Revisar"}</span>
+                            <strong>{check.label}</strong>
+                            <small>{check.value}</small>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <button
+                      className={styles.outline}
+                      onClick={handleV4EstimateGas}
+                      disabled={isLocked || v4EstimatingGas}
                     >
-                      <strong>{v4GasEstimate.title}</strong>
-                      <span>{v4GasEstimate.detail}</span>
-                    </div>
-                  ) : null}
-                  <button
-                    className={styles.primary}
-                    onClick={handleV4AddLiquidity}
-                    disabled={isLocked || v4AddingLiquidity || v4EstimatingGas}
-                  >
-                    {v4AddingLiquidity
-                      ? "Agregando liquidez..."
-                      : v4EstimatingGas
-                        ? "Estimando gas..."
-                      : v4GasEstimate?.status === "ok"
-                        ? `Agregar liquidez real al NFT #${v4Position.tokenId}`
-                        : "Preparar agregar liquidez V4"}
-                  </button>
+                      {v4EstimatingGas ? "Estimando gas..." : "Estimar gas V4"}
+                    </button>
+                    {v4GasEstimate ? (
+                      <div
+                        className={`${styles.v4GasBox} ${
+                          v4GasEstimate.status === "ok"
+                            ? styles.v4GasOk
+                            : v4GasEstimate.status === "warn"
+                              ? styles.v4GasWarn
+                              : styles.v4GasError
+                        }`}
+                      >
+                        <strong>{v4GasEstimate.title}</strong>
+                        <span>{v4GasEstimate.detail}</span>
+                      </div>
+                    ) : null}
+                    <button
+                      className={styles.primary}
+                      onClick={handleV4AddLiquidity}
+                      disabled={isLocked || v4AddingLiquidity || v4EstimatingGas}
+                    >
+                      {v4AddingLiquidity
+                        ? "Agregando liquidez..."
+                        : v4EstimatingGas
+                          ? "Estimando gas..."
+                        : v4GasEstimate?.status === "ok"
+                          ? `Agregar liquidez real al NFT #${v4Position.tokenId}`
+                          : "Preparar agregar liquidez V4"}
+                    </button>
+                  </details>
                   {v4LastTxHash ? (
                     <a
                       className={styles.v4TxLink}
