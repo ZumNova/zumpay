@@ -1435,9 +1435,9 @@
 
 .v4ManagePanel {
   display: grid;
-  grid-template-columns: minmax(170px, 0.8fr) minmax(320px, 1.3fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
-  align-items: center;
+  align-items: stretch;
   margin: 14px 0 18px;
   padding: 16px;
   border-radius: 14px;
@@ -1480,7 +1480,7 @@
 
 .v4ManageStats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 10px;
 }
 
@@ -1496,18 +1496,18 @@
   color: rgba(237, 246, 255, 0.9);
   font-size: 13px;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .v4ManageActions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  justify-content: flex-end;
-  min-width: 190px;
+  justify-content: flex-start;
 }
 
 .v4ManagePanel > small {
-  grid-column: 1 / -1;
+  max-width: 64ch;
 }
 
 .v4SimplePanel {
