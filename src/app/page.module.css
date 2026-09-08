@@ -1433,6 +1433,83 @@
   line-height: 1.45;
 }
 
+.v4ManagePanel {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.8fr) minmax(320px, 1.3fr) auto;
+  gap: 14px;
+  align-items: center;
+  margin: 14px 0 18px;
+  padding: 16px;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at top right, rgba(191, 255, 0, 0.18), transparent 42%),
+    linear-gradient(135deg, rgba(191, 255, 0, 0.08), rgba(52, 211, 153, 0.05)),
+    rgba(7, 12, 24, 0.86);
+  border: 1px solid rgba(191, 255, 0, 0.22);
+  box-shadow: 0 0 24px rgba(191, 255, 0, 0.05);
+}
+
+.v4ManageMain,
+.v4ManageStats div {
+  display: grid;
+  gap: 5px;
+}
+
+.v4ManageMain span,
+.v4ManageStats span {
+  color: #d9ff66;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.v4ManageMain strong {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 22px;
+}
+
+.v4ManageMain p,
+.v4ManagePanel small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.v4ManageStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.v4ManageStats div {
+  min-height: 72px;
+  padding: 11px;
+  border-radius: 10px;
+  background: rgba(12, 18, 32, 0.72);
+  border: 1px solid rgba(191, 255, 0, 0.1);
+}
+
+.v4ManageStats strong {
+  color: rgba(237, 246, 255, 0.9);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.v4ManageActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  min-width: 190px;
+}
+
+.v4ManagePanel > small {
+  grid-column: 1 / -1;
+}
+
 .v4SimplePanel {
   display: grid;
   grid-template-columns: 1.2fr minmax(180px, 0.8fr) minmax(150px, 0.6fr) minmax(110px, 0.4fr) auto;
@@ -2551,6 +2628,19 @@
     align-items: stretch;
   }
 
+  .v4ManagePanel {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .v4ManageStats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .v4ManageActions {
+    justify-content: flex-start;
+  }
+
   .positionDetailGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2588,6 +2678,10 @@
   }
 
   .positionDetailGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .v4ManageStats {
     grid-template-columns: 1fr;
   }
 

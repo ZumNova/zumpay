@@ -8591,11 +8591,12 @@ export default function Home() {
                                   <>
                                     <button
                                       className={styles.outline}
-                                      onClick={() =>
-                                        handleV4LoadSavedPosition(
+                                      onClick={async () => {
+                                        await handleV4LoadSavedPosition(
                                           position.raw as V4PositionView
-                                        )
-                                      }
+                                        );
+                                        setActiveView("v4");
+                                      }}
                                       disabled={isLocked || v4ReadingPosition}
                                     >
                                       Leer / actualizar NFT
@@ -9682,6 +9683,82 @@ export default function Home() {
                   premium.
                 </p>
               ) : null}
+              {v4Position ? (
+                <div className={styles.v4ManagePanel}>
+                  <div className={styles.v4ManageMain}>
+                    <span>NFT V4 cargado</span>
+                    <strong>#{v4Position.tokenId}</strong>
+                    <p>
+                      {v4Position.token0Symbol}/{v4Position.token1Symbol} ·{" "}
+                      {v4Position.lpFee} · Robinhood
+                    </p>
+                  </div>
+                  <div className={styles.v4ManageStats}>
+                    <div>
+                      <span>Estado</span>
+                      <strong>
+                        {v4Position.liquidity === "0"
+                          ? "Sin liquidez"
+                          : v4Position.inRange
+                            ? "En rango"
+                            : "Fuera de rango"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Valor estimado</span>
+                      <strong>
+                        {v4Position.valueEstimate > 0
+                          ? formatV4Value(
+                              v4Position.valueEstimate,
+                              v4Position.valueSymbol
+                            )
+                          : "Sin estimación"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Fees cobrables</span>
+                      <strong>
+                        {v4Position.fees0 ?? "No leído"}{" "}
+                        {v4Position.token0Symbol} /{" "}
+                        {v4Position.fees1 ?? "No leído"}{" "}
+                        {v4Position.token1Symbol}
+                      </strong>
+                    </div>
+                  </div>
+                  <div className={styles.v4ManageActions}>
+                    <button
+                      className={styles.outline}
+                      onClick={() => executeV4Decrease("collect")}
+                      disabled={
+                        isLocked ||
+                        v4CollectingFees ||
+                        v4WithdrawingLiquidity
+                      }
+                    >
+                      {v4CollectingFees ? "Cobrando..." : "Cobrar fees"}
+                    </button>
+                    <button
+                      className={styles.primary}
+                      onClick={() => executeV4Decrease("withdraw")}
+                      disabled={
+                        isLocked ||
+                        v4CollectingFees ||
+                        v4WithdrawingLiquidity ||
+                        v4Position.liquidity === "0"
+                      }
+                    >
+                      {v4WithdrawingLiquidity
+                        ? "Retirando..."
+                        : "Retirar capital"}
+                    </button>
+                  </div>
+                  <small>
+                    Para sumar capital, usá “Sumar desde USDG” más abajo. La
+                    parte manual queda disponible si querés entrar con dos
+                    tokens.
+                  </small>
+                </div>
+              ) : null}
               <div className={styles.v3PositionList}>
                 <div className={styles.v3PositionHeader}>
                   <h4>Mis NFTs V4 activos</h4>
@@ -10226,55 +10303,25 @@ export default function Home() {
                   ) : null}
                 </div>
               ) : null}
-              {v4Result ? (
-                <div className={styles.field}>
-                  <label>PoolId</label>
-                  <div className={styles.address}>{v4Result.poolId}</div>
-                </div>
-              ) : null}
-              {v4Position ? (
-                <div className={styles.field}>
-                  <label>Dueño NFT</label>
-                  <div className={styles.address}>{v4Position.owner}</div>
-                </div>
+              {v4Result || v4Position ? (
+                <details className={styles.v4Advanced}>
+                  <summary>Datos técnicos</summary>
+                  {v4Result ? (
+                    <div className={styles.field}>
+                      <label>PoolId</label>
+                      <div className={styles.address}>{v4Result.poolId}</div>
+                    </div>
+                  ) : null}
+                  {v4Position ? (
+                    <div className={styles.field}>
+                      <label>Dueño NFT</label>
+                      <div className={styles.address}>{v4Position.owner}</div>
+                    </div>
+                  ) : null}
+                </details>
               ) : null}
               {v4Position ? (
                 <>
-                  <div className={styles.v4UseBox}>
-                    <strong>Gestionar NFT V4 existente</strong>
-                    <span>
-                      Cobrar fees reclama comisiones sin retirar capital.
-                      Retirar liquidez saca el capital de la posición. Ambas
-                      acciones se confirman en MetaMask.
-                    </span>
-                  </div>
-                  <div className={styles.ctas}>
-                    <button
-                      className={styles.outline}
-                      onClick={() => executeV4Decrease("collect")}
-                      disabled={
-                        isLocked ||
-                        v4CollectingFees ||
-                        v4WithdrawingLiquidity
-                      }
-                    >
-                      {v4CollectingFees ? "Cobrando..." : "Cobrar fees"}
-                    </button>
-                    <button
-                      className={styles.primary}
-                      onClick={() => executeV4Decrease("withdraw")}
-                      disabled={
-                        isLocked ||
-                        v4CollectingFees ||
-                        v4WithdrawingLiquidity ||
-                        v4Position.liquidity === "0"
-                      }
-                    >
-                      {v4WithdrawingLiquidity
-                        ? "Retirando..."
-                        : "Retirar liquidez"}
-                    </button>
-                  </div>
                   <div className={styles.v4MintPanel}>
                     <div>
                       <h4>Sumar desde USDG</h4>
