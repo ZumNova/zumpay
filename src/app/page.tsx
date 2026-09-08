@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { ethers } from "ethers";
 import QRCode from "qrcode";
 import * as bip39 from "bip39";
@@ -53,6 +53,7 @@ type ReadyPositionNotice = {
   chain: V3ChainKey;
   tokenId: string;
 };
+type PortfolioFilter = "all" | "v3" | "v4";
 type AppView =
   | "home"
   | "premium"
@@ -188,6 +189,26 @@ type V4PositionView = V4ScanResult & {
   valueSymbol: string;
   fees0?: string;
   fees1?: string;
+};
+
+type PortfolioPosition = {
+  key: string;
+  protocol: "V3" | "V4";
+  chain: V3ChainKey;
+  tokenId: string;
+  pair: string;
+  fee: string;
+  range: string;
+  status: string;
+  statusTone: "in" | "out" | "neutral";
+  value: string;
+  valueAmount: number;
+  valueSymbol: string;
+  fees: string;
+  hasFees: boolean;
+  composition: string;
+  created: string;
+  raw: V3Position | V4PositionView;
 };
 
 type V4LiquiditySimulation = {
@@ -2022,6 +2043,11 @@ export default function Home() {
   const [payingPremium, setPayingPremium] = useState(false);
   const [premiumTermsAccepted, setPremiumTermsAccepted] = useState(false);
   const [activeView, setActiveView] = useState<AppView>("home");
+  const [portfolioFilter, setPortfolioFilter] =
+    useState<PortfolioFilter>("all");
+  const [openPortfolioPosition, setOpenPortfolioPosition] = useState<
+    string | null
+  >(null);
   const [payerAddress, setPayerAddress] = useState<string | null>(null);
   const [premiumAmount, setPremiumAmount] = useState(ZUM_PREMIUM_AMOUNT);
   const [premiumAmountRaw, setPremiumAmountRaw] = useState(
@@ -2211,8 +2237,8 @@ export default function Home() {
       ),
     [positiveEvmAssets]
   );
-  const portfolioPositions = useMemo(() => {
-    const v3Items = v3Positions.map((position) => {
+  const portfolioPositions = useMemo<PortfolioPosition[]>(() => {
+    const v3Items: PortfolioPosition[] = v3Positions.map((position) => {
       const liquidityEmpty = position.liquidity === "0";
       const hasFees =
         (parseHumanAmount(position.fees0 ?? "0") || 0) > 0 ||
@@ -2274,7 +2300,7 @@ export default function Home() {
       };
     });
 
-    const v4Items = v4Positions.map((position) => {
+    const v4Items: PortfolioPosition[] = v4Positions.map((position) => {
       const liquidityEmpty = position.liquidity === "0";
       const hasFees =
         (parseHumanAmount(position.fees0 ?? "0") || 0) > 0 ||
@@ -2324,6 +2350,15 @@ export default function Home() {
 
     return [...v4Items, ...v3Items];
   }, [v3Positions, v4Positions]);
+  const visiblePortfolioPositions = useMemo(
+    () =>
+      portfolioPositions.filter((position) => {
+        if (portfolioFilter === "v3") return position.protocol === "V3";
+        if (portfolioFilter === "v4") return position.protocol === "V4";
+        return true;
+      }),
+    [portfolioFilter, portfolioPositions]
+  );
   const v4SimpleCandidates = useMemo(
     () =>
       V4_ROBINHOOD_POOL_CANDIDATES.filter((candidate) => {
@@ -8288,8 +8323,8 @@ export default function Home() {
               <p className={styles.kicker}>Portfolio Zumpay</p>
               <h2>Tus posiciones</h2>
               <p className={styles.subtitle}>
-                Vista liviana de NFTs V3 y V4: rango, valor estimado, fees y
-                estado operativo.
+                NFTs V3 y V4 en una sola vista: rango, valor estimado, fees y
+                acciones separadas por posición.
               </p>
             </div>
             <div className={styles.positionsActions}>
@@ -8352,8 +8387,30 @@ export default function Home() {
               </strong>
             </div>
           </div>
+          <div className={styles.positionsTabs} aria-label="Filtrar posiciones">
+            {[
+              { key: "all", label: "NFTs" },
+              { key: "v3", label: "V3" },
+              { key: "v4", label: "V4" }
+            ].map((item) => (
+              <button
+                key={item.key}
+                className={
+                  portfolioFilter === item.key
+                    ? styles.positionTabActive
+                    : styles.positionTab
+                }
+                onClick={() => {
+                  setPortfolioFilter(item.key as PortfolioFilter);
+                  setOpenPortfolioPosition(null);
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
           <div className={styles.positionsTableWrap}>
-            {portfolioPositions.length === 0 ? (
+            {visiblePortfolioPositions.length === 0 ? (
               <div className={styles.emptyPositions}>
                 <h3>Todavía no hay posiciones cargadas</h3>
                 <p>
@@ -8376,134 +8433,210 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody>
-                  {portfolioPositions.map((position) => (
-                    <tr
-                      key={position.key}
-                      className={
-                        position.statusTone === "out"
-                          ? styles.positionOutRow
-                          : position.statusTone === "in"
-                            ? styles.positionInRow
-                            : styles.positionNeutralRow
-                      }
-                    >
-                      <td>
-                        <strong>{position.pair}</strong>
-                        <span>
-                          {position.protocol} · {position.fee} ·{" "}
-                          {position.chain}
-                        </span>
-                      </td>
-                      <td>
-                        <strong>NFT #{position.tokenId}</strong>
-                        <span>{position.range}</span>
-                      </td>
-                      <td>
-                        <span
-                          className={`${styles.v3RangeBadge} ${
-                            position.statusTone === "in"
-                              ? styles.v3RangeIn
-                              : position.statusTone === "out"
-                                ? styles.v3RangeOut
-                                : styles.v3RangeNeutral
-                          }`}
-                        >
-                          {position.status}
-                        </span>
-                      </td>
-                      <td>
-                        <strong>{position.value}</strong>
-                      </td>
-                      <td
+                  {visiblePortfolioPositions.map((position) => (
+                    <Fragment key={position.key}>
+                      <tr
                         className={
-                          position.hasFees
-                            ? styles.positionFeesPositive
-                            : styles.positionFeesNeutral
+                          position.statusTone === "out"
+                            ? styles.positionOutRow
+                            : position.statusTone === "in"
+                              ? styles.positionInRow
+                              : styles.positionNeutralRow
                         }
                       >
-                        {position.fees}
-                      </td>
-                      <td>{position.composition}</td>
-                      <td>{position.created}</td>
-                      <td>
-                        <div className={styles.positionRowActions}>
-                          {position.protocol === "V3" ? (
-                            <>
-                              <button
-                                className={styles.outline}
-                                onClick={() =>
-                                  handleV3Collect(position.raw as V3Position)
-                                }
-                                disabled={
-                                  isLocked ||
-                                  !v3HasCollectibleFees(
-                                    position.raw as V3Position
-                                  )
-                                }
-                              >
-                                Cobrar
-                              </button>
-                              <button
-                                className={styles.outline}
-                                onClick={() =>
-                                  handleV3Withdraw(position.raw as V3Position)
-                                }
-                                disabled={
-                                  isLocked ||
-                                  (position.raw as V3Position).liquidity === "0"
-                                }
-                              >
-                                Retirar
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                className={styles.outline}
-                                onClick={async () => {
-                                  await handleV4LoadSavedPosition(
-                                    position.raw as V4PositionView
-                                  );
-                                  setActiveView("v4");
-                                }}
-                                disabled={isLocked}
-                              >
-                                Abrir
-                              </button>
-                              <button
-                                className={styles.outline}
-                                onClick={async () => {
-                                  await handleV4LoadSavedPosition(
-                                    position.raw as V4PositionView
-                                  );
-                                  setActiveView("v4");
-                                }}
-                                disabled={isLocked || v4ReadingPosition}
-                              >
-                                Cobrar en V4
-                              </button>
-                              <button
-                                className={styles.outline}
-                                onClick={async () => {
-                                  await handleV4LoadSavedPosition(
-                                    position.raw as V4PositionView
-                                  );
-                                  setActiveView("v4");
-                                }}
-                                disabled={
-                                  isLocked ||
-                                  v4ReadingPosition ||
-                                  (position.raw as V4PositionView).liquidity ===
-                                    "0"
-                                }
-                              >
-                                Retirar en V4
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
+                        <td>
+                          <strong>{position.pair}</strong>
+                          <span>
+                            {position.protocol} · {position.fee} ·{" "}
+                            {position.chain}
+                          </span>
+                        </td>
+                        <td>
+                          <strong>NFT #{position.tokenId}</strong>
+                          <span>{position.range}</span>
+                        </td>
+                        <td>
+                          <span
+                            className={`${styles.v3RangeBadge} ${
+                              position.statusTone === "in"
+                                ? styles.v3RangeIn
+                                : position.statusTone === "out"
+                                  ? styles.v3RangeOut
+                                  : styles.v3RangeNeutral
+                            }`}
+                          >
+                            {position.status}
+                          </span>
+                        </td>
+                        <td>
+                          <strong>{position.value}</strong>
+                        </td>
+                        <td
+                          className={
+                            position.hasFees
+                              ? styles.positionFeesPositive
+                              : styles.positionFeesNeutral
+                          }
+                        >
+                          {position.fees}
+                        </td>
+                        <td>{position.composition}</td>
+                        <td>{position.created}</td>
+                        <td>
+                          <button
+                            className={styles.outline}
+                            onClick={() =>
+                              setOpenPortfolioPosition((current) =>
+                                current === position.key ? null : position.key
+                              )
+                            }
+                            disabled={isLocked}
+                          >
+                            {openPortfolioPosition === position.key
+                              ? "Cerrar"
+                              : "Abrir"}
+                          </button>
+                        </td>
+                      </tr>
+                      {openPortfolioPosition === position.key ? (
+                        <tr
+                          key={`${position.key}-detail`}
+                          className={styles.positionDetailRow}
+                        >
+                          <td colSpan={8}>
+                            <div className={styles.positionDetailPanel}>
+                              <div className={styles.positionDetailMain}>
+                                <span>{position.protocol}</span>
+                                <strong>NFT #{position.tokenId}</strong>
+                                <p>
+                                  {position.pair} · {position.chain} ·{" "}
+                                  {position.fee}
+                                </p>
+                              </div>
+                              <div className={styles.positionDetailGrid}>
+                                <div>
+                                  <span>Estado</span>
+                                  <strong>{position.status}</strong>
+                                </div>
+                                <div>
+                                  <span>Valor</span>
+                                  <strong>{position.value}</strong>
+                                </div>
+                                <div>
+                                  <span>Fees cobrables</span>
+                                  <strong>{position.fees}</strong>
+                                </div>
+                                <div>
+                                  <span>Composición</span>
+                                  <strong>{position.composition}</strong>
+                                </div>
+                                <div>
+                                  <span>Rango</span>
+                                  <strong>{position.range}</strong>
+                                </div>
+                                <div>
+                                  <span>Última lectura</span>
+                                  <strong>{position.created}</strong>
+                                </div>
+                              </div>
+                              <div className={styles.positionDetailActions}>
+                                {position.protocol === "V3" ? (
+                                  <>
+                                    <button
+                                      className={styles.outline}
+                                      onClick={() => {
+                                        const v3Position =
+                                          position.raw as V3Position;
+                                        setV3Chain(v3Position.chain);
+                                        setV3TokenId(v3Position.tokenId);
+                                        setActiveView("v3");
+                                      }}
+                                      disabled={isLocked}
+                                    >
+                                      Abrir panel V3
+                                    </button>
+                                    <button
+                                      className={styles.outline}
+                                      onClick={() =>
+                                        handleV3Collect(
+                                          position.raw as V3Position
+                                        )
+                                      }
+                                      disabled={
+                                        isLocked ||
+                                        !v3HasCollectibleFees(
+                                          position.raw as V3Position
+                                        )
+                                      }
+                                    >
+                                      Cobrar fees
+                                    </button>
+                                    <button
+                                      className={styles.primary}
+                                      onClick={() =>
+                                        handleV3Withdraw(
+                                          position.raw as V3Position
+                                        )
+                                      }
+                                      disabled={
+                                        isLocked ||
+                                        (position.raw as V3Position)
+                                          .liquidity === "0"
+                                      }
+                                    >
+                                      Retirar liquidez
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      className={styles.outline}
+                                      onClick={() =>
+                                        handleV4LoadSavedPosition(
+                                          position.raw as V4PositionView
+                                        )
+                                      }
+                                      disabled={isLocked || v4ReadingPosition}
+                                    >
+                                      Leer / actualizar NFT
+                                    </button>
+                                    <button
+                                      className={styles.outline}
+                                      onClick={async () => {
+                                        await handleV4LoadSavedPosition(
+                                          position.raw as V4PositionView
+                                        );
+                                        setActiveView("v4");
+                                      }}
+                                      disabled={isLocked || v4ReadingPosition}
+                                    >
+                                      Preparar cobro V4
+                                    </button>
+                                    <button
+                                      className={styles.primary}
+                                      onClick={async () => {
+                                        await handleV4LoadSavedPosition(
+                                          position.raw as V4PositionView
+                                        );
+                                        setActiveView("v4");
+                                      }}
+                                      disabled={
+                                        isLocked ||
+                                        v4ReadingPosition ||
+                                        (position.raw as V4PositionView)
+                                          .liquidity === "0"
+                                      }
+                                    >
+                                      Preparar retiro V4
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -10110,9 +10243,9 @@ export default function Home() {
                   <div className={styles.v4UseBox}>
                     <strong>Gestionar NFT V4 existente</strong>
                     <span>
-                      Cobrar fees usa DECREASE_LIQUIDITY con liquidez cero.
-                      Retirar liquidez usa la liquidez actual del NFT. Ambas
-                      acciones abren MetaMask.
+                      Cobrar fees reclama comisiones sin retirar capital.
+                      Retirar liquidez saca el capital de la posición. Ambas
+                      acciones se confirman en MetaMask.
                     </span>
                   </div>
                   <div className={styles.ctas}>
@@ -10125,7 +10258,7 @@ export default function Home() {
                         v4WithdrawingLiquidity
                       }
                     >
-                      {v4CollectingFees ? "Cobrando..." : "Cobrar fees V4"}
+                      {v4CollectingFees ? "Cobrando..." : "Cobrar fees"}
                     </button>
                     <button
                       className={styles.primary}
@@ -10139,7 +10272,7 @@ export default function Home() {
                     >
                       {v4WithdrawingLiquidity
                         ? "Retirando..."
-                        : "Retirar liquidez V4"}
+                        : "Retirar liquidez"}
                     </button>
                   </div>
                   <div className={styles.v4MintPanel}>

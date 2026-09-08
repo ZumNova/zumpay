@@ -2104,6 +2104,39 @@
   font-family: var(--font-display);
 }
 
+.positionsTabs {
+  display: inline-flex;
+  width: fit-content;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 12px;
+  background: rgba(7, 12, 24, 0.64);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.positionTab,
+.positionTabActive {
+  min-width: 70px;
+  padding: 9px 14px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.positionTabActive {
+  color: var(--ink);
+  background:
+    linear-gradient(180deg, rgba(255, 184, 107, 0.18), rgba(255, 184, 107, 0.06)),
+    rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 184, 107, 0.26);
+  box-shadow: 0 0 18px rgba(255, 184, 107, 0.08);
+}
+
 .positionsTableWrap {
   overflow-x: auto;
   border-radius: 16px;
@@ -2204,6 +2237,84 @@
 
 .positionsTable td span {
   display: block;
+}
+
+.positionsTable tbody tr.positionDetailRow,
+.positionsTable tbody tr.positionDetailRow:hover {
+  background: rgba(7, 12, 24, 0.82);
+  box-shadow: none;
+}
+
+.positionDetailRow td {
+  padding: 0 16px 16px;
+}
+
+.positionDetailPanel {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.8fr) minmax(360px, 1.4fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)),
+    rgba(12, 18, 32, 0.84);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.positionDetailMain {
+  display: grid;
+  gap: 5px;
+}
+
+.positionDetailMain span,
+.positionDetailGrid span {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.positionDetailMain strong {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 20px;
+}
+
+.positionDetailMain p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.positionDetailGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.positionDetailGrid div {
+  display: grid;
+  gap: 4px;
+  min-height: 72px;
+  padding: 11px;
+  border-radius: 10px;
+  background: rgba(7, 12, 24, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.positionDetailGrid strong {
+  color: rgba(237, 246, 255, 0.9);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.positionDetailActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  min-width: 190px;
 }
 
 .emptyPositions {
@@ -2435,6 +2546,19 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .positionDetailPanel {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .positionDetailGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .positionDetailActions {
+    justify-content: flex-start;
+  }
+
   .nav {
     padding: 22px 6vw;
   }
@@ -2451,6 +2575,20 @@
   .appNavButton,
   .appNavActive {
     min-width: 118px;
+  }
+
+  .positionsTabs {
+    width: 100%;
+  }
+
+  .positionTab,
+  .positionTabActive {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .positionDetailGrid {
+    grid-template-columns: 1fr;
   }
 
   .navActions {
