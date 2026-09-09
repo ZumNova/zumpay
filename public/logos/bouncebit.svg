@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="BounceBit">
+  <rect width="64" height="64" rx="18" fill="#0f172a"/>
+  <circle cx="27" cy="25" r="12" fill="#f7931a"/>
+  <circle cx="39" cy="39" r="12" fill="#d9ff66"/>
+  <path d="M22 25h9c3 0 5 2 5 5s-2 5-6 5h-8zm5-5v20" stroke="#111827" stroke-width="4" stroke-linecap="round"/>
+</svg>

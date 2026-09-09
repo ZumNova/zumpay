@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="MetaMask">
+  <rect width="64" height="64" rx="18" fill="#111827"/>
+  <path d="M14 14l15 7 6 14-8 15-12-7 3-11z" fill="#f6851b"/>
+  <path d="M50 14l-15 7-6 14 8 15 12-7-3-11z" fill="#e2761b"/>
+  <path d="M29 21h6l7 15-10 7-10-7z" fill="#ffb347"/>
+  <path d="M22 35l8 6-7 5-6-4zM42 35l-8 6 7 5 6-4z" fill="#763d16"/>
+</svg>

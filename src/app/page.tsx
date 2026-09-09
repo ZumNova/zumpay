@@ -8254,7 +8254,7 @@ export default function Home() {
                     className={`${styles.reserveIcon} ${styles.reserveIconMetaMask}`}
                     aria-hidden="true"
                   >
-                    MM
+                    <img src="/logos/metamask.svg" alt="" />
                   </div>
                   <span>Explorar proveedores</span>
                 </div>
@@ -8299,7 +8299,7 @@ export default function Home() {
                     className={`${styles.reserveIcon} ${styles.reserveIconEth}`}
                     aria-hidden="true"
                   >
-                    Ξ
+                    <img src="/logos/ethereum.svg" alt="" />
                   </div>
                   <span>Ruta ETH</span>
                 </div>
@@ -8338,7 +8338,7 @@ export default function Home() {
                     className={`${styles.reserveIcon} ${styles.reserveIconAave}`}
                     aria-hidden="true"
                   >
-                    A
+                    <img src="/logos/aave.svg" alt="" />
                   </div>
                   <span>WETH productivo</span>
                 </div>
@@ -8406,7 +8406,7 @@ export default function Home() {
                     className={`${styles.reserveIcon} ${styles.reserveIconAcross}`}
                     aria-hidden="true"
                   >
-                    AC
+                    <img src="/logos/across.svg" alt="" />
                   </div>
                   <span>Bridge entre redes</span>
                 </div>
@@ -8434,7 +8434,7 @@ export default function Home() {
                     className={`${styles.reserveIcon} ${styles.reserveIconHyperliquid}`}
                     aria-hidden="true"
                   >
-                    HL
+                    <img src="/logos/hyperliquid.svg" alt="" />
                   </div>
                   <span>HyperEVM</span>
                 </div>
@@ -8476,7 +8476,7 @@ export default function Home() {
                     className={`${styles.reserveIcon} ${styles.reserveIconBtc}`}
                     aria-hidden="true"
                   >
-                    ₿
+                    <img src="/logos/bouncebit.svg" alt="" />
                   </div>
                   <span>BTC avanzado</span>
                 </div>

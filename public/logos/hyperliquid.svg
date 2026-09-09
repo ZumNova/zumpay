@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Hyperliquid">
+  <rect width="64" height="64" rx="18" fill="#031b18"/>
+  <path d="M13 40c8-19 22-27 39-21-3 18-16 28-39 21z" fill="#00f0b5"/>
+  <path d="M21 39c7-10 15-15 26-16-5 9-13 15-26 16z" fill="#99ffe4"/>
+  <path d="M22 22v20M42 19v23M22 32h20" stroke="#032b25" stroke-width="5" stroke-linecap="round"/>
+</svg>

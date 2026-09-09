@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Arbitrum">
+  <rect width="64" height="64" rx="18" fill="#111827"/>
+  <path d="M32 7l22 13v25L32 57 10 45V20z" fill="#213147"/>
+  <path d="M32 12l17 10v20L32 52 15 42V22z" fill="none" stroke="#28a0f0" stroke-width="3"/>
+  <path d="M23 43l15-27h7L30 43zm-7 0l15-27h5L21 43z" fill="#ffffff"/>
+  <path d="M38 43l7-13 4 7-3 6z" fill="#28a0f0"/>
+</svg>
