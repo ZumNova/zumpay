@@ -6,6 +6,7 @@ const chainIds: Record<string, number> = {
   ethereum: 1,
   polygon: 137,
   arbitrum: 42161,
+  hyperliquid: 999,
   optimism: 10,
   base: 8453
 };

@@ -350,6 +350,15 @@ const NETWORKS: Network[] = [
     rpcUrl:
       process.env.NEXT_PUBLIC_ROBINHOOD_RPC_URL ??
       "https://rpc.mainnet.chain.robinhood.com"
+  },
+  {
+    key: "hyperliquid",
+    name: "Hyperliquid",
+    chainId: 999,
+    symbol: "HYPE",
+    rpcUrl:
+      process.env.NEXT_PUBLIC_HYPERLIQUID_RPC_URL ??
+      "https://rpc.hyperliquid.xyz/evm"
   }
 ];
 
@@ -358,6 +367,7 @@ const EXPLORERS: Record<string, string> = {
   polygon: "https://polygonscan.com/tx/",
   arbitrum: "https://arbiscan.io/tx/",
   robinhood: "https://robinhoodchain.blockscout.com/tx/",
+  hyperliquid: "https://hyperevmscan.io/tx/",
   optimism: "https://optimistic.etherscan.io/tx/",
   base: "https://basescan.org/tx/"
 };
@@ -366,7 +376,8 @@ const EXPLORER_ROOTS: Record<string, string> = {
   ethereum: "https://etherscan.io",
   polygon: "https://polygonscan.com",
   arbitrum: "https://arbiscan.io",
-  robinhood: "https://robinhoodchain.blockscout.com"
+  robinhood: "https://robinhoodchain.blockscout.com",
+  hyperliquid: "https://hyperevmscan.io"
 };
 
 const ZUM_ADDRESS = "0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5";
@@ -8413,6 +8424,48 @@ export default function Home() {
                     rel="noreferrer"
                   >
                     Abrir Across desde Arbitrum
+                  </a>
+                </div>
+              </div>
+
+              <div className={styles.reserveRouteCard}>
+                <div className={styles.reserveRouteTop}>
+                  <div
+                    className={`${styles.reserveIcon} ${styles.reserveIconHyperliquid}`}
+                    aria-hidden="true"
+                  >
+                    HL
+                  </div>
+                  <span>HyperEVM</span>
+                </div>
+                <strong>Hyperliquid / HYPE</strong>
+                <p>
+                  Ruta avanzada para mirar HYPE, HyperEVM y oportunidades del
+                  ecosistema Hyperliquid. Separá HyperEVM de HyperCore: una es
+                  red EVM con MetaMask, la otra es trading/perps.
+                </p>
+                <div className={styles.reserveRouteActions}>
+                  <button
+                    className={styles.softButton}
+                    onClick={() => setNetworkKey("hyperliquid")}
+                  >
+                    Ver cuenta HyperEVM
+                  </button>
+                  <a
+                    className={styles.outline}
+                    href="https://app.hyperliquid.xyz/portfolio"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Abrir Hyperliquid
+                  </a>
+                  <a
+                    className={styles.outline}
+                    href="https://hyperevmscan.io/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Abrir HyperEVM Scan
                   </a>
                 </div>
               </div>

@@ -935,6 +935,13 @@
   box-shadow: 0 0 20px rgba(4, 208, 154, 0.18);
 }
 
+.reserveIconHyperliquid {
+  color: #001b16;
+  background:
+    linear-gradient(135deg, #99ffe4, #00f0b5 52%, #003f34);
+  box-shadow: 0 0 20px rgba(0, 240, 181, 0.18);
+}
+
 .reserveIconBtc {
   color: #ffffff;
   background:
