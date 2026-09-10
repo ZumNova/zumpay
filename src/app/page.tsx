@@ -402,6 +402,8 @@ const HYPER_KITTEN_POOL_ADDRESS =
   "0x12df9913e9e08453440e3c4b1ae73819160b513e";
 const HYPER_FIRST_POSITION_ID = "409319";
 const HYPER_MAX_SWAP_GAS = BigInt(1_500_000);
+const HYPER_MAX_MINT_GAS = BigInt(3_000_000);
+const HYPER_TICK_SPACING = 10;
 
 const ZUM_ADDRESS = "0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5";
 const ZUM_OWNER = "0xdD6cB8f731B6ABbAEE5839d2e45Fe2319a8572e4";
@@ -909,6 +911,10 @@ const ALGEBRA_SWAP_ROUTER_ABI = [
   "function exactInputSingle((address tokenIn,address tokenOut,address deployer,address recipient,uint256 deadline,uint256 amountIn,uint256 amountOutMinimum,uint160 limitSqrtPrice)) payable returns (uint256 amountOut)"
 ];
 
+const ALGEBRA_POSITION_MANAGER_ABI = [
+  "function mint((address token0,address token1,address deployer,int24 tickLower,int24 tickUpper,uint256 amount0Desired,uint256 amount1Desired,uint256 amount0Min,uint256 amount1Min,address recipient,uint256 deadline)) payable returns (uint256 tokenId,uint128 liquidity,uint256 amount0,uint256 amount1)"
+];
+
 const V3_SWAP_ROUTER_ABI = [
   "function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 deadline,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96)) payable returns (uint256 amountOut)"
 ];
@@ -1305,6 +1311,14 @@ function assessV4PoolUsability(
 
 function priceFromTick(tick: number, token0Decimals: number, token1Decimals: number) {
   return Math.pow(1.0001, tick) * 10 ** (token0Decimals - token1Decimals);
+}
+
+function roundedHyperTick(value: number, direction: "down" | "up") {
+  const factor =
+    direction === "down"
+      ? Math.floor(value / HYPER_TICK_SPACING)
+      : Math.ceil(value / HYPER_TICK_SPACING);
+  return factor * HYPER_TICK_SPACING;
 }
 
 function estimateConcentratedPositionAmounts(
@@ -2200,7 +2214,9 @@ export default function Home() {
   );
   const [hyperPreparing, setHyperPreparing] = useState(false);
   const [hyperSwapping, setHyperSwapping] = useState(false);
+  const [hyperMinting, setHyperMinting] = useState(false);
   const [hyperLastTxHash, setHyperLastTxHash] = useState("");
+  const [hyperMintedTokenId, setHyperMintedTokenId] = useState("");
   const [hyperStatus, setHyperStatus] = useState("");
 
   const network = useMemo(
@@ -4159,6 +4175,151 @@ export default function Home() {
       );
     } finally {
       setHyperSwapping(false);
+    }
+  };
+
+  const handleHyperMintPosition = async () => {
+    try {
+      if (!hyperPreview) {
+        setHyperStatus("Primero prepará la entrada para calcular rango y montos.");
+        return;
+      }
+
+      setHyperMinting(true);
+      setHyperMintedTokenId("");
+      setHyperLastTxHash("");
+      setHyperStatus("Preparando mint HYPE/USDC en HyperEVM.");
+      const signer = await getHyperSigner();
+      const owner = await signer.getAddress();
+      const provider = signer.provider;
+      if (!provider) {
+        throw new Error("No hay provider conectado.");
+      }
+      await assertNoPendingTx(provider, owner);
+      const nativeBalance = await provider.getBalance(owner);
+      if (nativeBalance <= BigInt(0)) {
+        setHyperStatus("Falta HYPE nativo para pagar gas en HyperEVM.");
+        return;
+      }
+
+      const whype = new ethers.Contract(HYPER_WHYPE_ADDRESS, ERC20_ABI, signer);
+      const usdc = new ethers.Contract(HYPER_USDC_ADDRESS, ERC20_ABI, signer);
+      const [whypeBalance, usdcBalance] = (await Promise.all([
+        whype.balanceOf(owner),
+        usdc.balanceOf(owner)
+      ])) as [bigint, bigint];
+      const desiredWhypeFromPreview = ethers.parseUnits(
+        hyperPreview.whypeEstimate.toFixed(12),
+        18
+      );
+      const desiredUsdcFromPreview = ethers.parseUnits(
+        hyperPreview.usdcToKeep.toFixed(6),
+        6
+      );
+      const amount0Desired =
+        whypeBalance < desiredWhypeFromPreview
+          ? whypeBalance
+          : desiredWhypeFromPreview;
+      const amount1Desired =
+        usdcBalance < desiredUsdcFromPreview ? usdcBalance : desiredUsdcFromPreview;
+      if (amount0Desired <= BigInt(0) || amount1Desired <= BigInt(0)) {
+        setHyperStatus(
+          "Faltan los dos lados para mintear: necesitás WHYPE y USDC en HyperEVM."
+        );
+        return;
+      }
+
+      const widthPct = V3_PROFILES.moderate.widthPct;
+      const lowerTick = roundedHyperTick(
+        hyperPreview.tick + Math.log(1 - widthPct) / Math.log(1.0001),
+        "down"
+      );
+      const upperTick = roundedHyperTick(
+        hyperPreview.tick + Math.log(1 + widthPct) / Math.log(1.0001),
+        "up"
+      );
+      const slippagePct = Math.min(Math.max(Number(hyperSlippage) || 1, 0.1), 5);
+      const slippageBps = BigInt(10000 - Math.round(slippagePct * 100));
+      const amount0Min = (amount0Desired * slippageBps) / BigInt(10000);
+      const amount1Min = (amount1Desired * slippageBps) / BigInt(10000);
+
+      await ensureHyperAllowance(
+        HYPER_WHYPE_ADDRESS,
+        HYPER_KITTEN_POSITION_MANAGER,
+        amount0Desired,
+        signer,
+        "WHYPE"
+      );
+      await ensureHyperAllowance(
+        HYPER_USDC_ADDRESS,
+        HYPER_KITTEN_POSITION_MANAGER,
+        amount1Desired,
+        signer,
+        "USDC"
+      );
+
+      const manager = new ethers.Contract(
+        HYPER_KITTEN_POSITION_MANAGER,
+        ALGEBRA_POSITION_MANAGER_ABI,
+        signer
+      );
+      const params = {
+        token0: HYPER_WHYPE_ADDRESS,
+        token1: HYPER_USDC_ADDRESS,
+        deployer: ZERO_ADDRESS,
+        tickLower: lowerTick,
+        tickUpper: upperTick,
+        amount0Desired,
+        amount1Desired,
+        amount0Min,
+        amount1Min,
+        recipient: owner,
+        deadline: deadlineSeconds()
+      };
+
+      setHyperStatus("Estimando gas para crear la posición HYPE/USDC.");
+      const gas = (await manager.mint.estimateGas(params, {
+        value: BigInt(0)
+      })) as bigint;
+      if (gas > HYPER_MAX_MINT_GAS) {
+        setHyperStatus(
+          `Gas alto para mint: ${formatGasUnits(
+            gas
+          )} unidades. Operación detenida.`
+        );
+        return;
+      }
+
+      setHyperStatus("Abrí MetaMask para crear la posición HYPE/USDC.");
+      const tx = await manager.mint(params, { value: BigInt(0) });
+      setHyperLastTxHash(tx.hash);
+      setHyperStatus(`Mint enviado: ${tx.hash.slice(0, 10)}...`);
+      const receipt = await waitForHyperReceipt(provider, tx.hash);
+      const mintedLog = receipt.logs.find(
+        (log) =>
+          log.address.toLowerCase() ===
+            HYPER_KITTEN_POSITION_MANAGER.toLowerCase() &&
+          log.topics[0] === TRANSFER_TOPIC &&
+          log.topics[1] === ZERO_ADDRESS_TOPIC
+      );
+      const mintedTokenId = mintedLog
+        ? BigInt(mintedLog.topics[3]).toString()
+        : "";
+      setHyperMintedTokenId(mintedTokenId);
+      setHyperStatus(
+        mintedTokenId
+          ? `NFT Hyper listo #${mintedTokenId}. Podés verlo en KittenSwap y decidir si stakearlo.`
+          : "Mint confirmado. Abrí KittenSwap para ver el nuevo NFT."
+      );
+    } catch (error) {
+      console.error(error);
+      setHyperStatus(
+        error instanceof Error
+          ? `No se pudo mintear Hyper: ${describeV4EstimateError(error)}`
+          : "No se pudo mintear Hyper."
+      );
+    } finally {
+      setHyperMinting(false);
     }
   };
 
@@ -9046,6 +9207,19 @@ export default function Home() {
                 >
                   {hyperSwapping ? "Swappeando..." : "Swap USDC -> WHYPE"}
                 </button>
+                <button
+                  className={styles.primary}
+                  onClick={handleHyperMintPosition}
+                  disabled={
+                    isLocked ||
+                    hyperPreparing ||
+                    hyperSwapping ||
+                    hyperMinting ||
+                    !hyperPreview
+                  }
+                >
+                  {hyperMinting ? "Creando..." : "Crear posición HYPE/USDC"}
+                </button>
               </div>
               {hyperLastTxHash ? (
                 <a
@@ -9056,6 +9230,16 @@ export default function Home() {
                 >
                   Ver última tx Hyper
                 </a>
+              ) : null}
+              {hyperMintedTokenId ? (
+                <div
+                  className={`${styles.positionReady} ${styles.readyRobinhood}`}
+                >
+                  <strong>NFT listo</strong>
+                  <span>
+                    <b>hype</b> <em>#{hyperMintedTokenId}</em>
+                  </span>
+                </div>
               ) : null}
               {hyperPreview ? (
                 <div className={styles.positionDetailPanel}>
