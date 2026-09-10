@@ -397,9 +397,11 @@ const HYPER_USDC_ADDRESS = "0xb88339CB7199b77E23DB6E890353E22632Ba630f";
 const HYPER_WHYPE_ADDRESS = "0x5555555555555555555555555555555555555555";
 const HYPER_KITTEN_POSITION_MANAGER =
   "0x9ea4459c8DefBF561495d95414b9CF1E2242a3E2";
+const HYPER_KITTEN_SWAP_ROUTER = "0x4e73E421480a7E0C24fB3c11019254edE194f736";
 const HYPER_KITTEN_POOL_ADDRESS =
   "0x12df9913e9e08453440e3c4b1ae73819160b513e";
 const HYPER_FIRST_POSITION_ID = "409319";
+const HYPER_MAX_SWAP_GAS = BigInt(1_500_000);
 
 const ZUM_ADDRESS = "0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5";
 const ZUM_OWNER = "0xdD6cB8f731B6ABbAEE5839d2e45Fe2319a8572e4";
@@ -901,6 +903,10 @@ const V3_POOL_ABI = [
 const ALGEBRA_POOL_ABI = [
   "function globalState() view returns (uint160 price,int24 tick,uint16 fee,uint16 timepointIndex,uint8 communityFee,bool unlocked)",
   "function liquidity() view returns (uint128)"
+];
+
+const ALGEBRA_SWAP_ROUTER_ABI = [
+  "function exactInputSingle((address tokenIn,address tokenOut,address deployer,address recipient,uint256 deadline,uint256 amountIn,uint256 amountOutMinimum,uint160 limitSqrtPrice)) payable returns (uint256 amountOut)"
 ];
 
 const V3_SWAP_ROUTER_ABI = [
@@ -2193,6 +2199,8 @@ export default function Home() {
     null
   );
   const [hyperPreparing, setHyperPreparing] = useState(false);
+  const [hyperSwapping, setHyperSwapping] = useState(false);
+  const [hyperLastTxHash, setHyperLastTxHash] = useState("");
   const [hyperStatus, setHyperStatus] = useState("");
 
   const network = useMemo(
@@ -3870,6 +3878,113 @@ export default function Home() {
     setStatus("Historial local de Mi balance limpiado para esta red.");
   };
 
+  const getHyperSigner = async () => {
+    const ethereum = await getInjectedEthereum();
+    if (!ethereum) {
+      if (isMobileBrowser()) {
+        openInMetaMaskMobile();
+      }
+      throw new Error("MetaMask no está instalado.");
+    }
+    const hyperNetwork = NETWORKS.find((item) => item.key === "hyperliquid");
+    if (!hyperNetwork) {
+      throw new Error("No está configurada la red HyperEVM.");
+    }
+    const accounts = (await ethereum.request({
+      method: "eth_requestAccounts"
+    })) as string[];
+    let browserProvider = new ethers.BrowserProvider(ethereum);
+    const chainId = Number((await browserProvider.getNetwork()).chainId);
+    if (chainId !== hyperNetwork.chainId) {
+      const target = `0x${hyperNetwork.chainId.toString(16)}`;
+      try {
+        await ethereum.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: target }]
+        });
+      } catch (switchError) {
+        const code = (switchError as { code?: number })?.code;
+        if (code !== 4902) {
+          throw switchError;
+        }
+        await ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [
+            {
+              chainId: target,
+              chainName: hyperNetwork.name,
+              nativeCurrency: {
+                name: hyperNetwork.symbol,
+                symbol: hyperNetwork.symbol,
+                decimals: 18
+              },
+              rpcUrls: [hyperNetwork.rpcUrl],
+              blockExplorerUrls: [EXPLORER_ROOTS.hyperliquid]
+            }
+          ]
+        });
+      }
+      browserProvider = new ethers.BrowserProvider(ethereum);
+      const nextChainId = Number((await browserProvider.getNetwork()).chainId);
+      if (nextChainId !== hyperNetwork.chainId) {
+        throw new Error("MetaMask no quedó en HyperEVM.");
+      }
+    }
+    const signer = await browserProvider.getSigner();
+    setPayerAddress(accounts?.[0] ?? (await signer.getAddress()));
+    return signer;
+  };
+
+  const waitForHyperReceipt = async (
+    provider: ethers.Provider,
+    txHash: string
+  ) => {
+    const receipt = await provider.waitForTransaction(txHash, 1, 120000);
+    if (!receipt) {
+      throw new Error(
+        `La transacción ${txHash.slice(0, 10)}... no confirmó a tiempo.`
+      );
+    }
+    if (receipt.status === 0) {
+      throw new Error(
+        `La transacción ${txHash.slice(0, 10)}... confirmó revertida.`
+      );
+    }
+    return receipt;
+  };
+
+  const ensureHyperAllowance = async (
+    tokenAddress: string,
+    spender: string,
+    amount: bigint,
+    signer: ethers.Signer,
+    label: string
+  ) => {
+    if (amount <= BigInt(0)) {
+      return;
+    }
+    const owner = await signer.getAddress();
+    const provider = signer.provider;
+    if (!provider) {
+      throw new Error("No hay provider conectado.");
+    }
+    const token = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+    const current = (await token.allowance(owner, spender)) as bigint;
+    if (current >= amount) {
+      return;
+    }
+    setHyperStatus(`Aprobando ${label} para KittenSwap.`);
+    const approveGas = (await token.approve.estimateGas(spender, amount)) as bigint;
+    if (approveGas > HYPER_MAX_SWAP_GAS) {
+      throw new Error(
+        `Approve con gas alto: ${formatGasUnits(approveGas)} unidades.`
+      );
+    }
+    const approveTx = await token.approve(spender, amount);
+    setHyperLastTxHash(approveTx.hash);
+    await waitForHyperReceipt(provider, approveTx.hash);
+  };
+
   const handleHyperPrepareFromUsdc = async () => {
     try {
       const usdcAmount = parseHumanAmount(hyperUsdcAmount);
@@ -3933,6 +4048,117 @@ export default function Home() {
       );
     } finally {
       setHyperPreparing(false);
+    }
+  };
+
+  const handleHyperSwapFromUsdc = async () => {
+    try {
+      if (!hyperPreview) {
+        setHyperStatus("Primero prepará la entrada para calcular el split.");
+        return;
+      }
+      const slippagePct = Math.min(Math.max(Number(hyperSlippage) || 1, 0.1), 5);
+      const amountIn = ethers.parseUnits(hyperPreview.usdcToSwap.toFixed(6), 6);
+      const expectedOut = ethers.parseUnits(
+        hyperPreview.whypeEstimate.toFixed(12),
+        18
+      );
+      const amountOutMinimum =
+        (expectedOut * BigInt(10000 - Math.round(slippagePct * 100))) /
+        BigInt(10000);
+      if (amountIn <= BigInt(0) || amountOutMinimum <= BigInt(0)) {
+        setHyperStatus("El monto es demasiado chico para hacer swap.");
+        return;
+      }
+
+      setHyperSwapping(true);
+      setHyperLastTxHash("");
+      setHyperStatus("Preparando MetaMask en HyperEVM.");
+      const signer = await getHyperSigner();
+      const owner = await signer.getAddress();
+      const provider = signer.provider;
+      if (!provider) {
+        throw new Error("No hay provider conectado.");
+      }
+      await assertNoPendingTx(provider, owner);
+      const nativeBalance = await provider.getBalance(owner);
+      if (nativeBalance <= BigInt(0)) {
+        setHyperStatus("Falta HYPE nativo para pagar gas en HyperEVM.");
+        return;
+      }
+
+      const usdc = new ethers.Contract(HYPER_USDC_ADDRESS, ERC20_ABI, signer);
+      const whype = new ethers.Contract(HYPER_WHYPE_ADDRESS, ERC20_ABI, provider);
+      const usdcBalance = (await usdc.balanceOf(owner)) as bigint;
+      if (usdcBalance < amountIn) {
+        setHyperStatus(
+          `Saldo USDC insuficiente. Necesitás ${ethers.formatUnits(
+            amountIn,
+            6
+          )} USDC para el swap.`
+        );
+        return;
+      }
+
+      await ensureHyperAllowance(
+        HYPER_USDC_ADDRESS,
+        HYPER_KITTEN_SWAP_ROUTER,
+        amountIn,
+        signer,
+        "USDC"
+      );
+
+      const router = new ethers.Contract(
+        HYPER_KITTEN_SWAP_ROUTER,
+        ALGEBRA_SWAP_ROUTER_ABI,
+        signer
+      );
+      const params = {
+        tokenIn: HYPER_USDC_ADDRESS,
+        tokenOut: HYPER_WHYPE_ADDRESS,
+        deployer: ZERO_ADDRESS,
+        recipient: owner,
+        deadline: deadlineSeconds(),
+        amountIn,
+        amountOutMinimum,
+        limitSqrtPrice: 0
+      };
+      const whypeBefore = (await whype.balanceOf(owner)) as bigint;
+      setHyperStatus("Estimando gas del swap USDC -> WHYPE.");
+      const gas = (await router.exactInputSingle.estimateGas(params, {
+        value: BigInt(0)
+      })) as bigint;
+      if (gas > HYPER_MAX_SWAP_GAS) {
+        setHyperStatus(
+          `Gas alto para swap: ${formatGasUnits(
+            gas
+          )} unidades. Operación detenida.`
+        );
+        return;
+      }
+
+      setHyperStatus("Abrí MetaMask para firmar el swap USDC -> WHYPE.");
+      const tx = await router.exactInputSingle(params, { value: BigInt(0) });
+      setHyperLastTxHash(tx.hash);
+      setHyperStatus(`Swap enviado: ${tx.hash.slice(0, 10)}...`);
+      await waitForHyperReceipt(provider, tx.hash);
+      const whypeAfter = (await whype.balanceOf(owner)) as bigint;
+      const received = whypeAfter - whypeBefore;
+      setHyperStatus(
+        `Swap listo: recibiste ${formatWalletBalance(
+          ethers.formatUnits(received, 18),
+          "WHYPE"
+        )} WHYPE. Próximo paso: crear posición HYPE/USDC.`
+      );
+    } catch (error) {
+      console.error(error);
+      setHyperStatus(
+        error instanceof Error
+          ? `No se pudo hacer swap Hyper: ${describeV4EstimateError(error)}`
+          : "No se pudo hacer swap Hyper."
+      );
+    } finally {
+      setHyperSwapping(false);
     }
   };
 
@@ -8813,7 +9039,24 @@ export default function Home() {
                 >
                   {hyperPreparing ? "Preparando..." : "Preparar entrada USDC"}
                 </button>
+                <button
+                  className={styles.softButton}
+                  onClick={handleHyperSwapFromUsdc}
+                  disabled={isLocked || hyperPreparing || hyperSwapping || !hyperPreview}
+                >
+                  {hyperSwapping ? "Swappeando..." : "Swap USDC -> WHYPE"}
+                </button>
               </div>
+              {hyperLastTxHash ? (
+                <a
+                  className={styles.outline}
+                  href={`${EXPLORERS.hyperliquid}${hyperLastTxHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Ver última tx Hyper
+                </a>
+              ) : null}
               {hyperPreview ? (
                 <div className={styles.positionDetailPanel}>
                   <div className={styles.positionDetailMain}>
