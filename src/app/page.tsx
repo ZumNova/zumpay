@@ -60,6 +60,7 @@ type AppView =
   | "accounts"
   | "reserve"
   | "positions"
+  | "hyper"
   | "v3"
   | "v4"
   | "activity"
@@ -234,6 +235,7 @@ const APP_VIEWS: { id: AppView; label: string; hint: string }[] = [
   { id: "accounts", label: "Cuentas", hint: "Wallet BTC/EVM" },
   { id: "reserve", label: "Director", hint: "Rutas de reserva" },
   { id: "positions", label: "Posiciones", hint: "V3 + V4" },
+  { id: "hyper", label: "Hyper", hint: "HYPE/USDC" },
   { id: "v3", label: "Pools V3", hint: "Uniswap V3" },
   { id: "v4", label: "Robin V4", hint: "Robinhood V4" },
   { id: "activity", label: "Mi balance", hint: "Resumen y movimientos" },
@@ -379,6 +381,14 @@ const EXPLORER_ROOTS: Record<string, string> = {
   robinhood: "https://robinhoodchain.blockscout.com",
   hyperliquid: "https://hyperevmscan.io"
 };
+
+const HYPER_USDC_ADDRESS = "0xb88339CB7199b77E23DB6E890353E22632Ba630f";
+const HYPER_WHYPE_ADDRESS = "0x5555555555555555555555555555555555555555";
+const HYPER_KITTEN_POSITION_MANAGER =
+  "0x9ea4459c8DefBF561495d95414b9CF1E2242a3E2";
+const HYPER_KITTEN_POOL_ADDRESS =
+  "0x12df9913e9e08453440e3c4b1ae73819160b513e";
+const HYPER_FIRST_POSITION_ID = "409319";
 
 const ZUM_ADDRESS = "0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5";
 const ZUM_OWNER = "0xdD6cB8f731B6ABbAEE5839d2e45Fe2319a8572e4";
@@ -975,6 +985,18 @@ const DEFAULT_TOKENS: Record<string, TokenMeta[]> = {
     {
       address: "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
       symbol: "SPCX",
+      decimals: 18
+    }
+  ],
+  hyperliquid: [
+    {
+      address: HYPER_USDC_ADDRESS,
+      symbol: "USDC",
+      decimals: 6
+    },
+    {
+      address: HYPER_WHYPE_ADDRESS,
+      symbol: "WHYPE",
       decimals: 18
     }
   ]
@@ -2253,6 +2275,21 @@ export default function Home() {
         (asset) => asset.symbol.toUpperCase() === "WETH"
       ),
     [positiveEvmAssets]
+  );
+  const hyperNativeAsset = useMemo(
+    () =>
+      evmAssets.find(
+        (asset) => asset.type === "native" && asset.symbol.toUpperCase() === "HYPE"
+      ),
+    [evmAssets]
+  );
+  const hyperUsdcAsset = useMemo(
+    () => evmAssets.find((asset) => asset.symbol.toUpperCase() === "USDC"),
+    [evmAssets]
+  );
+  const hyperWhypeAsset = useMemo(
+    () => evmAssets.find((asset) => asset.symbol.toUpperCase() === "WHYPE"),
+    [evmAssets]
   );
   const portfolioPositions = useMemo<PortfolioPosition[]>(() => {
     const v3Items: PortfolioPosition[] = v3Positions.map((position) => {
@@ -8549,6 +8586,208 @@ export default function Home() {
             </div>
           </div>
           ) : null}
+        </section>
+        ) : null}
+
+        {activeView === "hyper" ? (
+        <section
+          className={`${styles.sectionBlock} ${
+            isLocked ? styles.sectionLocked : ""
+          }`}
+        >
+          <div className={styles.positionsHeader}>
+            <div>
+              <p className={styles.kicker}>HyperEVM</p>
+              <h2>Estrategia HYPE/USDC</h2>
+              <p className={styles.subtitle}>
+                Módulo read-only para ordenar la entrada a KittenSwap: saldos,
+                pool, NFT creado y staking de recompensas.
+              </p>
+            </div>
+            <div className={styles.positionsActions}>
+              <button
+                className={styles.outline}
+                onClick={() => setNetworkKey("hyperliquid")}
+                disabled={isLocked}
+              >
+                Usar HyperEVM
+              </button>
+              <a
+                className={styles.outline}
+                href="https://app.kittenswap.finance/"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Abrir KittenSwap
+              </a>
+            </div>
+          </div>
+          {isLocked ? (
+            <div className={styles.lockOverlay}>
+              <p>Wallet bloqueada. Pagá {premiumAmount} ZUM para desbloquear.</p>
+            </div>
+          ) : null}
+
+          <div className={styles.positionsSummary}>
+            <div>
+              <span>Red</span>
+              <strong>HyperEVM</strong>
+            </div>
+            <div>
+              <span>Gas</span>
+              <strong>
+                {hyperNativeAsset
+                  ? `${formatWalletBalance(
+                      hyperNativeAsset.balance,
+                      "HYPE"
+                    )} HYPE`
+                  : "0 HYPE"}
+              </strong>
+            </div>
+            <div>
+              <span>USDC</span>
+              <strong>
+                {hyperUsdcAsset
+                  ? formatWalletBalance(hyperUsdcAsset.balance, "USDC")
+                  : "0"}
+              </strong>
+            </div>
+            <div>
+              <span>WHYPE</span>
+              <strong>
+                {hyperWhypeAsset
+                  ? formatWalletBalance(hyperWhypeAsset.balance, "WHYPE")
+                  : "0"}
+              </strong>
+            </div>
+          </div>
+
+          <div className={styles.sectionGrid}>
+            <div className={styles.walletCard}>
+              <h3>Ruta operativa</h3>
+              <div className={styles.strategyGrid}>
+                <div className={styles.strategyCard}>
+                  <div>
+                    <span>Entrada</span>
+                    <strong>USDC + HYPE gas</strong>
+                    <small>
+                      Para operar necesitás USDC en HyperEVM y HYPE nativo para
+                      gas. Si la pool pide token ERC-20, HYPE se usa como WHYPE.
+                    </small>
+                  </div>
+                </div>
+                <div className={styles.strategyCard}>
+                  <div>
+                    <span>Pool candidata</span>
+                    <strong>WHYPE/USDC · KittenSwap</strong>
+                    <small>
+                      No es estable. Sirve si aceptarías quedar expuesto a HYPE
+                      o a USDC según el rango.
+                    </small>
+                  </div>
+                </div>
+                <div className={styles.strategyCard}>
+                  <div>
+                    <span>Estado NFT</span>
+                    <strong>#{HYPER_FIRST_POSITION_ID} · no stakeado</strong>
+                    <small>
+                      La posición existe. El siguiente paso opcional es stakear
+                      el NFT en el gauge para buscar recompensas extra.
+                    </small>
+                  </div>
+                </div>
+              </div>
+              <div className={styles.reserveRouteActions}>
+                <a
+                  className={styles.outline}
+                  href="https://app.debridge.finance/"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Puente a HyperEVM
+                </a>
+                <a
+                  className={styles.outline}
+                  href="https://www.gas.zip/"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Comprar gas HYPE
+                </a>
+                <a
+                  className={styles.outline}
+                  href="https://app.kittenswap.finance/"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Abrir KittenSwap
+                </a>
+              </div>
+            </div>
+
+            <div className={styles.walletCard}>
+              <h3>Registro técnico</h3>
+              <div className={styles.assetList}>
+                <div className={styles.assetRow}>
+                  <span>NFT</span>
+                  <span>#{HYPER_FIRST_POSITION_ID}</span>
+                </div>
+                <div className={styles.assetRow}>
+                  <span>Pool</span>
+                  <span title={HYPER_KITTEN_POOL_ADDRESS}>
+                    {shortAddress(HYPER_KITTEN_POOL_ADDRESS)}
+                  </span>
+                </div>
+                <div className={styles.assetRow}>
+                  <span>Manager</span>
+                  <span title={HYPER_KITTEN_POSITION_MANAGER}>
+                    {shortAddress(HYPER_KITTEN_POSITION_MANAGER)}
+                  </span>
+                </div>
+                <div className={styles.assetRow}>
+                  <span>USDC</span>
+                  <span title={HYPER_USDC_ADDRESS}>
+                    {shortAddress(HYPER_USDC_ADDRESS)}
+                  </span>
+                </div>
+                <div className={styles.assetRow}>
+                  <span>WHYPE</span>
+                  <span title={HYPER_WHYPE_ADDRESS}>
+                    {shortAddress(HYPER_WHYPE_ADDRESS)}
+                  </span>
+                </div>
+              </div>
+              <div className={styles.reserveRouteActions}>
+                <a
+                  className={styles.outline}
+                  href={`https://hyperevmscan.io/token/${HYPER_KITTEN_POSITION_MANAGER}?a=${HYPER_FIRST_POSITION_ID}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Ver NFT en scan
+                </a>
+                <a
+                  className={styles.outline}
+                  href={`https://hyperevmscan.io/address/${HYPER_KITTEN_POOL_ADDRESS}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Ver pool
+                </a>
+                <button
+                  className={styles.softButton}
+                  onClick={() =>
+                    copyToClipboard(
+                      HYPER_FIRST_POSITION_ID,
+                      "ID de NFT Hyper copiado."
+                    )
+                  }
+                >
+                  Copiar NFT
+                </button>
+              </div>
+            </div>
+          </div>
         </section>
         ) : null}
 
