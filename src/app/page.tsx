@@ -400,7 +400,7 @@ const HYPER_KITTEN_POSITION_MANAGER =
 const HYPER_KITTEN_SWAP_ROUTER = "0x4e73E421480a7E0C24fB3c11019254edE194f736";
 const HYPER_KITTEN_POOL_ADDRESS =
   "0x12df9913e9e08453440e3c4b1ae73819160b513e";
-const HYPER_FIRST_POSITION_ID = "409319";
+const HYPER_POSITION_IDS = ["409509", "409319"];
 const HYPER_MAX_SWAP_GAS = BigInt(1_500_000);
 const HYPER_MAX_MINT_GAS = BigInt(3_000_000);
 const HYPER_TICK_SPACING = 10;
@@ -9167,7 +9167,7 @@ export default function Home() {
                 <div className={styles.strategyCard}>
                   <div>
                     <span>Estado NFT</span>
-                    <strong>#{HYPER_FIRST_POSITION_ID} · no stakeado</strong>
+                    <strong>#{HYPER_POSITION_IDS[0]} · no stakeado</strong>
                     <small>
                       La posición existe. El siguiente paso opcional es stakear
                       el NFT en el gauge para buscar recompensas extra.
@@ -9325,8 +9325,12 @@ export default function Home() {
               <h3>Registro técnico</h3>
               <div className={styles.assetList}>
                 <div className={styles.assetRow}>
-                  <span>NFT</span>
-                  <span>#{HYPER_FIRST_POSITION_ID}</span>
+                  <span>NFT principal</span>
+                  <span>#{HYPER_POSITION_IDS[0]}</span>
+                </div>
+                <div className={styles.assetRow}>
+                  <span>NFTs vistos</span>
+                  <span>{HYPER_POSITION_IDS.map((id) => `#${id}`).join(" · ")}</span>
                 </div>
                 <div className={styles.assetRow}>
                   <span>Pool</span>
@@ -9356,7 +9360,7 @@ export default function Home() {
               <div className={styles.reserveRouteActions}>
                 <a
                   className={styles.outline}
-                  href={`https://hyperevmscan.io/token/${HYPER_KITTEN_POSITION_MANAGER}?a=${HYPER_FIRST_POSITION_ID}`}
+                  href={`https://hyperevmscan.io/token/${HYPER_KITTEN_POSITION_MANAGER}?a=${HYPER_POSITION_IDS[0]}`}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -9373,8 +9377,8 @@ export default function Home() {
                 <button
                   className={styles.softButton}
                   onClick={() =>
-                    copyToClipboard(
-                      HYPER_FIRST_POSITION_ID,
+                      copyToClipboard(
+                      HYPER_POSITION_IDS[0],
                       "ID de NFT Hyper copiado."
                     )
                   }
