@@ -262,6 +262,17 @@ type V4LiquidityChange = {
   currency: string;
 };
 
+type HyperEntryPreview = {
+  usdcAmount: number;
+  usdcToSwap: number;
+  usdcToKeep: number;
+  whypeEstimate: number;
+  price: number;
+  tick: number;
+  liquidity: string;
+  checkedAt: string;
+};
+
 type V4ValueEstimate = {
   currentValue: number;
   addValue: number;
@@ -884,6 +895,11 @@ const V3_FACTORY_ABI = [
 
 const V3_POOL_ABI = [
   "function slot0() view returns (uint160 sqrtPriceX96,int24 tick,uint16 observationIndex,uint16 observationCardinality,uint16 observationCardinalityNext,uint8 feeProtocol,bool unlocked)",
+  "function liquidity() view returns (uint128)"
+];
+
+const ALGEBRA_POOL_ABI = [
+  "function globalState() view returns (uint160 price,int24 tick,uint16 fee,uint16 timepointIndex,uint8 communityFee,bool unlocked)",
   "function liquidity() view returns (uint128)"
 ];
 
@@ -2171,6 +2187,13 @@ export default function Home() {
   const [v4LastTxHash, setV4LastTxHash] = useState("");
   const [v4LiquidityChange, setV4LiquidityChange] =
     useState<V4LiquidityChange | null>(null);
+  const [hyperUsdcAmount, setHyperUsdcAmount] = useState("");
+  const [hyperSlippage, setHyperSlippage] = useState("1");
+  const [hyperPreview, setHyperPreview] = useState<HyperEntryPreview | null>(
+    null
+  );
+  const [hyperPreparing, setHyperPreparing] = useState(false);
+  const [hyperStatus, setHyperStatus] = useState("");
 
   const network = useMemo(
     () => NETWORKS.find((item) => item.key === networkKey) ?? NETWORKS[0],
@@ -3845,6 +3868,72 @@ export default function Home() {
     localStorage.setItem(TX_KEY, JSON.stringify(all));
     setTxs([]);
     setStatus("Historial local de Mi balance limpiado para esta red.");
+  };
+
+  const handleHyperPrepareFromUsdc = async () => {
+    try {
+      const usdcAmount = parseHumanAmount(hyperUsdcAmount);
+      if (!Number.isFinite(usdcAmount) || usdcAmount <= 0) {
+        setHyperStatus("Ingresá un monto USDC mayor a cero.");
+        return;
+      }
+
+      setHyperPreparing(true);
+      setHyperStatus("Leyendo pool WHYPE/USDC en HyperEVM.");
+      const hyperNetwork = NETWORKS.find((item) => item.key === "hyperliquid");
+      if (!hyperNetwork) {
+        throw new Error("No está configurada la red HyperEVM.");
+      }
+      const hyperProvider = new ethers.JsonRpcProvider(
+        hyperNetwork.rpcUrl,
+        hyperNetwork.chainId
+      );
+      const pool = new ethers.Contract(
+        HYPER_KITTEN_POOL_ADDRESS,
+        ALGEBRA_POOL_ABI,
+        hyperProvider
+      );
+      const [globalState, liquidity] = await Promise.all([
+        pool.globalState(),
+        pool.liquidity()
+      ]);
+      const price = priceFromSqrtPriceX96(globalState[0], 18, 6);
+      if (!Number.isFinite(price) || price <= 0) {
+        throw new Error("La pool no devolvió un precio confiable.");
+      }
+
+      const usdcToSwap = usdcAmount / 2;
+      const usdcToKeep = usdcAmount - usdcToSwap;
+      const whypeEstimate = usdcToSwap / price;
+      setHyperPreview({
+        usdcAmount,
+        usdcToSwap,
+        usdcToKeep,
+        whypeEstimate,
+        price,
+        tick: Number(globalState[1]),
+        liquidity: liquidity.toString(),
+        checkedAt: new Date().toLocaleTimeString()
+      });
+      setHyperStatus(
+        `Preview listo: cambiar aprox ${formatTokenInputAmount(
+          usdcToSwap,
+          "USDC"
+        )} USDC a ${formatTokenInputAmount(
+          whypeEstimate,
+          "WHYPE"
+        )} WHYPE y mantener ${formatTokenInputAmount(usdcToKeep, "USDC")} USDC.`
+      );
+    } catch (error) {
+      setHyperPreview(null);
+      setHyperStatus(
+        error instanceof Error
+          ? `No se pudo preparar Hyper: ${error.message}`
+          : "No se pudo preparar Hyper."
+      );
+    } finally {
+      setHyperPreparing(false);
+    }
   };
 
   useEffect(() => {
@@ -8697,6 +8786,84 @@ export default function Home() {
                   </div>
                 </div>
               </div>
+              <div className={styles.field}>
+                <label>Monto USDC</label>
+                <input
+                  value={hyperUsdcAmount}
+                  onChange={(event) => setHyperUsdcAmount(event.target.value)}
+                  placeholder="Monto total en USDC"
+                />
+                {hyperStatus ? (
+                  <small className={styles.status}>{hyperStatus}</small>
+                ) : null}
+              </div>
+              <div className={styles.field}>
+                <label>Slippage</label>
+                <input
+                  value={hyperSlippage}
+                  onChange={(event) => setHyperSlippage(event.target.value)}
+                  placeholder="1"
+                />
+              </div>
+              <div className={styles.reserveRouteActions}>
+                <button
+                  className={styles.primary}
+                  onClick={handleHyperPrepareFromUsdc}
+                  disabled={isLocked || hyperPreparing}
+                >
+                  {hyperPreparing ? "Preparando..." : "Preparar entrada USDC"}
+                </button>
+              </div>
+              {hyperPreview ? (
+                <div className={styles.positionDetailPanel}>
+                  <div className={styles.positionDetailMain}>
+                    <span>Preview Hyper</span>
+                    <strong>
+                      {formatTokenInputAmount(
+                        hyperPreview.usdcToSwap,
+                        "USDC"
+                      )}{" "}
+                      USDC →{" "}
+                      {formatTokenInputAmount(
+                        hyperPreview.whypeEstimate,
+                        "WHYPE"
+                      )}{" "}
+                      WHYPE
+                    </strong>
+                    <p>
+                      Mantener{" "}
+                      {formatTokenInputAmount(
+                        hyperPreview.usdcToKeep,
+                        "USDC"
+                      )}{" "}
+                      USDC para el segundo lado de la LP.
+                    </p>
+                  </div>
+                  <div className={styles.positionDetailGrid}>
+                    <div>
+                      <span>Precio</span>
+                      <strong>
+                        {hyperPreview.price.toLocaleString("en-US", {
+                          maximumFractionDigits: 4
+                        })}{" "}
+                        USDC/HYPE
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Tick</span>
+                      <strong>{hyperPreview.tick}</strong>
+                    </div>
+                    <div>
+                      <span>Liquidez pool</span>
+                      <strong>{hyperPreview.liquidity}</strong>
+                    </div>
+                    <div>
+                      <span>Lectura</span>
+                      <strong>{hyperPreview.checkedAt}</strong>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               <div className={styles.reserveRouteActions}>
                 <a
                   className={styles.outline}
