@@ -4238,10 +4238,10 @@ export default function Home() {
         hyperPreview.tick + Math.log(1 + widthPct) / Math.log(1.0001),
         "up"
       );
-      const slippagePct = Math.min(Math.max(Number(hyperSlippage) || 1, 0.1), 5);
-      const slippageBps = BigInt(10000 - Math.round(slippagePct * 100));
-      const amount0Min = (amount0Desired * slippageBps) / BigInt(10000);
-      const amount1Min = (amount1Desired * slippageBps) / BigInt(10000);
+      // In concentrated liquidity, the manager can use less of one side and
+      // leave leftovers. Strict mins on both tokens make valid mints revert.
+      const amount0Min = BigInt(0);
+      const amount1Min = BigInt(0);
 
       await ensureHyperAllowance(
         HYPER_WHYPE_ADDRESS,
@@ -4277,7 +4277,9 @@ export default function Home() {
         deadline: deadlineSeconds()
       };
 
-      setHyperStatus("Estimando gas para crear la posición HYPE/USDC.");
+      setHyperStatus(
+        "Estimando gas para crear la posición HYPE/USDC. El mint puede dejar sobrante de WHYPE o USDC."
+      );
       const gas = (await manager.mint.estimateGas(params, {
         value: BigInt(0)
       })) as bigint;
