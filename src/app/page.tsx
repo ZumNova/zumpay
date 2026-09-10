@@ -8440,9 +8440,11 @@ export default function Home() {
                 </div>
                 <strong>Hyperliquid / HYPE</strong>
                 <p>
-                  Ruta avanzada para mirar HYPE, HyperEVM y oportunidades del
-                  ecosistema Hyperliquid. Separá HyperEVM de HyperCore: una es
-                  red EVM con MetaMask, la otra es trading/perps.
+                  Ruta avanzada para entrar a HYPE/USDC en HyperEVM. Primero
+                  llevá USDC o HYPE a Hyperliquid, pasalo de HyperCore a
+                  HyperEVM y despues usalo en KittenSwap. Separá HyperEVM de
+                  HyperCore: una es red EVM con MetaMask, la otra es
+                  trading/perps.
                 </p>
                 <div className={styles.reserveRouteActions}>
                   <button
@@ -8458,6 +8460,30 @@ export default function Home() {
                     rel="noreferrer"
                   >
                     Abrir Hyperliquid
+                  </a>
+                  <a
+                    className={styles.outline}
+                    href="https://app.debridge.finance/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Puente a HyperEVM
+                  </a>
+                  <a
+                    className={styles.outline}
+                    href="https://www.gas.zip/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Comprar gas HYPE
+                  </a>
+                  <a
+                    className={styles.outline}
+                    href="https://app.kittenswap.finance/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Abrir KittenSwap
                   </a>
                   <a
                     className={styles.outline}
