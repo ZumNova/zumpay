@@ -2340,6 +2340,9 @@
   grid-template-columns: minmax(170px, 0.8fr) minmax(360px, 1.4fr) auto;
   gap: 16px;
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   padding: 16px;
   border-radius: 14px;
   background:
@@ -2382,6 +2385,7 @@
 .positionDetailGrid div {
   display: grid;
   gap: 4px;
+  min-width: 0;
   min-height: 72px;
   padding: 11px;
   border-radius: 10px;
@@ -2394,6 +2398,26 @@
   font-size: 13px;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+
+.walletCard .positionDetailPanel {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.walletCard .positionDetailGrid {
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+}
+
+.positionHint {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 184, 107, 0.08);
+  border: 1px solid rgba(255, 184, 107, 0.16);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .positionDetailActions {

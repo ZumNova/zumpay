@@ -1213,6 +1213,18 @@ function formatGasUnits(value: bigint) {
   });
 }
 
+function formatCompactUnits(value: string | bigint) {
+  const raw = typeof value === "bigint" ? value.toString() : value;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed === 0) {
+    return "0";
+  }
+  return Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 2
+  }).format(parsed);
+}
+
 function parseHumanAmount(value: string) {
   return Number(value.replace(",", "."));
 }
@@ -9392,7 +9404,9 @@ export default function Home() {
                     </div>
                     <div>
                       <span>Liquidez pool</span>
-                      <strong>{hyperPreview.liquidity}</strong>
+                      <strong title={hyperPreview.liquidity}>
+                        {formatCompactUnits(hyperPreview.liquidity)}
+                      </strong>
                     </div>
                     <div>
                       <span>Lectura</span>
@@ -9514,13 +9528,28 @@ export default function Home() {
                     </div>
                     <div>
                       <span>Liquidez</span>
-                      <strong>{hyperPosition.liquidity}</strong>
+                      <strong title={hyperPosition.liquidity}>
+                        {formatCompactUnits(hyperPosition.liquidity)}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Afirmar / Claim</span>
+                      <strong>
+                        {hyperPosition.liquidity === "0"
+                          ? "Sin LP activa"
+                          : "Requiere staking para recompensas"}
+                      </strong>
                     </div>
                     <div>
                       <span>Lectura</span>
                       <strong>{hyperPosition.checkedAt}</strong>
                     </div>
                   </div>
+                  <p className={styles.positionHint}>
+                    En Kitten, el NFT LP puede ganar fees base por aportar
+                    liquidez. Para emisiones/recompensas del gauge hay que
+                    stakear el NFT y luego usar Claim/Afirmar desde Kitten.
+                  </p>
                 </div>
               ) : null}
               <h3>Datos técnicos</h3>
