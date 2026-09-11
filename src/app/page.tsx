@@ -939,7 +939,9 @@ const ALGEBRA_SWAP_ROUTER_ABI = [
 ];
 
 const ALGEBRA_POSITION_MANAGER_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
   "function ownerOf(uint256 tokenId) view returns (address)",
+  "function tokenOfOwnerByIndex(address owner,uint256 index) view returns (uint256)",
   "function positions(uint256 tokenId) view returns (uint96 nonce,address operator,address token0,address token1,address deployer,int24 tickLower,int24 tickUpper,uint128 liquidity,uint256 feeGrowthInside0LastX128,uint256 feeGrowthInside1LastX128,uint128 tokensOwed0,uint128 tokensOwed1)",
   "function collect((uint256 tokenId,address recipient,uint128 amount0Max,uint128 amount1Max)) payable returns (uint256 amount0,uint256 amount1)",
   "function decreaseLiquidity((uint256 tokenId,uint128 liquidity,uint256 amount0Min,uint256 amount1Min,uint256 deadline)) payable returns (uint256 amount0,uint256 amount1)",
@@ -2327,6 +2329,7 @@ export default function Home() {
   const [hyperMintedTokenId, setHyperMintedTokenId] = useState("");
   const [hyperReadTokenId, setHyperReadTokenId] = useState("");
   const [hyperReadingPosition, setHyperReadingPosition] = useState(false);
+  const [hyperDiscovering, setHyperDiscovering] = useState(false);
   const [hyperWithdrawPercent, setHyperWithdrawPercent] = useState("100");
   const [hyperWithdrawing, setHyperWithdrawing] = useState(false);
   const [hyperPosition, setHyperPosition] = useState<HyperPositionView | null>(
@@ -4915,6 +4918,57 @@ export default function Home() {
       );
     } finally {
       setHyperReadingPosition(false);
+    }
+  };
+
+  const handleHyperDiscoverPositions = async () => {
+    try {
+      setHyperDiscovering(true);
+      setHyperStatus("Buscando NFTs Hyper en MetaMask.");
+      const signer = await getHyperSigner();
+      const owner = await signer.getAddress();
+      const provider = signer.provider;
+      if (!provider) {
+        throw new Error("No hay provider conectado.");
+      }
+      const manager = new ethers.Contract(
+        HYPER_KITTEN_POSITION_MANAGER,
+        ALGEBRA_POSITION_MANAGER_ABI,
+        provider
+      );
+      const balance = (await manager.balanceOf(owner)) as bigint;
+      if (balance === BigInt(0)) {
+        loadStoredHyperPositions(owner);
+        setHyperStatus(
+          "No encontré NFTs Hyper directos en esta MetaMask. Si están stakeados, leelos por tokenId o deshacé staking en Kitten."
+        );
+        return;
+      }
+      const discovered: HyperPositionView[] = [];
+      for (let index = BigInt(0); index < balance; index += BigInt(1)) {
+        const tokenId = ((await manager.tokenOfOwnerByIndex(
+          owner,
+          index
+        )) as bigint).toString();
+        const position = await readHyperPositionFromChain(tokenId);
+        if (position.liquidity !== "0") {
+          discovered.push(position);
+        }
+        saveHyperPosition(position);
+      }
+      setHyperPositions(discovered);
+      setHyperStatus(
+        `Encontrados ${discovered.length} NFT(s) Hyper activos de ${balance.toString()} NFT(s) en MetaMask.`
+      );
+    } catch (error) {
+      console.error(error);
+      setHyperStatus(
+        error instanceof Error
+          ? `No se pudieron buscar NFTs Hyper: ${describeV4EstimateError(error)}`
+          : "No se pudieron buscar NFTs Hyper."
+      );
+    } finally {
+      setHyperDiscovering(false);
     }
   };
 
@@ -9829,10 +9883,10 @@ export default function Home() {
               </button>
               <button
                 className={styles.outline}
-                onClick={() => setNetworkKey("hyperliquid")}
-                disabled={isLocked}
+                onClick={handleHyperDiscoverPositions}
+                disabled={isLocked || hyperDiscovering}
               >
-                Usar red interna
+                {hyperDiscovering ? "Buscando..." : "Ver NFTs Hyper"}
               </button>
               <a
                 className={styles.outline}
@@ -10143,7 +10197,7 @@ export default function Home() {
             </div>
 
             <div className={styles.walletCard}>
-              <h3>Leer NFT Hyper</h3>
+              <h3>Mis NFTs Hyper</h3>
               <div className={styles.hyperActivePanel}>
                 <div>
                   <span>NFTs Hyper activos</span>
@@ -10156,6 +10210,26 @@ export default function Home() {
                     Se guardan localmente al leer o crear una posición con
                     liquidez. Actualizar vuelve a consultar HyperEVM.
                   </p>
+                </div>
+                <div className={styles.reserveRouteActions}>
+                  <button
+                    className={styles.primary}
+                    onClick={handleHyperDiscoverPositions}
+                    disabled={isLocked || hyperDiscovering}
+                  >
+                    {hyperDiscovering ? "Buscando..." : "Ver NFTs Hyper"}
+                  </button>
+                  <button
+                    className={styles.outline}
+                    onClick={handleHyperRefreshPositions}
+                    disabled={
+                      isLocked ||
+                      hyperReadingPosition ||
+                      hyperPositions.length === 0
+                    }
+                  >
+                    Actualizar activos
+                  </button>
                 </div>
                 {hyperPositions.length > 0 ? (
                   <div className={styles.hyperActiveList}>
@@ -10438,6 +10512,13 @@ export default function Home() {
               </button>
               <button
                 className={styles.outline}
+                onClick={handleHyperDiscoverPositions}
+                disabled={isLocked || hyperDiscovering}
+              >
+                {hyperDiscovering ? "Buscando Hyper..." : "Buscar Hyper"}
+              </button>
+              <button
+                className={styles.outline}
                 onClick={() => {
                   handleV3RefreshPositions();
                   handleV4RefreshPositions();
@@ -10447,6 +10528,7 @@ export default function Home() {
                   isLocked ||
                   v4ReadingPosition ||
                   hyperReadingPosition ||
+                  hyperDiscovering ||
                   (v3Positions.length === 0 &&
                     v4Positions.length === 0 &&
                     hyperPositions.length === 0)
