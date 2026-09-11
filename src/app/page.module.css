@@ -157,6 +157,22 @@
   color: var(--ink);
 }
 
+.ghostButton {
+  border: 0;
+  padding: 8px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ghostButton:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.06);
+}
+
 .disabled {
   opacity: 0.55;
   pointer-events: none;
@@ -2427,6 +2443,64 @@
   line-height: 1.45;
 }
 
+.hyperActivePanel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin-bottom: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hyperActivePanel span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.hyperActivePanel strong {
+  color: rgba(238, 255, 249, 0.92);
+}
+
+.hyperActivePanel p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.hyperActiveList {
+  display: grid;
+  gap: 8px;
+}
+
+.hyperActiveItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 9px;
+  border-radius: 12px;
+  background: rgba(7, 12, 24, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.hyperActiveItem > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.hyperActiveItem > div strong,
+.hyperActiveItem > div span {
+  overflow-wrap: anywhere;
+}
+
 .hyperDualEntry {
   display: grid;
   gap: 12px;
@@ -2774,6 +2848,11 @@
   }
 
   .hyperWithdrawPanel {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .hyperActiveItem {
     grid-template-columns: 1fr;
     align-items: stretch;
   }

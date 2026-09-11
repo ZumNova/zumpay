@@ -353,6 +353,7 @@ const V3_POSITION_KEY = "zumpay_v3_positions_v1";
 const V3_USED_POSITION_KEY = "zumpay_v3_used_positions_v1";
 const V4_POSITION_KEY = "zumpay_v4_positions_v1";
 const V4_USED_POSITION_KEY = "zumpay_v4_used_positions_v1";
+const HYPER_POSITION_KEY = "zumpay_hyper_positions_v1";
 
 const NETWORKS: Network[] = [
   {
@@ -2331,6 +2332,7 @@ export default function Home() {
   const [hyperPosition, setHyperPosition] = useState<HyperPositionView | null>(
     null
   );
+  const [hyperPositions, setHyperPositions] = useState<HyperPositionView[]>([]);
   const [hyperStatus, setHyperStatus] = useState("");
 
   const network = useMemo(
@@ -4083,6 +4085,123 @@ export default function Home() {
     return receipt;
   };
 
+  const loadStoredHyperPositions = (ownerAddress?: string) => {
+    try {
+      const raw = localStorage.getItem(HYPER_POSITION_KEY);
+      const parsed = raw
+        ? (JSON.parse(raw) as Record<string, HyperPositionView[]>)
+        : {};
+      const ownerKey = ownerAddress?.toLowerCase();
+      const items = ownerKey ? parsed[ownerKey] ?? [] : [];
+      setHyperPositions(items.filter((item) => item.liquidity !== "0"));
+    } catch {
+      setHyperPositions([]);
+    }
+  };
+
+  const saveHyperPosition = (position: HyperPositionView) => {
+    const ownerKey = position.owner.toLowerCase();
+    const raw = localStorage.getItem(HYPER_POSITION_KEY);
+    const parsed = raw
+      ? (JSON.parse(raw) as Record<string, HyperPositionView[]>)
+      : {};
+    const existing = parsed[ownerKey] ?? [];
+    const next =
+      position.liquidity === "0"
+        ? existing.filter((item) => item.tokenId !== position.tokenId)
+        : [
+            position,
+            ...existing.filter((item) => item.tokenId !== position.tokenId)
+          ];
+    parsed[ownerKey] = next;
+    localStorage.setItem(HYPER_POSITION_KEY, JSON.stringify(parsed));
+    if (
+      hyperWalletBalance?.address.toLowerCase() === ownerKey ||
+      position.owner.toLowerCase() === ownerKey
+    ) {
+      setHyperPositions(next.filter((item) => item.liquidity !== "0"));
+    }
+  };
+
+  const removeStoredHyperPosition = (tokenId: string) => {
+    const ownerKey =
+      hyperWalletBalance?.address.toLowerCase() ??
+      hyperPosition?.owner.toLowerCase();
+    if (!ownerKey) {
+      return;
+    }
+    const raw = localStorage.getItem(HYPER_POSITION_KEY);
+    const parsed = raw
+      ? (JSON.parse(raw) as Record<string, HyperPositionView[]>)
+      : {};
+    const next = (parsed[ownerKey] ?? []).filter(
+      (item) => item.tokenId !== tokenId
+    );
+    parsed[ownerKey] = next;
+    localStorage.setItem(HYPER_POSITION_KEY, JSON.stringify(parsed));
+    setHyperPositions(next);
+  };
+
+  const readHyperPositionFromChain = async (tokenId: string) => {
+    const hyperNetwork = NETWORKS.find((item) => item.key === "hyperliquid");
+    if (!hyperNetwork) {
+      throw new Error("No está configurada la red HyperEVM.");
+    }
+    const hyperProvider = new ethers.JsonRpcProvider(
+      hyperNetwork.rpcUrl,
+      hyperNetwork.chainId
+    );
+    const manager = new ethers.Contract(
+      HYPER_KITTEN_POSITION_MANAGER,
+      ALGEBRA_POSITION_MANAGER_ABI,
+      hyperProvider
+    );
+    const pool = new ethers.Contract(
+      HYPER_KITTEN_POOL_ADDRESS,
+      ALGEBRA_POOL_ABI,
+      hyperProvider
+    );
+    const [owner, position, globalState] = await Promise.all([
+      manager.ownerOf(tokenId),
+      manager.positions(tokenId),
+      pool.globalState()
+    ]);
+    const tickLower = Number(position[5]);
+    const tickUpper = Number(position[6]);
+    const liquidity = position[7] as bigint;
+    const currentTick = Number(globalState[1]);
+    const price = priceFromSqrtPriceX96(globalState[0], 18, 6);
+    const amounts = estimateConcentratedPositionAmounts(
+      liquidity,
+      currentTick,
+      tickLower,
+      tickUpper,
+      18,
+      6
+    );
+    const amountWhype = amounts.amount0;
+    const amountUsdc = amounts.amount1;
+    return {
+      tokenId,
+      owner,
+      tickLower,
+      tickUpper,
+      currentTick,
+      inRange:
+        liquidity > BigInt(0) &&
+        currentTick >= tickLower &&
+        currentTick < tickUpper,
+      liquidity: liquidity.toString(),
+      price,
+      rangeLower: priceFromTick(tickLower, 18, 6),
+      rangeUpper: priceFromTick(tickUpper, 18, 6),
+      amountWhype,
+      amountUsdc,
+      valueUsdc: amountWhype * price + amountUsdc,
+      checkedAt: new Date().toLocaleTimeString()
+    };
+  };
+
   const readHyperWalletBalances = async (prefill = false, silent = false) => {
     try {
       setHyperBalanceLoading(true);
@@ -4295,6 +4414,9 @@ export default function Home() {
       setHyperMintedTokenId(mintedTokenId);
       if (mintedTokenId) {
         setHyperReadTokenId(mintedTokenId);
+        const saved = await readHyperPositionFromChain(mintedTokenId);
+        setHyperPosition(saved);
+        saveHyperPosition(saved);
       }
       setHyperStatus(
         mintedTokenId
@@ -4624,6 +4746,9 @@ export default function Home() {
       setHyperMintedTokenId(mintedTokenId);
       if (mintedTokenId) {
         setHyperReadTokenId(mintedTokenId);
+        const saved = await readHyperPositionFromChain(mintedTokenId);
+        setHyperPosition(saved);
+        saveHyperPosition(saved);
       }
       setHyperStatus(
         mintedTokenId
@@ -4652,62 +4777,11 @@ export default function Home() {
       }
       setHyperReadingPosition(true);
       setHyperStatus(`Leyendo NFT Hyper #${tokenId}.`);
-      const hyperNetwork = NETWORKS.find((item) => item.key === "hyperliquid");
-      if (!hyperNetwork) {
-        throw new Error("No está configurada la red HyperEVM.");
-      }
-      const hyperProvider = new ethers.JsonRpcProvider(
-        hyperNetwork.rpcUrl,
-        hyperNetwork.chainId
-      );
-      const manager = new ethers.Contract(
-        HYPER_KITTEN_POSITION_MANAGER,
-        ALGEBRA_POSITION_MANAGER_ABI,
-        hyperProvider
-      );
-      const pool = new ethers.Contract(
-        HYPER_KITTEN_POOL_ADDRESS,
-        ALGEBRA_POOL_ABI,
-        hyperProvider
-      );
-      const [owner, position, globalState] = await Promise.all([
-        manager.ownerOf(tokenId),
-        manager.positions(tokenId),
-        pool.globalState()
-      ]);
-      const tickLower = Number(position[5]);
-      const tickUpper = Number(position[6]);
-      const liquidity = position[7] as bigint;
-      const currentTick = Number(globalState[1]);
-      const price = priceFromSqrtPriceX96(globalState[0], 18, 6);
-      const amounts = estimateConcentratedPositionAmounts(
-        liquidity,
-        currentTick,
-        tickLower,
-        tickUpper,
-        18,
-        6
-      );
-      const amountWhype = amounts.amount0;
-      const amountUsdc = amounts.amount1;
-      setHyperPosition({
-        tokenId,
-        owner,
-        tickLower,
-        tickUpper,
-        currentTick,
-        inRange: liquidity > BigInt(0) && currentTick >= tickLower && currentTick < tickUpper,
-        liquidity: liquidity.toString(),
-        price,
-        rangeLower: priceFromTick(tickLower, 18, 6),
-        rangeUpper: priceFromTick(tickUpper, 18, 6),
-        amountWhype,
-        amountUsdc,
-        valueUsdc: amountWhype * price + amountUsdc,
-        checkedAt: new Date().toLocaleTimeString()
-      });
+      const position = await readHyperPositionFromChain(tokenId);
+      setHyperPosition(position);
+      saveHyperPosition(position);
       setHyperStatus(
-        liquidity > BigInt(0)
+        position.liquidity !== "0"
           ? `NFT Hyper #${tokenId} leído.`
           : `NFT Hyper #${tokenId} leído sin liquidez activa.`
       );
@@ -4718,6 +4792,37 @@ export default function Home() {
         error instanceof Error
           ? `No se pudo leer NFT Hyper: ${describeV4EstimateError(error)}`
           : "No se pudo leer NFT Hyper."
+      );
+    } finally {
+      setHyperReadingPosition(false);
+    }
+  };
+
+  const openStoredHyperPosition = (position: HyperPositionView) => {
+    setHyperReadTokenId(position.tokenId);
+    setHyperPosition(position);
+    setHyperStatus(`NFT Hyper #${position.tokenId} abierto desde activos.`);
+  };
+
+  const refreshStoredHyperPosition = async (tokenId: string) => {
+    try {
+      setHyperReadingPosition(true);
+      setHyperStatus(`Actualizando NFT Hyper #${tokenId}.`);
+      const position = await readHyperPositionFromChain(tokenId);
+      setHyperReadTokenId(tokenId);
+      setHyperPosition(position);
+      saveHyperPosition(position);
+      setHyperStatus(
+        position.liquidity === "0"
+          ? `NFT Hyper #${tokenId} ya no tiene liquidez activa.`
+          : `NFT Hyper #${tokenId} actualizado.`
+      );
+    } catch (error) {
+      console.error(error);
+      setHyperStatus(
+        error instanceof Error
+          ? `No se pudo actualizar NFT Hyper: ${describeV4EstimateError(error)}`
+          : "No se pudo actualizar NFT Hyper."
       );
     } finally {
       setHyperReadingPosition(false);
@@ -4842,8 +4947,11 @@ export default function Home() {
       setHyperLastTxHash(collectTx.hash);
       setHyperStatus(`Cobro enviado: ${collectTx.hash.slice(0, 10)}...`);
       await waitForHyperReceipt(provider, collectTx.hash);
+      const updated = await readHyperPositionFromChain(hyperPosition.tokenId);
+      setHyperPosition(updated);
+      saveHyperPosition(updated);
       setHyperStatus(
-        `Retiro Hyper listo para NFT #${hyperPosition.tokenId}. Volvé a leer la posición para actualizar valor y liquidez.`
+        `Retiro Hyper listo para NFT #${hyperPosition.tokenId}. Lista activa actualizada.`
       );
     } catch (error) {
       console.error(error);
@@ -4915,6 +5023,13 @@ export default function Home() {
       .then(setBtcQr)
       .catch(() => setBtcQr(null));
   }, [btcAddress]);
+
+  useEffect(() => {
+    if (!hyperWalletBalance?.address) {
+      return;
+    }
+    loadStoredHyperPositions(hyperWalletBalance.address);
+  }, [hyperWalletBalance?.address]);
 
   const checkPremium = async (targetAddress?: string) => {
     const target = targetAddress ?? payerAddress ?? address;
@@ -9939,6 +10054,66 @@ export default function Home() {
 
             <div className={styles.walletCard}>
               <h3>Leer NFT Hyper</h3>
+              <div className={styles.hyperActivePanel}>
+                <div>
+                  <span>NFTs Hyper activos</span>
+                  <strong>
+                    {hyperPositions.length > 0
+                      ? `${hyperPositions.length} guardado(s)`
+                      : "Sin activos guardados"}
+                  </strong>
+                  <p>
+                    Se guardan localmente al leer o crear una posición con
+                    liquidez. Actualizar vuelve a consultar HyperEVM.
+                  </p>
+                </div>
+                {hyperPositions.length > 0 ? (
+                  <div className={styles.hyperActiveList}>
+                    {hyperPositions.map((position) => (
+                      <div
+                        className={styles.hyperActiveItem}
+                        key={position.tokenId}
+                      >
+                        <button
+                          className={styles.softButton}
+                          onClick={() => openStoredHyperPosition(position)}
+                        >
+                          #{position.tokenId}
+                        </button>
+                        <div>
+                          <strong>
+                            {position.valueUsdc.toLocaleString("en-US", {
+                              maximumFractionDigits: 2
+                            })}{" "}
+                            USDC
+                          </strong>
+                          <span>
+                            {hyperPositionStatus(position).label} ·{" "}
+                            {position.checkedAt}
+                          </span>
+                        </div>
+                        <button
+                          className={styles.outline}
+                          onClick={() =>
+                            refreshStoredHyperPosition(position.tokenId)
+                          }
+                          disabled={hyperReadingPosition}
+                        >
+                          Actualizar
+                        </button>
+                        <button
+                          className={styles.ghostButton}
+                          onClick={() =>
+                            removeStoredHyperPosition(position.tokenId)
+                          }
+                        >
+                          Quitar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
               <div className={styles.field}>
                 <label>TokenId</label>
                 <input
