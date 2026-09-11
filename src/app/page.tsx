@@ -1225,6 +1225,59 @@ function formatCompactUnits(value: string | bigint) {
   }).format(parsed);
 }
 
+function formatSignedPercent(value: number) {
+  if (!Number.isFinite(value)) {
+    return "0%";
+  }
+  return `${value >= 0 ? "+" : ""}${value.toLocaleString("en-US", {
+    maximumFractionDigits: 1
+  })}%`;
+}
+
+function hyperPositionStatus(position: HyperPositionView) {
+  if (position.liquidity === "0") {
+    return {
+      label: "Sin liquidez",
+      tone: "neutral" as const,
+      action: "No hay LP activa para gestionar."
+    };
+  }
+  if (position.inRange) {
+    return {
+      label: "En rango",
+      tone: "in" as const,
+      action: "No hace falta tocar la posición."
+    };
+  }
+  return {
+    label: "Fuera de rango",
+    tone: "out" as const,
+    action: "Revisar rango: retirar y rearmar puede tener sentido."
+  };
+}
+
+function hyperCompositionLabel(position: HyperPositionView) {
+  if (position.valueUsdc <= 0) {
+    return "0% HYPE / 0% USDC";
+  }
+  const hypePct = ((position.amountWhype * position.price) / position.valueUsdc) * 100;
+  const usdcPct = (position.amountUsdc / position.valueUsdc) * 100;
+  return `${hypePct.toLocaleString("en-US", {
+    maximumFractionDigits: 0
+  })}% HYPE / ${usdcPct.toLocaleString("en-US", {
+    maximumFractionDigits: 0
+  })}% USDC`;
+}
+
+function hyperRangeLabel(position: HyperPositionView) {
+  if (position.price <= 0) {
+    return "Sin precio confiable";
+  }
+  const below = ((position.rangeLower / position.price) - 1) * 100;
+  const above = ((position.rangeUpper / position.price) - 1) * 100;
+  return `${formatSignedPercent(below)} / ${formatSignedPercent(above)}`;
+}
+
 function parseHumanAmount(value: string) {
   return Number(value.replace(",", "."));
 }
@@ -9476,12 +9529,8 @@ export default function Home() {
                     <span>HYPE/USDC</span>
                     <strong>NFT #{hyperPosition.tokenId}</strong>
                     <p>
-                      {hyperPosition.liquidity === "0"
-                        ? "Sin liquidez activa"
-                        : hyperPosition.inRange
-                          ? "En rango"
-                          : "Fuera de rango"}{" "}
-                      · {shortAddress(hyperPosition.owner)}
+                      {shortAddress(hyperPosition.owner)} · lectura{" "}
+                      {hyperPosition.checkedAt}
                     </p>
                   </div>
                   <div className={styles.positionDetailGrid}>
@@ -9495,60 +9544,46 @@ export default function Home() {
                       </strong>
                     </div>
                     <div>
-                      <span>Composición</span>
+                      <span>Estado</span>
                       <strong>
-                        {formatHumanTokenAmount(
-                          hyperPosition.amountWhype,
-                          "WHYPE"
-                        )}{" "}
-                        WHYPE /{" "}
-                        {formatHumanTokenAmount(
-                          hyperPosition.amountUsdc,
-                          "USDC"
-                        )}{" "}
-                        USDC
+                        <span
+                          className={`${styles.v3RangeBadge} ${
+                            hyperPositionStatus(hyperPosition).tone === "in"
+                              ? styles.v3RangeIn
+                              : hyperPositionStatus(hyperPosition).tone === "out"
+                                ? styles.v3RangeOut
+                                : styles.v3RangeNeutral
+                          }`}
+                        >
+                          {hyperPositionStatus(hyperPosition).label}
+                        </span>
                       </strong>
+                    </div>
+                    <div>
+                      <span>Composición</span>
+                      <strong>{hyperCompositionLabel(hyperPosition)}</strong>
                     </div>
                     <div>
                       <span>Rango</span>
-                      <strong>
-                        {hyperPosition.rangeLower.toLocaleString("en-US", {
-                          maximumFractionDigits: 2
-                        })}{" "}
-                        /{" "}
-                        {hyperPosition.rangeUpper.toLocaleString("en-US", {
-                          maximumFractionDigits: 2
-                        })}{" "}
-                        USDC
-                      </strong>
+                      <strong>{hyperRangeLabel(hyperPosition)}</strong>
                     </div>
                     <div>
-                      <span>Tick</span>
-                      <strong>{hyperPosition.currentTick}</strong>
-                    </div>
-                    <div>
-                      <span>Liquidez</span>
-                      <strong title={hyperPosition.liquidity}>
-                        {formatCompactUnits(hyperPosition.liquidity)}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>Afirmar / Claim</span>
+                      <span>Recompensas stake</span>
                       <strong>
                         {hyperPosition.liquidity === "0"
                           ? "Sin LP activa"
-                          : "Requiere staking para recompensas"}
+                          : "Revisar Claim en Kitten"}
                       </strong>
                     </div>
                     <div>
-                      <span>Lectura</span>
-                      <strong>{hyperPosition.checkedAt}</strong>
+                      <span>Acción</span>
+                      <strong>{hyperPositionStatus(hyperPosition).action}</strong>
                     </div>
                   </div>
                   <p className={styles.positionHint}>
-                    En Kitten, el NFT LP puede ganar fees base por aportar
-                    liquidez. Para emisiones/recompensas del gauge hay que
-                    stakear el NFT y luego usar Claim/Afirmar desde Kitten.
+                    Fees base y recompensas no son lo mismo: la LP puede generar
+                    fees por liquidez; las recompensas de stake se reclaman con
+                    Claim en Kitten cuando el NFT está stakeado.
                   </p>
                 </div>
               ) : null}
