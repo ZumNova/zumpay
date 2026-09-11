@@ -273,6 +273,23 @@ type HyperEntryPreview = {
   checkedAt: string;
 };
 
+type HyperPositionView = {
+  tokenId: string;
+  owner: string;
+  tickLower: number;
+  tickUpper: number;
+  currentTick: number;
+  inRange: boolean;
+  liquidity: string;
+  price: number;
+  rangeLower: number;
+  rangeUpper: number;
+  amountWhype: number;
+  amountUsdc: number;
+  valueUsdc: number;
+  checkedAt: string;
+};
+
 type V4ValueEstimate = {
   currentValue: number;
   addValue: number;
@@ -400,7 +417,7 @@ const HYPER_KITTEN_POSITION_MANAGER =
 const HYPER_KITTEN_SWAP_ROUTER = "0x4e73E421480a7E0C24fB3c11019254edE194f736";
 const HYPER_KITTEN_POOL_ADDRESS =
   "0x12df9913e9e08453440e3c4b1ae73819160b513e";
-const HYPER_POSITION_IDS = ["409509", "409319"];
+const HYPER_KITTEN_REF_URL = "https://app.kittenswap.finance/portfolio?ref=UPTGAJ";
 const HYPER_MAX_SWAP_GAS = BigInt(1_500_000);
 const HYPER_MAX_MINT_GAS = BigInt(3_000_000);
 const HYPER_TICK_SPACING = 10;
@@ -912,6 +929,8 @@ const ALGEBRA_SWAP_ROUTER_ABI = [
 ];
 
 const ALGEBRA_POSITION_MANAGER_ABI = [
+  "function ownerOf(uint256 tokenId) view returns (address)",
+  "function positions(uint256 tokenId) view returns (uint96 nonce,address operator,address token0,address token1,address deployer,int24 tickLower,int24 tickUpper,uint128 liquidity,uint256 feeGrowthInside0LastX128,uint256 feeGrowthInside1LastX128,uint128 tokensOwed0,uint128 tokensOwed1)",
   "function mint((address token0,address token1,address deployer,int24 tickLower,int24 tickUpper,uint256 amount0Desired,uint256 amount1Desired,uint256 amount0Min,uint256 amount1Min,address recipient,uint256 deadline)) payable returns (uint256 tokenId,uint128 liquidity,uint256 amount0,uint256 amount1)"
 ];
 
@@ -2217,6 +2236,11 @@ export default function Home() {
   const [hyperMinting, setHyperMinting] = useState(false);
   const [hyperLastTxHash, setHyperLastTxHash] = useState("");
   const [hyperMintedTokenId, setHyperMintedTokenId] = useState("");
+  const [hyperReadTokenId, setHyperReadTokenId] = useState("");
+  const [hyperReadingPosition, setHyperReadingPosition] = useState(false);
+  const [hyperPosition, setHyperPosition] = useState<HyperPositionView | null>(
+    null
+  );
   const [hyperStatus, setHyperStatus] = useState("");
 
   const network = useMemo(
@@ -4308,6 +4332,9 @@ export default function Home() {
         ? BigInt(mintedLog.topics[3]).toString()
         : "";
       setHyperMintedTokenId(mintedTokenId);
+      if (mintedTokenId) {
+        setHyperReadTokenId(mintedTokenId);
+      }
       setHyperStatus(
         mintedTokenId
           ? `NFT Hyper listo #${mintedTokenId}. Podés verlo en KittenSwap y decidir si stakearlo.`
@@ -4322,6 +4349,87 @@ export default function Home() {
       );
     } finally {
       setHyperMinting(false);
+    }
+  };
+
+  const handleHyperReadPosition = async () => {
+    try {
+      const tokenId = hyperReadTokenId.trim();
+      if (!tokenId || !/^\d+$/.test(tokenId)) {
+        setHyperStatus("Ingresá un tokenId Hyper válido.");
+        return;
+      }
+      setHyperReadingPosition(true);
+      setHyperStatus(`Leyendo NFT Hyper #${tokenId}.`);
+      const hyperNetwork = NETWORKS.find((item) => item.key === "hyperliquid");
+      if (!hyperNetwork) {
+        throw new Error("No está configurada la red HyperEVM.");
+      }
+      const hyperProvider = new ethers.JsonRpcProvider(
+        hyperNetwork.rpcUrl,
+        hyperNetwork.chainId
+      );
+      const manager = new ethers.Contract(
+        HYPER_KITTEN_POSITION_MANAGER,
+        ALGEBRA_POSITION_MANAGER_ABI,
+        hyperProvider
+      );
+      const pool = new ethers.Contract(
+        HYPER_KITTEN_POOL_ADDRESS,
+        ALGEBRA_POOL_ABI,
+        hyperProvider
+      );
+      const [owner, position, globalState] = await Promise.all([
+        manager.ownerOf(tokenId),
+        manager.positions(tokenId),
+        pool.globalState()
+      ]);
+      const tickLower = Number(position[5]);
+      const tickUpper = Number(position[6]);
+      const liquidity = position[7] as bigint;
+      const currentTick = Number(globalState[1]);
+      const price = priceFromSqrtPriceX96(globalState[0], 18, 6);
+      const amounts = estimateConcentratedPositionAmounts(
+        liquidity,
+        currentTick,
+        tickLower,
+        tickUpper,
+        18,
+        6
+      );
+      const amountWhype = amounts.amount0;
+      const amountUsdc = amounts.amount1;
+      setHyperPosition({
+        tokenId,
+        owner,
+        tickLower,
+        tickUpper,
+        currentTick,
+        inRange: liquidity > BigInt(0) && currentTick >= tickLower && currentTick < tickUpper,
+        liquidity: liquidity.toString(),
+        price,
+        rangeLower: priceFromTick(tickLower, 18, 6),
+        rangeUpper: priceFromTick(tickUpper, 18, 6),
+        amountWhype,
+        amountUsdc,
+        valueUsdc: amountWhype * price + amountUsdc,
+        checkedAt: new Date().toLocaleTimeString()
+      });
+      setHyperStatus(
+        liquidity > BigInt(0)
+          ? `NFT Hyper #${tokenId} leído.`
+          : `NFT Hyper #${tokenId} leído sin liquidez activa.`
+      );
+    } catch (error) {
+      console.error(error);
+      setHyperPosition(null);
+      setHyperStatus(
+        error instanceof Error
+          ? `No se pudo leer NFT Hyper: ${describeV4EstimateError(error)}`
+          : "No se pudo leer NFT Hyper."
+      );
+    } finally {
+      setHyperReadingPosition(false);
     }
   };
 
@@ -8994,7 +9102,7 @@ export default function Home() {
                   </a>
                   <a
                     className={styles.outline}
-                    href="https://app.kittenswap.finance/"
+                    href={HYPER_KITTEN_REF_URL}
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -9092,7 +9200,7 @@ export default function Home() {
               </button>
               <a
                 className={styles.outline}
-                href="https://app.kittenswap.finance/"
+                href={HYPER_KITTEN_REF_URL}
                 target="_blank"
                 rel="noreferrer"
               >
@@ -9167,10 +9275,10 @@ export default function Home() {
                 <div className={styles.strategyCard}>
                   <div>
                     <span>Estado NFT</span>
-                    <strong>#{HYPER_POSITION_IDS[0]} · no stakeado</strong>
+                    <strong>Lectura dinámica</strong>
                     <small>
-                      La posición existe. El siguiente paso opcional es stakear
-                      el NFT en el gauge para buscar recompensas extra.
+                      Ingresá cualquier tokenId de KittenSwap para leer valor,
+                      rango, composición y si tiene liquidez activa.
                     </small>
                   </div>
                 </div>
@@ -9312,7 +9420,7 @@ export default function Home() {
                 </a>
                 <a
                   className={styles.outline}
-                  href="https://app.kittenswap.finance/"
+                  href={HYPER_KITTEN_REF_URL}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -9322,16 +9430,101 @@ export default function Home() {
             </div>
 
             <div className={styles.walletCard}>
-              <h3>Registro técnico</h3>
+              <h3>Leer NFT Hyper</h3>
+              <div className={styles.field}>
+                <label>TokenId</label>
+                <input
+                  value={hyperReadTokenId}
+                  onChange={(event) => setHyperReadTokenId(event.target.value)}
+                  placeholder="Ej: 409319"
+                />
+              </div>
+              <div className={styles.reserveRouteActions}>
+                <button
+                  className={styles.primary}
+                  onClick={handleHyperReadPosition}
+                  disabled={isLocked || hyperReadingPosition}
+                >
+                  {hyperReadingPosition ? "Leyendo..." : "Leer posición"}
+                </button>
+                <a
+                  className={styles.outline}
+                  href={HYPER_KITTEN_REF_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Abrir portfolio Kitten
+                </a>
+              </div>
+              {hyperPosition ? (
+                <div className={styles.positionDetailPanel}>
+                  <div className={styles.positionDetailMain}>
+                    <span>HYPE/USDC</span>
+                    <strong>NFT #{hyperPosition.tokenId}</strong>
+                    <p>
+                      {hyperPosition.liquidity === "0"
+                        ? "Sin liquidez activa"
+                        : hyperPosition.inRange
+                          ? "En rango"
+                          : "Fuera de rango"}{" "}
+                      · {shortAddress(hyperPosition.owner)}
+                    </p>
+                  </div>
+                  <div className={styles.positionDetailGrid}>
+                    <div>
+                      <span>Valor</span>
+                      <strong>
+                        {hyperPosition.valueUsdc.toLocaleString("en-US", {
+                          maximumFractionDigits: 2
+                        })}{" "}
+                        USDC
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Composición</span>
+                      <strong>
+                        {formatHumanTokenAmount(
+                          hyperPosition.amountWhype,
+                          "WHYPE"
+                        )}{" "}
+                        WHYPE /{" "}
+                        {formatHumanTokenAmount(
+                          hyperPosition.amountUsdc,
+                          "USDC"
+                        )}{" "}
+                        USDC
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Rango</span>
+                      <strong>
+                        {hyperPosition.rangeLower.toLocaleString("en-US", {
+                          maximumFractionDigits: 2
+                        })}{" "}
+                        /{" "}
+                        {hyperPosition.rangeUpper.toLocaleString("en-US", {
+                          maximumFractionDigits: 2
+                        })}{" "}
+                        USDC
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Tick</span>
+                      <strong>{hyperPosition.currentTick}</strong>
+                    </div>
+                    <div>
+                      <span>Liquidez</span>
+                      <strong>{hyperPosition.liquidity}</strong>
+                    </div>
+                    <div>
+                      <span>Lectura</span>
+                      <strong>{hyperPosition.checkedAt}</strong>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              <h3>Datos técnicos</h3>
               <div className={styles.assetList}>
-                <div className={styles.assetRow}>
-                  <span>NFT principal</span>
-                  <span>#{HYPER_POSITION_IDS[0]}</span>
-                </div>
-                <div className={styles.assetRow}>
-                  <span>NFTs vistos</span>
-                  <span>{HYPER_POSITION_IDS.map((id) => `#${id}`).join(" · ")}</span>
-                </div>
                 <div className={styles.assetRow}>
                   <span>Pool</span>
                   <span title={HYPER_KITTEN_POOL_ADDRESS}>
@@ -9358,14 +9551,16 @@ export default function Home() {
                 </div>
               </div>
               <div className={styles.reserveRouteActions}>
-                <a
-                  className={styles.outline}
-                  href={`https://hyperevmscan.io/token/${HYPER_KITTEN_POSITION_MANAGER}?a=${HYPER_POSITION_IDS[0]}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Ver NFT en scan
-                </a>
+                {hyperPosition ? (
+                  <a
+                    className={styles.outline}
+                    href={`https://hyperevmscan.io/token/${HYPER_KITTEN_POSITION_MANAGER}?a=${hyperPosition.tokenId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Ver NFT en scan
+                  </a>
+                ) : null}
                 <a
                   className={styles.outline}
                   href={`https://hyperevmscan.io/address/${HYPER_KITTEN_POOL_ADDRESS}`}
@@ -9374,17 +9569,19 @@ export default function Home() {
                 >
                   Ver pool
                 </a>
-                <button
-                  className={styles.softButton}
-                  onClick={() =>
+                {hyperPosition ? (
+                  <button
+                    className={styles.softButton}
+                    onClick={() =>
                       copyToClipboard(
-                      HYPER_POSITION_IDS[0],
-                      "ID de NFT Hyper copiado."
-                    )
-                  }
-                >
-                  Copiar NFT
-                </button>
+                        hyperPosition.tokenId,
+                        "ID de NFT Hyper copiado."
+                      )
+                    }
+                  >
+                    Copiar NFT
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>

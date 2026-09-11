@@ -715,11 +715,17 @@
 .assetRow {
   display: flex;
   justify-content: space-between;
+  gap: 12px;
   padding: 10px 12px;
   border-radius: 12px;
   background: rgba(12, 18, 32, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.08);
   font-size: 14px;
+}
+
+.assetRow span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .premiumStatus {
@@ -2387,6 +2393,7 @@
   color: rgba(237, 246, 255, 0.9);
   font-size: 13px;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .positionDetailActions {
