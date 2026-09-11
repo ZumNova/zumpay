@@ -53,7 +53,7 @@ type ReadyPositionNotice = {
   chain: V3ChainKey;
   tokenId: string;
 };
-type PortfolioFilter = "all" | "v3" | "v4";
+type PortfolioFilter = "all" | "v3" | "v4" | "hyper";
 type AppView =
   | "home"
   | "premium"
@@ -198,8 +198,8 @@ type V4UsedPosition = V4PositionView & {
 
 type PortfolioPosition = {
   key: string;
-  protocol: "V3" | "V4";
-  chain: V3ChainKey;
+  protocol: "V3" | "V4" | "Hyper";
+  chain: V3ChainKey | "hyperliquid";
   tokenId: string;
   pair: string;
   fee: string;
@@ -213,7 +213,7 @@ type PortfolioPosition = {
   hasFees: boolean;
   composition: string;
   created: string;
-  raw: V3Position | V4PositionView;
+  raw: V3Position | V4PositionView | HyperPositionView;
 };
 
 type V4LiquiditySimulation = {
@@ -234,7 +234,7 @@ const APP_VIEWS: { id: AppView; label: string; hint: string }[] = [
   { id: "premium", label: "Premium", hint: "Pago ZUM" },
   { id: "accounts", label: "Cuentas", hint: "Wallet BTC/EVM" },
   { id: "reserve", label: "Director", hint: "Rutas de reserva" },
-  { id: "positions", label: "Posiciones", hint: "V3 + V4" },
+  { id: "positions", label: "Posiciones", hint: "V3 + V4 + Hyper" },
   { id: "hyper", label: "Hyper", hint: "HYPE/USDC" },
   { id: "v3", label: "Pools V3", hint: "Uniswap V3" },
   { id: "v4", label: "Robin V4", hint: "Robinhood V4" },
@@ -2565,13 +2565,44 @@ export default function Home() {
       };
     });
 
-    return [...v4Items, ...v3Items];
-  }, [v3Positions, v4Positions]);
+    const hyperItems: PortfolioPosition[] = hyperPositions.map((position) => {
+      const liquidityEmpty = position.liquidity === "0";
+      const statusInfo = hyperPositionStatus(position);
+      return {
+        key: `hyper-${position.tokenId}`,
+        protocol: "Hyper",
+        chain: "hyperliquid",
+        tokenId: position.tokenId,
+        pair: "HYPE/USDC",
+        fee: "Kitten",
+        range: hyperRangeLabel(position),
+        status: liquidityEmpty ? "Sin liquidez" : statusInfo.label,
+        statusTone: liquidityEmpty ? "neutral" : statusInfo.tone,
+        value:
+          position.valueUsdc > 0
+            ? formatV4Value(position.valueUsdc, "USDC")
+            : "Sin estimación",
+        valueAmount: position.valueUsdc > 0 ? position.valueUsdc : 0,
+        valueSymbol: "USDC",
+        fees:
+          position.liquidity === "0"
+            ? "Sin LP activa"
+            : "Revisar Claim en Kitten",
+        hasFees: false,
+        composition: hyperCompositionLabel(position),
+        created: position.checkedAt,
+        raw: position
+      };
+    });
+
+    return [...hyperItems, ...v4Items, ...v3Items];
+  }, [hyperPositions, v3Positions, v4Positions]);
   const visiblePortfolioPositions = useMemo(
     () =>
       portfolioPositions.filter((position) => {
         if (portfolioFilter === "v3") return position.protocol === "V3";
         if (portfolioFilter === "v4") return position.protocol === "V4";
+        if (portfolioFilter === "hyper") return position.protocol === "Hyper";
         return true;
       }),
     [portfolioFilter, portfolioPositions]
@@ -2623,6 +2654,31 @@ export default function Home() {
         ? total + parseBalanceValue(asset.balance)
         : total;
     }, 0);
+    const hyperAvailableStable = hyperWalletBalance
+      ? parseBalanceValue(hyperWalletBalance.usdc)
+      : 0;
+    const hyperOtherAssets: EvmAsset[] = hyperWalletBalance
+      ? (
+          [
+            {
+              key: "hyper-native",
+              type: "native",
+              symbol: "HYPE",
+              balance: hyperWalletBalance.nativeHype,
+              decimals: 18,
+              address: ZERO_ADDRESS
+            },
+            {
+              key: "hyper-whype",
+              type: "token",
+              symbol: "WHYPE",
+              balance: hyperWalletBalance.whype,
+              decimals: 18,
+              address: HYPER_WHYPE_ADDRESS
+            }
+          ] satisfies EvmAsset[]
+        ).filter((asset) => parseBalanceValue(asset.balance) > 0)
+      : [];
     const otherAssets = positiveEvmAssets.filter(
       (asset) => !stableSymbols.has(asset.symbol.toUpperCase())
     );
@@ -2635,16 +2691,22 @@ export default function Home() {
 
     return {
       investedStable,
-      availableStable,
-      visibleStable: investedStable + availableStable,
+      availableStable: availableStable + hyperAvailableStable,
+      visibleStable: investedStable + availableStable + hyperAvailableStable,
       btcReserve: parseBalanceValue(btcBalance),
-      otherAssets,
+      otherAssets: [...otherAssets, ...hyperOtherAssets],
       investedOther,
       inRange,
       outOfRange,
       activityCount: txs.length
     };
-  }, [btcBalance, portfolioPositions, positiveEvmAssets, txs.length]);
+  }, [
+    btcBalance,
+    hyperWalletBalance,
+    portfolioPositions,
+    positiveEvmAssets,
+    txs.length
+  ]);
   const visibleBalanceTxs = useMemo(
     () =>
       txs
@@ -4823,6 +4885,33 @@ export default function Home() {
         error instanceof Error
           ? `No se pudo actualizar NFT Hyper: ${describeV4EstimateError(error)}`
           : "No se pudo actualizar NFT Hyper."
+      );
+    } finally {
+      setHyperReadingPosition(false);
+    }
+  };
+
+  const handleHyperRefreshPositions = async () => {
+    try {
+      if (hyperPositions.length === 0) {
+        setHyperStatus("No hay NFTs Hyper activos guardados para actualizar.");
+        return;
+      }
+      setHyperReadingPosition(true);
+      setHyperStatus(`Actualizando ${hyperPositions.length} NFT(s) Hyper.`);
+      const refreshed = await Promise.all(
+        hyperPositions.map((position) =>
+          readHyperPositionFromChain(position.tokenId)
+        )
+      );
+      refreshed.forEach(saveHyperPosition);
+      setHyperStatus("NFTs Hyper actualizados.");
+    } catch (error) {
+      console.error(error);
+      setHyperStatus(
+        error instanceof Error
+          ? `No se pudieron actualizar NFTs Hyper: ${describeV4EstimateError(error)}`
+          : "No se pudieron actualizar NFTs Hyper."
       );
     } finally {
       setHyperReadingPosition(false);
@@ -8849,10 +8938,11 @@ export default function Home() {
               <h3>Resumen Zumpay</h3>
               <p className={styles.muted}>
                 Este balance suma lo que Zumpay puede leer en tu navegador:
-                posiciones V3/V4 cargadas, stables de la cuenta EVM y reserva
-                BTC. Para medir el volumen global de todas las wallets Zumpay
-                más adelante vamos a necesitar un indexador de eventos o una
-                base de datos de actividad agregada.
+                posiciones V3/V4/Hyper cargadas, stables de la cuenta EVM,
+                saldos Hyper leídos desde MetaMask y reserva BTC. Para medir el
+                volumen global de todas las wallets Zumpay más adelante vamos a
+                necesitar un indexador de eventos o una base de datos de
+                actividad agregada.
               </p>
             </div>
             <div className={styles.walletCard}>
@@ -10327,8 +10417,8 @@ export default function Home() {
               <p className={styles.kicker}>Portfolio Zumpay</p>
               <h2>Tus posiciones</h2>
               <p className={styles.subtitle}>
-                NFTs V3 y V4 en una sola vista: rango, valor estimado, fees y
-                acciones separadas por posición.
+                NFTs V3, V4 y Hyper en una sola vista: rango, valor estimado,
+                fees y acciones separadas por posición.
               </p>
             </div>
             <div className={styles.positionsActions}>
@@ -10351,11 +10441,15 @@ export default function Home() {
                 onClick={() => {
                   handleV3RefreshPositions();
                   handleV4RefreshPositions();
+                  handleHyperRefreshPositions();
                 }}
                 disabled={
                   isLocked ||
                   v4ReadingPosition ||
-                  (v3Positions.length === 0 && v4Positions.length === 0)
+                  hyperReadingPosition ||
+                  (v3Positions.length === 0 &&
+                    v4Positions.length === 0 &&
+                    hyperPositions.length === 0)
                 }
               >
                 Actualizar todo
@@ -10395,7 +10489,8 @@ export default function Home() {
             {[
               { key: "all", label: "NFTs" },
               { key: "v3", label: "V3" },
-              { key: "v4", label: "V4" }
+              { key: "v4", label: "V4" },
+              { key: "hyper", label: "Hyper" }
             ].map((item) => (
               <button
                 key={item.key}
@@ -10419,7 +10514,8 @@ export default function Home() {
                 <h3>Todavía no hay posiciones cargadas</h3>
                 <p>
                   Conectá MetaMask y usá Buscar V3 / Buscar V4. Zumpay trae tus
-                  NFTs y los muestra acá en un solo lugar.
+                  NFTs y los muestra acá en un solo lugar. Hyper se guarda al
+                  leer o crear posiciones desde su panel.
                 </p>
               </div>
             ) : (
@@ -10591,7 +10687,8 @@ export default function Home() {
                                       Retirar liquidez
                                     </button>
                                   </>
-                                ) : (
+                                ) : null}
+                                {position.protocol === "V4" ? (
                                   <>
                                     <button
                                       className={styles.outline}
@@ -10649,7 +10746,59 @@ export default function Home() {
                                       </button>
                                     ) : null}
                                   </>
-                                )}
+                                ) : null}
+                                {position.protocol === "Hyper" ? (
+                                  <>
+                                    <button
+                                      className={styles.outline}
+                                      onClick={() => {
+                                        openStoredHyperPosition(
+                                          position.raw as HyperPositionView
+                                        );
+                                        setActiveView("hyper");
+                                      }}
+                                      disabled={isLocked}
+                                    >
+                                      Abrir panel Hyper
+                                    </button>
+                                    <button
+                                      className={styles.outline}
+                                      onClick={() =>
+                                        refreshStoredHyperPosition(
+                                          position.tokenId
+                                        )
+                                      }
+                                      disabled={isLocked || hyperReadingPosition}
+                                    >
+                                      Actualizar Hyper
+                                    </button>
+                                    <button
+                                      className={styles.primary}
+                                      onClick={() => {
+                                        openStoredHyperPosition(
+                                          position.raw as HyperPositionView
+                                        );
+                                        setActiveView("hyper");
+                                      }}
+                                      disabled={
+                                        isLocked ||
+                                        (position.raw as HyperPositionView)
+                                          .liquidity === "0"
+                                      }
+                                    >
+                                      Preparar retiro Hyper
+                                    </button>
+                                    <button
+                                      className={styles.outline}
+                                      onClick={() =>
+                                        removeStoredHyperPosition(position.tokenId)
+                                      }
+                                      disabled={isLocked}
+                                    >
+                                      Quitar de activos
+                                    </button>
+                                  </>
+                                ) : null}
                               </div>
                             </div>
                           </td>
