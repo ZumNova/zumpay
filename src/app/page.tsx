@@ -9734,7 +9734,7 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className={styles.reserveRouteCard}>
+              <div className={`${styles.reserveRouteCard} ${styles.reserveRouteFeatured}`}>
                 <div className={styles.reserveRouteTop}>
                   <div
                     className={`${styles.reserveIcon} ${styles.reserveIconBase}`}
@@ -9742,23 +9742,39 @@ export default function Home() {
                   >
                     B
                   </div>
-                  <span>Base</span>
+                  <span>Base blue-chip</span>
                 </div>
-                <strong>cbBTC / USDC</strong>
+                <strong>WETH / cbBTC</strong>
                 <p>
-                  Ruta candidata para exposición BTC dentro de Base. La idea
-                  conservadora es estudiar cbBTC/USDC; la ruta más cripto es
-                  WETH/cbBTC. Base tiene USDC nativo de Circle, pero la red es
-                  de Coinbase, no de Circle.
+                  Acumulador cripto en Base para cosechar comisiones en ETH/BTC.
+                  No es estable: sirve si aceptarías quedar 100% WETH o 100%
+                  cbBTC cuando el precio se mueve fuera del rango.
                 </p>
+                <div className={styles.reserveRouteFacts}>
+                  <span>Pool 0.04%</span>
+                  <span>Rango amplio</span>
+                  <span>cbBTC custodiado</span>
+                </div>
+                <small>
+                  Pool: 0x42d4...b76b · Aerodrome Slipstream. Próximo paso:
+                  lector read-only de precio, rango, fees y NFTs Base.
+                </small>
                 <div className={styles.reserveRouteActions}>
+                  <a
+                    className={styles.outline}
+                    href="https://aerodrome.finance/deposit?token0=0x4200000000000000000000000000000000000006&token1=0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf&type=-1"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Abrir WETH/cbBTC
+                  </a>
                   <a
                     className={styles.outline}
                     href="https://aerodrome.finance/liquidity"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Ver pools en Aerodrome
+                    Ver Aerodrome
                   </a>
                   <a
                     className={styles.outline}
@@ -9770,11 +9786,11 @@ export default function Home() {
                   </a>
                   <a
                     className={styles.outline}
-                    href="https://basescan.org/"
+                    href="https://basescan.org/address/0x42d4a22cad0f5a49681a5715ce994af73a43b76b"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Abrir BaseScan
+                    Ver pool en BaseScan
                   </a>
                 </div>
               </div>
