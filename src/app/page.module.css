@@ -2479,26 +2479,45 @@
 }
 
 .hyperActiveItem {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  gap: 8px;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
   min-width: 0;
-  padding: 9px;
+  padding: 12px;
   border-radius: 12px;
   background: rgba(7, 12, 24, 0.45);
   border: 1px solid rgba(255, 255, 255, 0.07);
 }
 
-.hyperActiveItem > div {
-  display: grid;
-  gap: 3px;
+.hyperActiveInfo {
+  display: flex;
+  gap: 10px;
+  align-items: center;
   min-width: 0;
 }
 
-.hyperActiveItem > div strong,
-.hyperActiveItem > div span {
+.hyperActiveInfo > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hyperActiveInfo > div strong,
+.hyperActiveInfo > div span {
   overflow-wrap: anywhere;
+}
+
+.hyperActiveInfo > div span {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.hyperActiveActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-start;
 }
 
 .hyperDualEntry {
@@ -2853,8 +2872,12 @@
   }
 
   .hyperActiveItem {
-    grid-template-columns: 1fr;
     align-items: stretch;
+  }
+
+  .hyperActiveInfo {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .positionDetailActions {

@@ -10238,41 +10238,45 @@ export default function Home() {
                         className={styles.hyperActiveItem}
                         key={position.tokenId}
                       >
-                        <button
-                          className={styles.softButton}
-                          onClick={() => openStoredHyperPosition(position)}
-                        >
-                          #{position.tokenId}
-                        </button>
-                        <div>
-                          <strong>
-                            {position.valueUsdc.toLocaleString("en-US", {
-                              maximumFractionDigits: 2
-                            })}{" "}
-                            USDC
-                          </strong>
-                          <span>
-                            {hyperPositionStatus(position).label} ·{" "}
-                            {position.checkedAt}
-                          </span>
+                        <div className={styles.hyperActiveInfo}>
+                          <button
+                            className={styles.softButton}
+                            onClick={() => openStoredHyperPosition(position)}
+                          >
+                            #{position.tokenId}
+                          </button>
+                          <div>
+                            <strong>
+                              {position.valueUsdc.toLocaleString("en-US", {
+                                maximumFractionDigits: 2
+                              })}{" "}
+                              USDC
+                            </strong>
+                            <span>
+                              {hyperPositionStatus(position).label} ·{" "}
+                              {position.checkedAt}
+                            </span>
+                          </div>
                         </div>
-                        <button
-                          className={styles.outline}
-                          onClick={() =>
-                            refreshStoredHyperPosition(position.tokenId)
-                          }
-                          disabled={hyperReadingPosition}
-                        >
-                          Actualizar
-                        </button>
-                        <button
-                          className={styles.ghostButton}
-                          onClick={() =>
-                            removeStoredHyperPosition(position.tokenId)
-                          }
-                        >
-                          Quitar
-                        </button>
+                        <div className={styles.hyperActiveActions}>
+                          <button
+                            className={styles.outline}
+                            onClick={() =>
+                              refreshStoredHyperPosition(position.tokenId)
+                            }
+                            disabled={hyperReadingPosition}
+                          >
+                            Actualizar
+                          </button>
+                          <button
+                            className={styles.ghostButton}
+                            onClick={() =>
+                              removeStoredHyperPosition(position.tokenId)
+                            }
+                          >
+                            Quitar
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
