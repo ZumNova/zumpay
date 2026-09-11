@@ -957,6 +957,20 @@
   box-shadow: 0 0 20px rgba(4, 208, 154, 0.18);
 }
 
+.reserveIconBase {
+  color: #ffffff;
+  background: #0052ff;
+  box-shadow: 0 0 22px rgba(0, 82, 255, 0.28);
+}
+
+.reserveIconLinea {
+  color: #05070d;
+  background:
+    radial-gradient(circle at 28% 26%, #ffffff 0 10%, transparent 11%),
+    linear-gradient(135deg, #7df9ff, #b8ff4d);
+  box-shadow: 0 0 22px rgba(125, 249, 255, 0.24);
+}
+
 .reserveIconHyperliquid {
   background: rgba(0, 240, 181, 0.08);
   box-shadow: 0 0 20px rgba(0, 240, 181, 0.18);

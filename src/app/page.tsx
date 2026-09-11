@@ -9737,6 +9737,96 @@ export default function Home() {
               <div className={styles.reserveRouteCard}>
                 <div className={styles.reserveRouteTop}>
                   <div
+                    className={`${styles.reserveIcon} ${styles.reserveIconBase}`}
+                    aria-hidden="true"
+                  >
+                    B
+                  </div>
+                  <span>Base</span>
+                </div>
+                <strong>cbBTC / USDC</strong>
+                <p>
+                  Ruta candidata para exposición BTC dentro de Base. La idea
+                  conservadora es estudiar cbBTC/USDC; la ruta más cripto es
+                  WETH/cbBTC. Base tiene USDC nativo de Circle, pero la red es
+                  de Coinbase, no de Circle.
+                </p>
+                <div className={styles.reserveRouteActions}>
+                  <a
+                    className={styles.outline}
+                    href="https://aerodrome.finance/liquidity"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Ver pools en Aerodrome
+                  </a>
+                  <a
+                    className={styles.outline}
+                    href="https://bridge.base.org/deposit"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Puente oficial Base
+                  </a>
+                  <a
+                    className={styles.outline}
+                    href="https://basescan.org/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Abrir BaseScan
+                  </a>
+                </div>
+              </div>
+
+              <div className={styles.reserveRouteCard}>
+                <div className={styles.reserveRouteTop}>
+                  <div
+                    className={`${styles.reserveIcon} ${styles.reserveIconLinea}`}
+                    aria-hidden="true"
+                  >
+                    L
+                  </div>
+                  <span>Linea</span>
+                </div>
+                <strong>Etherex watchlist</strong>
+                <p>
+                  Radar para Linea: Etherex tiene liquidez concentrada y puede
+                  servir para WETH/USDC, mUSD/USDC o wstETH/WETH. Por ahora no
+                  es ruta core de reserva BTC; primero conviene mirar TVL,
+                  volumen, rango y riesgos del incentivo.
+                </p>
+                <div className={styles.reserveRouteActions}>
+                  <a
+                    className={styles.outline}
+                    href="https://www.etherex.finance/trade"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Abrir Etherex
+                  </a>
+                  <a
+                    className={styles.outline}
+                    href="https://bridge.linea.build/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Puente Linea
+                  </a>
+                  <a
+                    className={styles.outline}
+                    href="https://lineascan.build/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Abrir LineaScan
+                  </a>
+                </div>
+              </div>
+
+              <div className={styles.reserveRouteCard}>
+                <div className={styles.reserveRouteTop}>
+                  <div
                     className={`${styles.reserveIcon} ${styles.reserveIconHyperliquid}`}
                     aria-hidden="true"
                   >
