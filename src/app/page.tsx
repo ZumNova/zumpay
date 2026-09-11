@@ -290,6 +290,14 @@ type HyperPositionView = {
   checkedAt: string;
 };
 
+type HyperWalletBalance = {
+  address: string;
+  nativeHype: string;
+  usdc: string;
+  whype: string;
+  checkedAt: string;
+};
+
 type V4ValueEstimate = {
   currentValue: number;
   addValue: number;
@@ -420,6 +428,7 @@ const HYPER_KITTEN_POOL_ADDRESS =
 const HYPER_KITTEN_REF_URL = "https://app.kittenswap.finance/portfolio?ref=UPTGAJ";
 const HYPER_MAX_SWAP_GAS = BigInt(1_500_000);
 const HYPER_MAX_MINT_GAS = BigInt(3_000_000);
+const HYPER_MAX_WITHDRAW_GAS = BigInt(3_000_000);
 const HYPER_TICK_SPACING = 10;
 
 const ZUM_ADDRESS = "0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5";
@@ -931,6 +940,8 @@ const ALGEBRA_SWAP_ROUTER_ABI = [
 const ALGEBRA_POSITION_MANAGER_ABI = [
   "function ownerOf(uint256 tokenId) view returns (address)",
   "function positions(uint256 tokenId) view returns (uint96 nonce,address operator,address token0,address token1,address deployer,int24 tickLower,int24 tickUpper,uint128 liquidity,uint256 feeGrowthInside0LastX128,uint256 feeGrowthInside1LastX128,uint128 tokensOwed0,uint128 tokensOwed1)",
+  "function collect((uint256 tokenId,address recipient,uint128 amount0Max,uint128 amount1Max)) payable returns (uint256 amount0,uint256 amount1)",
+  "function decreaseLiquidity((uint256 tokenId,uint128 liquidity,uint256 amount0Min,uint256 amount1Min,uint256 deadline)) payable returns (uint256 amount0,uint256 amount1)",
   "function mint((address token0,address token1,address deployer,int24 tickLower,int24 tickUpper,uint256 amount0Desired,uint256 amount1Desired,uint256 amount0Min,uint256 amount1Min,address recipient,uint256 deadline)) payable returns (uint256 tokenId,uint128 liquidity,uint256 amount0,uint256 amount1)"
 ];
 
@@ -1177,7 +1188,7 @@ function formatWalletBalance(value: string, symbol: string) {
   const maximumFractionDigits =
     upper === "BTC"
       ? 8
-      : ["ETH", "WETH", "POL", "PAXG"].includes(upper)
+      : ["ETH", "WETH", "WHYPE", "HYPE", "POL", "PAXG"].includes(upper)
         ? 6
         : parsed < 1
           ? 6
@@ -1303,6 +1314,12 @@ function formatTokenInputAmount(value: number, symbol: string) {
     .toFixed(maximumFractionDigits)
     .replace(/(\.\d*?[1-9])0+$/, "$1")
     .replace(/\.0+$/, "");
+}
+
+function trimBalanceInput(value: string, maxDecimals = 8) {
+  const [integerPart, decimalPart = ""] = value.split(".");
+  const trimmedDecimals = decimalPart.slice(0, maxDecimals).replace(/0+$/, "");
+  return trimmedDecimals ? `${integerPart}.${trimmedDecimals}` : integerPart;
 }
 
 function formatZumAmount(value: bigint) {
@@ -2299,10 +2316,18 @@ export default function Home() {
   const [hyperPreparing, setHyperPreparing] = useState(false);
   const [hyperSwapping, setHyperSwapping] = useState(false);
   const [hyperMinting, setHyperMinting] = useState(false);
+  const [hyperBalanceLoading, setHyperBalanceLoading] = useState(false);
+  const [hyperWalletBalance, setHyperWalletBalance] =
+    useState<HyperWalletBalance | null>(null);
+  const [hyperManualWhypeAmount, setHyperManualWhypeAmount] = useState("");
+  const [hyperManualUsdcAmount, setHyperManualUsdcAmount] = useState("");
+  const [hyperManualMinting, setHyperManualMinting] = useState(false);
   const [hyperLastTxHash, setHyperLastTxHash] = useState("");
   const [hyperMintedTokenId, setHyperMintedTokenId] = useState("");
   const [hyperReadTokenId, setHyperReadTokenId] = useState("");
   const [hyperReadingPosition, setHyperReadingPosition] = useState(false);
+  const [hyperWithdrawPercent, setHyperWithdrawPercent] = useState("100");
+  const [hyperWithdrawing, setHyperWithdrawing] = useState(false);
   const [hyperPosition, setHyperPosition] = useState<HyperPositionView | null>(
     null
   );
@@ -4058,6 +4083,66 @@ export default function Home() {
     return receipt;
   };
 
+  const readHyperWalletBalances = async (prefill = false, silent = false) => {
+    try {
+      setHyperBalanceLoading(true);
+      if (!silent) {
+        setHyperStatus("Leyendo saldos HyperEVM desde MetaMask.");
+      }
+      const signer = await getHyperSigner();
+      const owner = await signer.getAddress();
+      const provider = signer.provider;
+      if (!provider) {
+        throw new Error("No hay provider conectado.");
+      }
+      const usdc = new ethers.Contract(HYPER_USDC_ADDRESS, ERC20_ABI, provider);
+      const whype = new ethers.Contract(HYPER_WHYPE_ADDRESS, ERC20_ABI, provider);
+      const [nativeBalance, usdcBalance, whypeBalance] = (await Promise.all([
+        provider.getBalance(owner),
+        usdc.balanceOf(owner),
+        whype.balanceOf(owner)
+      ])) as [bigint, bigint, bigint];
+      const nextBalance = {
+        address: owner,
+        nativeHype: ethers.formatEther(nativeBalance),
+        usdc: ethers.formatUnits(usdcBalance, 6),
+        whype: ethers.formatUnits(whypeBalance, 18),
+        checkedAt: new Date().toLocaleTimeString()
+      };
+      setHyperWalletBalance(nextBalance);
+      if (prefill) {
+        setHyperManualWhypeAmount(trimBalanceInput(nextBalance.whype, 10));
+        setHyperManualUsdcAmount(trimBalanceInput(nextBalance.usdc, 6));
+      }
+      if (!silent) {
+        setHyperStatus(
+          `HyperEVM conectado: ${shortAddress(owner)} · saldos actualizados.`
+        );
+      }
+    } catch (error) {
+      console.error(error);
+      if (!silent) {
+        setHyperStatus(
+          error instanceof Error
+            ? `No se pudieron leer saldos Hyper: ${describeV4EstimateError(error)}`
+            : "No se pudieron leer saldos Hyper."
+        );
+      }
+    } finally {
+      setHyperBalanceLoading(false);
+    }
+  };
+
+  const useHyperWalletBalancesForMint = () => {
+    if (!hyperWalletBalance) {
+      setHyperStatus("Primero actualizá saldos Hyper desde MetaMask.");
+      return;
+    }
+    setHyperManualWhypeAmount(trimBalanceInput(hyperWalletBalance.whype, 10));
+    setHyperManualUsdcAmount(trimBalanceInput(hyperWalletBalance.usdc, 6));
+    setHyperStatus("Montos cargados desde los saldos WHYPE/USDC de MetaMask.");
+  };
+
   const ensureHyperAllowance = async (
     tokenAddress: string,
     spender: string,
@@ -4088,6 +4173,145 @@ export default function Home() {
     const approveTx = await token.approve(spender, amount);
     setHyperLastTxHash(approveTx.hash);
     await waitForHyperReceipt(provider, approveTx.hash);
+  };
+
+  const handleHyperMintFromTwoTokens = async () => {
+    try {
+      const amount0Desired = parseTokenUnits(hyperManualWhypeAmount, 18);
+      const amount1Desired = parseTokenUnits(hyperManualUsdcAmount, 6);
+      if (amount0Desired <= BigInt(0) || amount1Desired <= BigInt(0)) {
+        setHyperStatus("Cargá montos mayores a cero de WHYPE y USDC.");
+        return;
+      }
+      setHyperManualMinting(true);
+      setHyperMintedTokenId("");
+      setHyperLastTxHash("");
+      setHyperStatus("Preparando mint directo con WHYPE + USDC.");
+      const signer = await getHyperSigner();
+      const owner = await signer.getAddress();
+      const provider = signer.provider;
+      if (!provider) {
+        throw new Error("No hay provider conectado.");
+      }
+      await assertNoPendingTx(provider, owner);
+      const nativeBalance = await provider.getBalance(owner);
+      if (nativeBalance <= BigInt(0)) {
+        setHyperStatus("Falta HYPE nativo para pagar gas en HyperEVM.");
+        return;
+      }
+      const whype = new ethers.Contract(HYPER_WHYPE_ADDRESS, ERC20_ABI, signer);
+      const usdc = new ethers.Contract(HYPER_USDC_ADDRESS, ERC20_ABI, signer);
+      const [whypeBalance, usdcBalance] = (await Promise.all([
+        whype.balanceOf(owner),
+        usdc.balanceOf(owner)
+      ])) as [bigint, bigint];
+      if (amount0Desired > whypeBalance || amount1Desired > usdcBalance) {
+        setHyperStatus(
+          "Saldo insuficiente: bajá el monto o tocá Actualizar saldos Hyper."
+        );
+        return;
+      }
+
+      const pool = new ethers.Contract(
+        HYPER_KITTEN_POOL_ADDRESS,
+        ALGEBRA_POOL_ABI,
+        provider
+      );
+      const globalState = await pool.globalState();
+      const currentTick = Number(globalState[1]);
+      const widthPct = V3_PROFILES.moderate.widthPct;
+      const lowerTick = roundedHyperTick(
+        currentTick + Math.log(1 - widthPct) / Math.log(1.0001),
+        "down"
+      );
+      const upperTick = roundedHyperTick(
+        currentTick + Math.log(1 + widthPct) / Math.log(1.0001),
+        "up"
+      );
+
+      await ensureHyperAllowance(
+        HYPER_WHYPE_ADDRESS,
+        HYPER_KITTEN_POSITION_MANAGER,
+        amount0Desired,
+        signer,
+        "WHYPE"
+      );
+      await ensureHyperAllowance(
+        HYPER_USDC_ADDRESS,
+        HYPER_KITTEN_POSITION_MANAGER,
+        amount1Desired,
+        signer,
+        "USDC"
+      );
+
+      const manager = new ethers.Contract(
+        HYPER_KITTEN_POSITION_MANAGER,
+        ALGEBRA_POSITION_MANAGER_ABI,
+        signer
+      );
+      const params = {
+        token0: HYPER_WHYPE_ADDRESS,
+        token1: HYPER_USDC_ADDRESS,
+        deployer: ZERO_ADDRESS,
+        tickLower: lowerTick,
+        tickUpper: upperTick,
+        amount0Desired,
+        amount1Desired,
+        amount0Min: BigInt(0),
+        amount1Min: BigInt(0),
+        recipient: owner,
+        deadline: deadlineSeconds()
+      };
+      setHyperStatus(
+        "Estimando gas para crear posición con WHYPE + USDC. El contrato puede dejar sobrante de un lado."
+      );
+      const gas = (await manager.mint.estimateGas(params, {
+        value: BigInt(0)
+      })) as bigint;
+      if (gas > HYPER_MAX_MINT_GAS) {
+        setHyperStatus(
+          `Gas alto para mint directo: ${formatGasUnits(
+            gas
+          )} unidades. Operación detenida.`
+        );
+        return;
+      }
+
+      setHyperStatus("Abrí MetaMask para crear la posición con dos tokens.");
+      const tx = await manager.mint(params, { value: BigInt(0) });
+      setHyperLastTxHash(tx.hash);
+      setHyperStatus(`Mint directo enviado: ${tx.hash.slice(0, 10)}...`);
+      const receipt = await waitForHyperReceipt(provider, tx.hash);
+      const mintedLog = receipt.logs.find(
+        (log) =>
+          log.address.toLowerCase() ===
+            HYPER_KITTEN_POSITION_MANAGER.toLowerCase() &&
+          log.topics[0] === TRANSFER_TOPIC &&
+          log.topics[1] === ZERO_ADDRESS_TOPIC
+      );
+      const mintedTokenId = mintedLog
+        ? BigInt(mintedLog.topics[3]).toString()
+        : "";
+      setHyperMintedTokenId(mintedTokenId);
+      if (mintedTokenId) {
+        setHyperReadTokenId(mintedTokenId);
+      }
+      setHyperStatus(
+        mintedTokenId
+          ? `NFT Hyper listo #${mintedTokenId}. Creado con WHYPE + USDC desde MetaMask.`
+          : "Mint directo confirmado. Abrí KittenSwap para ver el nuevo NFT."
+      );
+      await readHyperWalletBalances(false, true);
+    } catch (error) {
+      console.error(error);
+      setHyperStatus(
+        error instanceof Error
+          ? `No se pudo crear con dos tokens: ${describeV4EstimateError(error)}`
+          : "No se pudo crear con dos tokens."
+      );
+    } finally {
+      setHyperManualMinting(false);
+    }
   };
 
   const handleHyperPrepareFromUsdc = async () => {
@@ -4255,6 +4479,7 @@ export default function Home() {
           "WHYPE"
         )} WHYPE. Próximo paso: crear posición HYPE/USDC.`
       );
+      await readHyperWalletBalances(false, true);
     } catch (error) {
       console.error(error);
       setHyperStatus(
@@ -4405,6 +4630,7 @@ export default function Home() {
           ? `NFT Hyper listo #${mintedTokenId}. Podés verlo en KittenSwap y decidir si stakearlo.`
           : "Mint confirmado. Abrí KittenSwap para ver el nuevo NFT."
       );
+      await readHyperWalletBalances(false, true);
     } catch (error) {
       console.error(error);
       setHyperStatus(
@@ -4495,6 +4721,139 @@ export default function Home() {
       );
     } finally {
       setHyperReadingPosition(false);
+    }
+  };
+
+  const handleHyperWithdrawLiquidity = async () => {
+    try {
+      if (!hyperPosition) {
+        setHyperStatus("Primero leé un NFT Hyper para retirar liquidez.");
+        return;
+      }
+      const currentLiquidity = BigInt(hyperPosition.liquidity);
+      if (currentLiquidity <= BigInt(0)) {
+        setHyperStatus("Este NFT Hyper no tiene liquidez activa para retirar.");
+        return;
+      }
+      const percent = Number(hyperWithdrawPercent);
+      if (!Number.isFinite(percent) || percent <= 0 || percent > 100) {
+        setHyperStatus("Ingresá un porcentaje de retiro entre 1 y 100.");
+        return;
+      }
+      const confirmed =
+        typeof window === "undefined" ||
+        window.confirm(
+          `Vas a retirar ${percent}% de la liquidez del NFT Hyper #${hyperPosition.tokenId}. MetaMask puede pedir dos firmas: retirar liquidez y cobrar tokens.`
+        );
+      if (!confirmed) {
+        setHyperStatus("Retiro Hyper cancelado antes de abrir MetaMask.");
+        return;
+      }
+
+      setHyperWithdrawing(true);
+      setHyperLastTxHash("");
+      setHyperStatus("Preparando retiro de liquidez Hyper.");
+      const signer = await getHyperSigner();
+      const owner = await signer.getAddress();
+      const provider = signer.provider;
+      if (!provider) {
+        throw new Error("No hay provider conectado.");
+      }
+      await assertNoPendingTx(provider, owner);
+      const manager = new ethers.Contract(
+        HYPER_KITTEN_POSITION_MANAGER,
+        ALGEBRA_POSITION_MANAGER_ABI,
+        signer
+      );
+      const liveOwner = String(await manager.ownerOf(hyperPosition.tokenId));
+      if (liveOwner.toLowerCase() !== owner.toLowerCase()) {
+        setHyperStatus(
+          "El NFT no está disponible en esta wallet. Si está stakeado en Kitten, primero tocá Deshacer apuesta en Kitten y después volvé a retirar desde Zumpay."
+        );
+        return;
+      }
+      const live = await manager.positions(hyperPosition.tokenId);
+      const liveLiquidity = live[7] as bigint;
+      if (liveLiquidity <= BigInt(0)) {
+        setHyperStatus("La posición Hyper ya no tiene liquidez activa.");
+        return;
+      }
+      const percentBps = BigInt(Math.round(percent * 100));
+      let liquidityToRemove = (liveLiquidity * percentBps) / BigInt(10_000);
+      if (liquidityToRemove <= BigInt(0)) {
+        liquidityToRemove = BigInt(1);
+      }
+      if (liquidityToRemove > liveLiquidity) {
+        liquidityToRemove = liveLiquidity;
+      }
+      const decreaseParams = {
+        tokenId: hyperPosition.tokenId,
+        liquidity: liquidityToRemove,
+        amount0Min: BigInt(0),
+        amount1Min: BigInt(0),
+        deadline: deadlineSeconds()
+      };
+
+      setHyperStatus(
+        "Estimando gas para retirar liquidez. Si el NFT está apostado/stakeado, esta simulación va a fallar y hay que deshacer la apuesta en Kitten."
+      );
+      const decreaseGas = (await manager.decreaseLiquidity.estimateGas(
+        decreaseParams,
+        { value: BigInt(0) }
+      )) as bigint;
+      if (decreaseGas > HYPER_MAX_WITHDRAW_GAS) {
+        setHyperStatus(
+          `Gas alto para retirar: ${formatGasUnits(
+            decreaseGas
+          )} unidades. Operación detenida.`
+        );
+        return;
+      }
+
+      setHyperStatus("Abrí MetaMask para retirar liquidez Hyper.");
+      const decreaseTx = await manager.decreaseLiquidity(decreaseParams, {
+        value: BigInt(0)
+      });
+      setHyperLastTxHash(decreaseTx.hash);
+      setHyperStatus(`Retiro enviado: ${decreaseTx.hash.slice(0, 10)}...`);
+      await waitForHyperReceipt(provider, decreaseTx.hash);
+
+      const collectParams = {
+        tokenId: hyperPosition.tokenId,
+        recipient: owner,
+        amount0Max: MAX_UINT128,
+        amount1Max: MAX_UINT128
+      };
+      setHyperStatus("Liquidez retirada. Abrí MetaMask para cobrar WHYPE/USDC.");
+      const collectGas = (await manager.collect.estimateGas(collectParams, {
+        value: BigInt(0)
+      })) as bigint;
+      if (collectGas > HYPER_MAX_WITHDRAW_GAS) {
+        setHyperStatus(
+          `Retiro hecho, pero el cobro estima gas alto: ${formatGasUnits(
+            collectGas
+          )} unidades. Podés cobrar después desde Kitten o volver a intentar.`
+        );
+        return;
+      }
+      const collectTx = await manager.collect(collectParams, {
+        value: BigInt(0)
+      });
+      setHyperLastTxHash(collectTx.hash);
+      setHyperStatus(`Cobro enviado: ${collectTx.hash.slice(0, 10)}...`);
+      await waitForHyperReceipt(provider, collectTx.hash);
+      setHyperStatus(
+        `Retiro Hyper listo para NFT #${hyperPosition.tokenId}. Volvé a leer la posición para actualizar valor y liquidez.`
+      );
+    } catch (error) {
+      console.error(error);
+      setHyperStatus(
+        error instanceof Error
+          ? `No se pudo retirar Hyper: ${describeV4EstimateError(error)}`
+          : "No se pudo retirar Hyper."
+      );
+    } finally {
+      setHyperWithdrawing(false);
     }
   };
 
@@ -9258,10 +9617,17 @@ export default function Home() {
             <div className={styles.positionsActions}>
               <button
                 className={styles.outline}
+                onClick={() => readHyperWalletBalances(false)}
+                disabled={isLocked}
+              >
+                {hyperBalanceLoading ? "Leyendo..." : "Actualizar saldos"}
+              </button>
+              <button
+                className={styles.outline}
                 onClick={() => setNetworkKey("hyperliquid")}
                 disabled={isLocked}
               >
-                Usar HyperEVM
+                Usar red interna
               </button>
               <a
                 className={styles.outline}
@@ -9282,12 +9648,21 @@ export default function Home() {
           <div className={styles.positionsSummary}>
             <div>
               <span>Red</span>
-              <strong>HyperEVM</strong>
+              <strong>
+                {hyperWalletBalance
+                  ? shortAddress(hyperWalletBalance.address)
+                  : "HyperEVM"}
+              </strong>
             </div>
             <div>
               <span>Gas</span>
               <strong>
-                {hyperNativeAsset
+                {hyperWalletBalance
+                  ? `${formatWalletBalance(
+                      hyperWalletBalance.nativeHype,
+                      "HYPE"
+                    )} HYPE`
+                  : hyperNativeAsset
                   ? `${formatWalletBalance(
                       hyperNativeAsset.balance,
                       "HYPE"
@@ -9298,7 +9673,9 @@ export default function Home() {
             <div>
               <span>USDC</span>
               <strong>
-                {hyperUsdcAsset
+                {hyperWalletBalance
+                  ? formatWalletBalance(hyperWalletBalance.usdc, "USDC")
+                  : hyperUsdcAsset
                   ? formatWalletBalance(hyperUsdcAsset.balance, "USDC")
                   : "0"}
               </strong>
@@ -9306,12 +9683,20 @@ export default function Home() {
             <div>
               <span>WHYPE</span>
               <strong>
-                {hyperWhypeAsset
+                {hyperWalletBalance
+                  ? formatWalletBalance(hyperWalletBalance.whype, "WHYPE")
+                  : hyperWhypeAsset
                   ? formatWalletBalance(hyperWhypeAsset.balance, "WHYPE")
                   : "0"}
               </strong>
             </div>
           </div>
+          {hyperWalletBalance ? (
+            <p className={styles.inlineNote}>
+              MetaMask HyperEVM leído a las {hyperWalletBalance.checkedAt}. HYPE
+              paga gas; WHYPE + USDC crean la posición.
+            </p>
+          ) : null}
 
           <div className={styles.sectionGrid}>
             <div className={styles.walletCard}>
@@ -9366,6 +9751,62 @@ export default function Home() {
                   onChange={(event) => setHyperSlippage(event.target.value)}
                   placeholder="1"
                 />
+              </div>
+              <div className={styles.hyperDualEntry}>
+                <div>
+                  <span>Entrada con dos tokens</span>
+                  <strong>WHYPE + USDC</strong>
+                  <p>
+                    Usá esta ruta cuando ya tenés los dos saldos en MetaMask
+                    HyperEVM. Zumpay toma el precio actual y crea el NFT sin
+                    hacer swap.
+                  </p>
+                </div>
+                <div className={styles.v4RangeGrid}>
+                  <div className={styles.field}>
+                    <label>WHYPE</label>
+                    <input
+                      value={hyperManualWhypeAmount}
+                      onChange={(event) =>
+                        setHyperManualWhypeAmount(event.target.value)
+                      }
+                      placeholder="Monto en WHYPE"
+                    />
+                  </div>
+                  <div className={styles.field}>
+                    <label>USDC</label>
+                    <input
+                      value={hyperManualUsdcAmount}
+                      onChange={(event) =>
+                        setHyperManualUsdcAmount(event.target.value)
+                      }
+                      placeholder="Monto en USDC"
+                    />
+                  </div>
+                </div>
+                <div className={styles.reserveRouteActions}>
+                  <button
+                    className={styles.softButton}
+                    onClick={() => readHyperWalletBalances(true)}
+                    disabled={isLocked || hyperBalanceLoading}
+                  >
+                    {hyperBalanceLoading ? "Leyendo..." : "Leer y cargar saldos"}
+                  </button>
+                  <button
+                    className={styles.softButton}
+                    onClick={useHyperWalletBalancesForMint}
+                    disabled={isLocked || !hyperWalletBalance}
+                  >
+                    Usar saldos
+                  </button>
+                  <button
+                    className={styles.primary}
+                    onClick={handleHyperMintFromTwoTokens}
+                    disabled={isLocked || hyperManualMinting}
+                  >
+                    {hyperManualMinting ? "Creando..." : "Crear con WHYPE + USDC"}
+                  </button>
+                </div>
               </div>
               <div className={styles.reserveRouteActions}>
                 <button
@@ -9585,6 +10026,54 @@ export default function Home() {
                     fees por liquidez; las recompensas de stake se reclaman con
                     Claim en Kitten cuando el NFT está stakeado.
                   </p>
+                  <div className={styles.hyperWithdrawPanel}>
+                    <div>
+                      <span>Retirar liquidez</span>
+                      <strong>
+                        {hyperPosition.liquidity === "0"
+                          ? "Sin liquidez activa"
+                          : `${hyperWithdrawPercent || "0"}% del NFT`}
+                      </strong>
+                      <p>
+                        Si el NFT está apostado/stakeado, primero usá Deshacer
+                        apuesta en Kitten y después retiralo desde Zumpay.
+                      </p>
+                    </div>
+                    <label className={styles.rangeControl}>
+                      <input
+                        type="range"
+                        min="1"
+                        max="100"
+                        step="1"
+                        value={hyperWithdrawPercent}
+                        onChange={(event) =>
+                          setHyperWithdrawPercent(event.target.value)
+                        }
+                        disabled={hyperPosition.liquidity === "0" || hyperWithdrawing}
+                      />
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={hyperWithdrawPercent}
+                        onChange={(event) =>
+                          setHyperWithdrawPercent(event.target.value)
+                        }
+                        disabled={hyperPosition.liquidity === "0" || hyperWithdrawing}
+                      />
+                    </label>
+                    <button
+                      className={styles.primary}
+                      onClick={handleHyperWithdrawLiquidity}
+                      disabled={
+                        isLocked ||
+                        hyperWithdrawing ||
+                        hyperPosition.liquidity === "0"
+                      }
+                    >
+                      {hyperWithdrawing ? "Retirando..." : "Retirar liquidez Hyper"}
+                    </button>
+                  </div>
                 </div>
               ) : null}
               <h3>Datos técnicos</h3>
