@@ -1025,6 +1025,62 @@
   letter-spacing: 0.08em;
 }
 
+.reserveStrategySnapshot {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(0, 82, 255, 0.22);
+  border-radius: 14px;
+  background: rgba(3, 8, 18, 0.42);
+}
+
+.reserveStrategyHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.reserveStrategyHeader span {
+  color: #9fd0ff;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.reserveStrategyHeader strong {
+  color: var(--green);
+  font-size: 12px;
+}
+
+.reserveStrategyGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.reserveStrategyGrid div {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.reserveStrategyGrid span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.reserveStrategyGrid strong {
+  display: block;
+  color: #e8f2ff;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .reserveRouteActions {
   display: grid;
   gap: 8px;

@@ -9751,13 +9751,46 @@ export default function Home() {
                   cbBTC cuando el precio se mueve fuera del rango.
                 </p>
                 <div className={styles.reserveRouteFacts}>
-                  <span>Pool 0.04%</span>
-                  <span>Rango amplio</span>
-                  <span>cbBTC custodiado</span>
+                  <span>Pool 0.03%</span>
+                  <span>Concentrado 10</span>
+                  <span>Stake AERO</span>
+                </div>
+                <div className={styles.reserveStrategySnapshot}>
+                  <div className={styles.reserveStrategyHeader}>
+                    <span>Depósito #5976367</span>
+                    <strong>Stakeado</strong>
+                  </div>
+                  <div className={styles.reserveStrategyGrid}>
+                    <div>
+                      <span>Valor</span>
+                      <strong>$72.18</strong>
+                    </div>
+                    <div>
+                      <span>Rango</span>
+                      <strong>0.026074 - 0.039092</strong>
+                    </div>
+                    <div>
+                      <span>Composición</span>
+                      <strong>0.01338 WETH + 0.00049 cbBTC</strong>
+                    </div>
+                    <div>
+                      <span>ABR</span>
+                      <strong>0.96017%</strong>
+                    </div>
+                    <div>
+                      <span>Emisiones</span>
+                      <strong>0.02185 AERO</strong>
+                    </div>
+                    <div>
+                      <span>Trading fees</span>
+                      <strong>0 WETH / 0 cbBTC</strong>
+                    </div>
+                  </div>
                 </div>
                 <small>
-                  Pool: 0x42d4...b76b · Aerodrome Slipstream. Próximo paso:
-                  lector read-only de precio, rango, fees y NFTs Base.
+                  Pool: 0x42d4...b76b · Aerodrome Slipstream. Esta card queda
+                  como modelo read-only hasta conectar lectura de posición,
+                  AERO reclamable y acciones de stake.
                 </small>
                 <div className={styles.reserveRouteActions}>
                   <a
