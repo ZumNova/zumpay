@@ -60,6 +60,7 @@ type AppView =
   | "accounts"
   | "reserve"
   | "positions"
+  | "base"
   | "hyper"
   | "v3"
   | "v4"
@@ -235,6 +236,7 @@ const APP_VIEWS: { id: AppView; label: string; hint: string }[] = [
   { id: "accounts", label: "Cuentas", hint: "Wallet BTC/EVM" },
   { id: "reserve", label: "Director", hint: "Rutas de reserva" },
   { id: "positions", label: "Posiciones", hint: "V3 + V4 + Hyper" },
+  { id: "base", label: "Base", hint: "WETH/cbBTC" },
   { id: "hyper", label: "Hyper", hint: "HYPE/USDC" },
   { id: "v3", label: "Pools V3", hint: "Uniswap V3" },
   { id: "v4", label: "Robin V4", hint: "Robinhood V4" },
@@ -9793,6 +9795,12 @@ export default function Home() {
                   AERO reclamable y acciones de stake.
                 </small>
                 <div className={styles.reserveRouteActions}>
+                  <button
+                    className={styles.softButton}
+                    onClick={() => setActiveView("base")}
+                  >
+                    Abrir panel Base
+                  </button>
                   <a
                     className={styles.outline}
                     href="https://aerodrome.finance/deposit?token0=0x4200000000000000000000000000000000000006&token1=0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf&type=-1"
@@ -10035,6 +10043,163 @@ export default function Home() {
             </div>
           </div>
           ) : null}
+        </section>
+        ) : null}
+
+        {activeView === "base" ? (
+        <section
+          className={`${styles.sectionBlock} ${
+            isLocked ? styles.sectionLocked : ""
+          }`}
+        >
+          <div className={styles.positionsHeader}>
+            <div>
+              <p className={styles.kicker}>Base</p>
+              <h2>WETH/cbBTC Accumulator</h2>
+              <p className={styles.subtitle}>
+                Estrategia concentrada en Aerodrome: exposición ETH/BTC con
+                rango amplio y staking para cosechar AERO.
+              </p>
+            </div>
+            <div className={styles.positionsActions}>
+              <a
+                className={styles.outline}
+                href="https://aerodrome.finance/liquidity"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Abrir Aerodrome
+              </a>
+              <a
+                className={styles.outline}
+                href="https://bridge.base.org/deposit"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Puente Base
+              </a>
+            </div>
+          </div>
+
+          <div className={styles.sectionGrid}>
+            <div className={styles.panel}>
+              <p className={styles.kicker}>Tesis</p>
+              <h3>ETH/BTC con cosecha AERO</h3>
+              <p className={styles.subtitle}>
+                No es una estable. La posición trabaja mientras WETH/cbBTC se
+                mantenga dentro del rango; si se mueve fuerte, queda más
+                cargada en WETH o cbBTC.
+              </p>
+              <div className={styles.strategyGrid}>
+                <div className={styles.strategyCard}>
+                  <div>
+                    <span>Pool</span>
+                    <strong>WETH/cbBTC</strong>
+                    <small>Aerodrome Slipstream · Base</small>
+                  </div>
+                </div>
+                <div className={styles.strategyCard}>
+                  <div>
+                    <span>Entrada</span>
+                    <strong>USDC → WETH + cbBTC</strong>
+                    <small>Split manual por ahora; automático después.</small>
+                  </div>
+                </div>
+                <div className={styles.strategyCard}>
+                  <div>
+                    <span>Rango modelo</span>
+                    <strong>±20%</strong>
+                    <small>0.026074 - 0.039092 cbBTC/WETH.</small>
+                  </div>
+                </div>
+                <div className={styles.strategyCard}>
+                  <div>
+                    <span>Recompensa</span>
+                    <strong>AERO</strong>
+                    <small>La posición debe quedar stakeada.</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.panel}>
+              <p className={styles.kicker}>Posición modelo</p>
+              <h3>Depósito #5976367</h3>
+              <div className={styles.reserveStrategySnapshot}>
+                <div className={styles.reserveStrategyHeader}>
+                  <span>Stakeado</span>
+                  <strong>Activo</strong>
+                </div>
+                <div className={styles.reserveStrategyGrid}>
+                  <div>
+                    <span>Valor</span>
+                    <strong>$72.18</strong>
+                  </div>
+                  <div>
+                    <span>ABR</span>
+                    <strong>0.96017%</strong>
+                  </div>
+                  <div>
+                    <span>WETH</span>
+                    <strong>0.01338</strong>
+                  </div>
+                  <div>
+                    <span>cbBTC</span>
+                    <strong>0.00049</strong>
+                  </div>
+                  <div>
+                    <span>AERO</span>
+                    <strong>0.02185</strong>
+                  </div>
+                  <div>
+                    <span>Fees</span>
+                    <strong>0 WETH / 0 cbBTC</strong>
+                  </div>
+                </div>
+              </div>
+              <p className={styles.inlineNote}>
+                Estos datos son el primer modelo operativo. El siguiente paso es
+                leer depósito, rango, emisiones y fees directo desde Base.
+              </p>
+            </div>
+          </div>
+
+          <div className={styles.panel}>
+            <p className={styles.kicker}>Ruta humana</p>
+            <div className={styles.reserveRouteFacts}>
+              <span>1 · USDC en Base</span>
+              <span>2 · Swap a WETH/cbBTC</span>
+              <span>3 · Crear rango ±20%</span>
+              <span>4 · Stake 100%</span>
+              <span>5 · Reclamar AERO</span>
+            </div>
+            <div className={styles.reserveRouteActions}>
+              <a
+                className={styles.outline}
+                href="https://aerodrome.finance/deposit?token0=0x4200000000000000000000000000000000000006&token1=0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf&type=-1"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Abrir WETH/cbBTC
+              </a>
+              <a
+                className={styles.outline}
+                href="https://basescan.org/address/0x42d4a22cad0f5a49681a5715ce994af73a43b76b"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Ver pool en BaseScan
+              </a>
+              <a
+                className={styles.outline}
+                href="https://www.geckoterminal.com/base/pools/0x42d4a22cad0f5a49681a5715ce994af73a43b76b"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Ver mercado
+              </a>
+            </div>
+          </div>
         </section>
         ) : null}
 
