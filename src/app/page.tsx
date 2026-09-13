@@ -434,6 +434,16 @@ const HYPER_MAX_SWAP_GAS = BigInt(1_500_000);
 const HYPER_MAX_MINT_GAS = BigInt(3_000_000);
 const HYPER_MAX_WITHDRAW_GAS = BigInt(3_000_000);
 const HYPER_TICK_SPACING = 10;
+const BASE_CHAIN_ID = 8453;
+const BASE_RPC_URL =
+  process.env.NEXT_PUBLIC_BASE_RPC_URL ?? "https://mainnet.base.org";
+const BASE_EXPLORER_ROOT = "https://basescan.org";
+const BASE_USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+const BASE_WETH_ADDRESS = "0x4200000000000000000000000000000000000006";
+const BASE_CBBTC_ADDRESS = "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf";
+const BASE_AERODROME_ROUTER = "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43";
+const BASE_AERODROME_FACTORY = "0x420DD381b31aEf6683db6B902084cB0FFECe40Da";
+const BASE_MAX_SWAP_GAS = BigInt(1_500_000);
 const BASE_WETH_PRICE_USDC = 2498.11;
 const BASE_CBBTC_PER_WETH = 0.03255;
 const BASE_CBBTC_PRICE_USDC = BASE_WETH_PRICE_USDC / BASE_CBBTC_PER_WETH;
@@ -478,6 +488,10 @@ const ERC20_ABI = [
 const PREMIUM_ACCESS_ABI = [
   "function premiumPrice() view returns (uint256)",
   "function payPremium()"
+];
+const AERODROME_ROUTER_ABI = [
+  "function getAmountsOut(uint256 amountIn, tuple(address from,address to,bool stable,address factory)[] routes) view returns (uint256[] amounts)",
+  "function swapExactTokensForTokens(uint256 amountIn,uint256 amountOutMin,tuple(address from,address to,bool stable,address factory)[] routes,address to,uint256 deadline) returns (uint256[] amounts)"
 ];
 
 const LEGACY_V3_CONTRACTS: V3Contracts = {
@@ -2258,6 +2272,11 @@ export default function Home() {
   const [baseSwapSlippage, setBaseSwapSlippage] = useState("1.5");
   const [baseLpSlippage, setBaseLpSlippage] = useState("1");
   const [baseDeadlineMinutes, setBaseDeadlineMinutes] = useState("30");
+  const [baseStatus, setBaseStatus] = useState("");
+  const [baseSwapping, setBaseSwapping] = useState<"weth" | "cbbtc" | null>(
+    null
+  );
+  const [baseLastTxHash, setBaseLastTxHash] = useState("");
   const [payerAddress, setPayerAddress] = useState<string | null>(null);
   const [premiumAmount, setPremiumAmount] = useState(ZUM_PREMIUM_AMOUNT);
   const [premiumAmountRaw, setPremiumAmountRaw] = useState(
@@ -4183,6 +4202,55 @@ export default function Home() {
     return signer;
   };
 
+  const getBaseSigner = async () => {
+    const ethereum = await getInjectedEthereum();
+    if (!ethereum) {
+      if (isMobileBrowser()) {
+        openInMetaMaskMobile();
+      }
+      throw new Error("MetaMask no está instalado.");
+    }
+    const accounts = (await ethereum.request({
+      method: "eth_requestAccounts"
+    })) as string[];
+    let browserProvider = new ethers.BrowserProvider(ethereum);
+    const chainId = Number((await browserProvider.getNetwork()).chainId);
+    if (chainId !== BASE_CHAIN_ID) {
+      const target = `0x${BASE_CHAIN_ID.toString(16)}`;
+      try {
+        await ethereum.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: target }]
+        });
+      } catch (switchError) {
+        const code = (switchError as { code?: number })?.code;
+        if (code !== 4902) {
+          throw switchError;
+        }
+        await ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [
+            {
+              chainId: target,
+              chainName: "Base",
+              nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+              rpcUrls: [BASE_RPC_URL],
+              blockExplorerUrls: [BASE_EXPLORER_ROOT]
+            }
+          ]
+        });
+      }
+      browserProvider = new ethers.BrowserProvider(ethereum);
+      const nextChainId = Number((await browserProvider.getNetwork()).chainId);
+      if (nextChainId !== BASE_CHAIN_ID) {
+        throw new Error("MetaMask no quedó en Base.");
+      }
+    }
+    const signer = await browserProvider.getSigner();
+    setPayerAddress(accounts?.[0] ?? (await signer.getAddress()));
+    return signer;
+  };
+
   const waitForHyperReceipt = async (
     provider: ethers.Provider,
     txHash: string
@@ -4199,6 +4267,202 @@ export default function Home() {
       );
     }
     return receipt;
+  };
+
+  const waitForBaseReceipt = async (
+    provider: ethers.Provider,
+    txHash: string
+  ) => {
+    const receipt = await provider.waitForTransaction(txHash, 1, 180000);
+    if (!receipt) {
+      throw new Error(
+        `La transacción ${txHash.slice(
+          0,
+          10
+        )}... no confirmó a tiempo en Base.`
+      );
+    }
+    if (receipt.status === 0) {
+      throw new Error(
+        `La transacción ${txHash.slice(0, 10)}... confirmó revertida en Base.`
+      );
+    }
+    return receipt;
+  };
+
+  const baseSwapRoutes = (target: "weth" | "cbbtc") => {
+    const wethRoute = {
+      from: BASE_USDC_ADDRESS,
+      to: BASE_WETH_ADDRESS,
+      stable: false,
+      factory: BASE_AERODROME_FACTORY
+    };
+    if (target === "weth") {
+      return [wethRoute];
+    }
+    return [
+      wethRoute,
+      {
+        from: BASE_WETH_ADDRESS,
+        to: BASE_CBBTC_ADDRESS,
+        stable: false,
+        factory: BASE_AERODROME_FACTORY
+      }
+    ];
+  };
+
+  const handleBaseSwapFromUsdc = async (target: "weth" | "cbbtc") => {
+    try {
+      const amount =
+        target === "weth"
+          ? baseEntryPreview.usdcToWeth
+          : baseEntryPreview.usdcToCbbtc;
+      if (!Number.isFinite(amount) || amount <= 0) {
+        setBaseStatus("Ingresá un monto USDC mayor a cero.");
+        return;
+      }
+      const amountIn = ethers.parseUnits(amount.toFixed(6), 6);
+      if (amountIn <= BigInt(0)) {
+        setBaseStatus("El monto USDC es demasiado chico para swapear.");
+        return;
+      }
+      const slippagePct = Math.min(
+        Math.max(Number(baseSwapSlippage) || 1.5, 0.1),
+        5
+      );
+      const deadlineMinutes = Math.min(
+        Math.max(Number(baseDeadlineMinutes) || 30, 5),
+        90
+      );
+      const deadline = BigInt(
+        Math.floor(Date.now() / 1000) + Math.round(deadlineMinutes * 60)
+      );
+      setBaseSwapping(target);
+      setBaseLastTxHash("");
+      setBaseStatus("Preparando MetaMask en Base.");
+      const signer = await getBaseSigner();
+      const owner = await signer.getAddress();
+      const provider = signer.provider;
+      if (!provider) {
+        throw new Error("No hay provider conectado.");
+      }
+      await assertNoPendingTx(provider, owner);
+      const ethBalance = await provider.getBalance(owner);
+      if (ethBalance <= BigInt(0)) {
+        setBaseStatus("Falta ETH nativo en Base para pagar gas.");
+        return;
+      }
+
+      const usdc = new ethers.Contract(BASE_USDC_ADDRESS, ERC20_ABI, signer);
+      const usdcBalance = (await usdc.balanceOf(owner)) as bigint;
+      if (usdcBalance < amountIn) {
+        setBaseStatus(
+          `Saldo USDC insuficiente. Necesitás ${ethers.formatUnits(
+            amountIn,
+            6
+          )} USDC en Base.`
+        );
+        return;
+      }
+
+      const router = new ethers.Contract(
+        BASE_AERODROME_ROUTER,
+        AERODROME_ROUTER_ABI,
+        signer
+      );
+      const routes = baseSwapRoutes(target);
+      setBaseStatus(
+        `Cotizando USDC -> ${target === "weth" ? "WETH" : "cbBTC"} en Aerodrome.`
+      );
+      const amounts = (await router.getAmountsOut(amountIn, routes)) as bigint[];
+      const quotedOut = amounts[amounts.length - 1] ?? BigInt(0);
+      if (quotedOut <= BigInt(0)) {
+        setBaseStatus("Aerodrome no devolvió cotización para esta ruta.");
+        return;
+      }
+      const amountOutMin =
+        (quotedOut * BigInt(10000 - Math.round(slippagePct * 100))) /
+        BigInt(10000);
+      if (amountOutMin <= BigInt(0)) {
+        setBaseStatus("El mínimo de salida quedó en cero. Subí el monto.");
+        return;
+      }
+
+      const currentAllowance = (await usdc.allowance(
+        owner,
+        BASE_AERODROME_ROUTER
+      )) as bigint;
+      if (currentAllowance < amountIn) {
+        setBaseStatus("Aprobando USDC para Aerodrome Router.");
+        const approveGas = (await usdc.approve.estimateGas(
+          BASE_AERODROME_ROUTER,
+          amountIn
+        )) as bigint;
+        if (approveGas > BASE_MAX_SWAP_GAS) {
+          setBaseStatus(
+            `Approve con gas alto: ${formatGasUnits(
+              approveGas
+            )} unidades. Operación detenida.`
+          );
+          return;
+        }
+        const approveTx = await usdc.approve(BASE_AERODROME_ROUTER, amountIn);
+        setBaseLastTxHash(approveTx.hash);
+        setBaseStatus(`Approve enviado: ${approveTx.hash.slice(0, 10)}...`);
+        await waitForBaseReceipt(provider, approveTx.hash);
+      }
+
+      setBaseStatus("Estimando gas del swap en Base.");
+      const gas = (await router.swapExactTokensForTokens.estimateGas(
+        amountIn,
+        amountOutMin,
+        routes,
+        owner,
+        deadline
+      )) as bigint;
+      if (gas > BASE_MAX_SWAP_GAS) {
+        setBaseStatus(
+          `Gas alto para swap: ${formatGasUnits(
+            gas
+          )} unidades. Operación detenida.`
+        );
+        return;
+      }
+
+      setBaseStatus(
+        `Abrí MetaMask para swapear USDC -> ${
+          target === "weth" ? "WETH" : "cbBTC"
+        }. Deadline ${deadlineMinutes} min.`
+      );
+      const tx = await router.swapExactTokensForTokens(
+        amountIn,
+        amountOutMin,
+        routes,
+        owner,
+        deadline,
+        { gasLimit: bufferedGasLimit(gas) }
+      );
+      setBaseLastTxHash(tx.hash);
+      setBaseStatus(`Swap enviado: ${tx.hash.slice(0, 10)}...`);
+      await waitForBaseReceipt(provider, tx.hash);
+      const decimals = target === "weth" ? 18 : 8;
+      const symbol = target === "weth" ? "WETH" : "cbBTC";
+      setBaseStatus(
+        `Swap listo: salida mínima protegida ${formatWalletBalance(
+          ethers.formatUnits(amountOutMin, decimals),
+          symbol
+        )} ${symbol}. Continuá con el siguiente paso.`
+      );
+    } catch (error) {
+      console.error(error);
+      setBaseStatus(
+        error instanceof Error
+          ? `No se pudo swapear en Base: ${describeV4EstimateError(error)}`
+          : "No se pudo swapear en Base."
+      );
+    } finally {
+      setBaseSwapping(null);
+    }
   };
 
   const loadStoredHyperPositions = (ownerAddress?: string) => {
@@ -10409,14 +10673,22 @@ export default function Home() {
               debe leer los saldos actuales y continuar desde WETH/cbBTC.
             </p>
             <div className={styles.reserveRouteActions}>
-              <a
-                className={styles.outline}
-                href="https://aerodrome.finance/swap"
-                target="_blank"
-                rel="noreferrer"
+              <button
+                className={styles.softButton}
+                onClick={() => handleBaseSwapFromUsdc("weth")}
+                disabled={isLocked || baseSwapping !== null}
               >
-                Abrir swap Aerodrome
-              </a>
+                {baseSwapping === "weth" ? "Swapeando..." : "Swap USDC → WETH"}
+              </button>
+              <button
+                className={styles.softButton}
+                onClick={() => handleBaseSwapFromUsdc("cbbtc")}
+                disabled={isLocked || baseSwapping !== null}
+              >
+                {baseSwapping === "cbbtc"
+                  ? "Swapeando..."
+                  : "Swap USDC → cbBTC"}
+              </button>
               <a
                 className={styles.outline}
                 href="https://aerodrome.finance/deposit?token0=0x4200000000000000000000000000000000000006&token1=0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf&type=-1"
@@ -10426,6 +10698,17 @@ export default function Home() {
                 Crear rango WETH/cbBTC
               </a>
             </div>
+            {baseStatus ? <p className={styles.status}>{baseStatus}</p> : null}
+            {baseLastTxHash ? (
+              <a
+                className={styles.outline}
+                href={`${BASE_EXPLORER_ROOT}/tx/${baseLastTxHash}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Ver última tx Base
+              </a>
+            ) : null}
           </div>
 
           <div className={styles.panel}>
