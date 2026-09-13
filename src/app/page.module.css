@@ -922,6 +922,13 @@
     rgba(8, 13, 24, 0.72);
 }
 
+.reserveRouteLinea {
+  border-color: rgba(125, 249, 255, 0.24);
+  background:
+    linear-gradient(135deg, rgba(125, 249, 255, 0.08), transparent 46%),
+    rgba(8, 13, 24, 0.72);
+}
+
 .reserveIconMetaMask {
   background: rgba(246, 133, 27, 0.08);
   box-shadow: 0 0 20px rgba(246, 133, 27, 0.18);

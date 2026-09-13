@@ -9828,7 +9828,7 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className={styles.reserveRouteCard}>
+              <div className={`${styles.reserveRouteCard} ${styles.reserveRouteLinea}`}>
                 <div className={styles.reserveRouteTop}>
                   <div
                     className={`${styles.reserveIcon} ${styles.reserveIconLinea}`}
@@ -9836,23 +9836,64 @@ export default function Home() {
                   >
                     L
                   </div>
-                  <span>Linea</span>
+                  <span>Linea candidata</span>
                 </div>
-                <strong>Etherex watchlist</strong>
+                <strong>WETH / USDC Etherex</strong>
                 <p>
-                  Radar para Linea: Etherex tiene liquidez concentrada y puede
-                  servir para WETH/USDC, mUSD/USDC o wstETH/WETH. Por ahora no
-                  es ruta core de reserva BTC; primero conviene mirar TVL,
-                  volumen, rango y riesgos del incentivo.
+                  Rotación ETH/USDC en Linea. Si ETH baja, la posición acumula
+                  más WETH; si ETH sube, toma más USDC. Sirve como laboratorio
+                  de Etherex antes de automatizar entradas desde Zumpay.
                 </p>
+                <div className={styles.reserveRouteFacts}>
+                  <span>USDC/WETH</span>
+                  <span>Tick 50</span>
+                  <span>Rango ±20%</span>
+                </div>
+                <div className={styles.reserveStrategySnapshot}>
+                  <div className={styles.reserveStrategyHeader}>
+                    <span>Pool 0x90E8...914B</span>
+                    <strong>Candidata</strong>
+                  </div>
+                  <div className={styles.reserveStrategyGrid}>
+                    <div>
+                      <span>Precio base</span>
+                      <strong>~2,506 USDC/WETH</strong>
+                    </div>
+                    <div>
+                      <span>Rango modelo</span>
+                      <strong>2,005 - 3,008</strong>
+                    </div>
+                    <div>
+                      <span>Entrada</span>
+                      <strong>USDC + WETH</strong>
+                    </div>
+                    <div>
+                      <span>Objetivo</span>
+                      <strong>Fees / incentivos</strong>
+                    </div>
+                  </div>
+                </div>
+                <small>
+                  Alternativas vistas: mUSD/USDC para estable experimental y
+                  WBTC/WETH con actividad baja. Por ahora, USDC/WETH es la ruta
+                  Linea más clara.
+                </small>
                 <div className={styles.reserveRouteActions}>
                   <a
                     className={styles.outline}
-                    href="https://www.etherex.finance/trade"
+                    href="https://www.etherex.finance/liquidity"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Abrir Etherex
+                    Abrir Etherex Liquidity
+                  </a>
+                  <a
+                    className={styles.outline}
+                    href="https://www.geckoterminal.com/linea/pools/0x90e8a5b881d211f418d77ba8978788b62544914b"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Ver pool USDC/WETH
                   </a>
                   <a
                     className={styles.outline}
@@ -9864,11 +9905,11 @@ export default function Home() {
                   </a>
                   <a
                     className={styles.outline}
-                    href="https://lineascan.build/"
+                    href="https://lineascan.build/address/0x90E8a5b881D211f418d77Ba8978788b62544914B"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Abrir LineaScan
+                    Ver pool en LineaScan
                   </a>
                 </div>
               </div>
