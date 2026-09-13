@@ -54,6 +54,7 @@ type ReadyPositionNotice = {
   tokenId: string;
 };
 type PortfolioFilter = "all" | "v3" | "v4" | "hyper";
+type BaseRangeProfile = "active" | "balanced" | "long";
 type AppView =
   | "home"
   | "premium"
@@ -433,6 +434,29 @@ const HYPER_MAX_SWAP_GAS = BigInt(1_500_000);
 const HYPER_MAX_MINT_GAS = BigInt(3_000_000);
 const HYPER_MAX_WITHDRAW_GAS = BigInt(3_000_000);
 const HYPER_TICK_SPACING = 10;
+const BASE_WETH_PRICE_USDC = 2498.11;
+const BASE_CBBTC_PER_WETH = 0.03255;
+const BASE_CBBTC_PRICE_USDC = BASE_WETH_PRICE_USDC / BASE_CBBTC_PER_WETH;
+const BASE_RANGE_PROFILES: Record<
+  BaseRangeProfile,
+  { label: string; pct: number; detail: string }
+> = {
+  active: {
+    label: "Activo",
+    pct: 0.15,
+    detail: "Más eficiente, requiere mirar más seguido."
+  },
+  balanced: {
+    label: "Base",
+    pct: 0.2,
+    detail: "Recomendado: rango amplio sin apagar tanto el capital."
+  },
+  long: {
+    label: "Largo",
+    pct: 0.3,
+    detail: "Más tranquilo, menor eficiencia por dólar."
+  }
+};
 
 const ZUM_ADDRESS = "0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5";
 const ZUM_OWNER = "0xdD6cB8f731B6ABbAEE5839d2e45Fe2319a8572e4";
@@ -2228,6 +2252,9 @@ export default function Home() {
   const [openPortfolioPosition, setOpenPortfolioPosition] = useState<
     string | null
   >(null);
+  const [baseUsdcAmount, setBaseUsdcAmount] = useState("100");
+  const [baseRangeProfile, setBaseRangeProfile] =
+    useState<BaseRangeProfile>("balanced");
   const [payerAddress, setPayerAddress] = useState<string | null>(null);
   const [premiumAmount, setPremiumAmount] = useState(ZUM_PREMIUM_AMOUNT);
   const [premiumAmountRaw, setPremiumAmountRaw] = useState(
@@ -2349,6 +2376,25 @@ export default function Home() {
     () => new ethers.JsonRpcProvider(network.rpcUrl, network.chainId),
     [network]
   );
+
+  const baseEntryPreview = useMemo(() => {
+    const amount = parseHumanAmount(baseUsdcAmount);
+    const safeAmount = Number.isFinite(amount) && amount > 0 ? amount : 0;
+    const usdcToWeth = safeAmount / 2;
+    const usdcToCbbtc = safeAmount - usdcToWeth;
+    const profile = BASE_RANGE_PROFILES[baseRangeProfile];
+    return {
+      amount: safeAmount,
+      profile,
+      usdcToWeth,
+      usdcToCbbtc,
+      wethAmount: usdcToWeth / BASE_WETH_PRICE_USDC,
+      cbbtcAmount: usdcToCbbtc / BASE_CBBTC_PRICE_USDC,
+      rangeLower: BASE_CBBTC_PER_WETH * (1 - profile.pct),
+      rangeUpper: BASE_CBBTC_PER_WETH * (1 + profile.pct),
+      rangePct: profile.pct * 100
+    };
+  }, [baseRangeProfile, baseUsdcAmount]);
 
   useEffect(() => {
     if (!ZUM_PREMIUM_CONTRACT) {
@@ -10161,6 +10207,112 @@ export default function Home() {
                 Estos datos son el primer modelo operativo. El siguiente paso es
                 leer depósito, rango, emisiones y fees directo desde Base.
               </p>
+            </div>
+          </div>
+
+          <div className={styles.panel}>
+            <p className={styles.kicker}>Entrada simple</p>
+            <h3>Crear desde USDC Base</h3>
+            <p className={styles.subtitle}>
+              Zumpay prepara la entrada: divide USDC en WETH/cbBTC, sugiere el
+              rango y deja el camino listo para crear la posición concentrada en
+              Aerodrome. Todavía no firma ni ejecuta swaps.
+            </p>
+            <div className={styles.field}>
+              <label>Monto USDC</label>
+              <input
+                value={baseUsdcAmount}
+                onChange={(event) => setBaseUsdcAmount(event.target.value)}
+                placeholder="Monto total en USDC"
+                inputMode="decimal"
+              />
+            </div>
+            <div className={styles.baseRangeGrid}>
+              {(Object.entries(BASE_RANGE_PROFILES) as [
+                BaseRangeProfile,
+                (typeof BASE_RANGE_PROFILES)[BaseRangeProfile]
+              ][]).map(([key, profile]) => (
+                <button
+                  key={key}
+                  className={`${styles.baseRangeButton} ${
+                    baseRangeProfile === key ? styles.baseRangeButtonActive : ""
+                  }`}
+                  onClick={() => setBaseRangeProfile(key)}
+                  type="button"
+                >
+                  <span>{profile.label}</span>
+                  <strong>±{(profile.pct * 100).toFixed(0)}%</strong>
+                  <small>{profile.detail}</small>
+                </button>
+              ))}
+            </div>
+            <div className={styles.reserveStrategySnapshot}>
+              <div className={styles.reserveStrategyHeader}>
+                <span>Preview {baseEntryPreview.profile.label}</span>
+                <strong>
+                  {baseEntryPreview.amount > 0
+                    ? `$${baseEntryPreview.amount.toLocaleString("en-US", {
+                        maximumFractionDigits: 2
+                      })}`
+                    : "Ingresá USDC"}
+                </strong>
+              </div>
+              <div className={styles.reserveStrategyGrid}>
+                <div>
+                  <span>Swap a WETH</span>
+                  <strong>
+                    {baseEntryPreview.usdcToWeth.toLocaleString("en-US", {
+                      maximumFractionDigits: 2
+                    })}{" "}
+                    USDC → {formatHumanTokenAmount(baseEntryPreview.wethAmount, "WETH")} WETH
+                  </strong>
+                </div>
+                <div>
+                  <span>Swap a cbBTC</span>
+                  <strong>
+                    {baseEntryPreview.usdcToCbbtc.toLocaleString("en-US", {
+                      maximumFractionDigits: 2
+                    })}{" "}
+                    USDC → {formatHumanTokenAmount(baseEntryPreview.cbbtcAmount, "cbBTC")} cbBTC
+                  </strong>
+                </div>
+                <div>
+                  <span>Rango bajo</span>
+                  <strong>
+                    {baseEntryPreview.rangeLower.toLocaleString("en-US", {
+                      maximumFractionDigits: 6
+                    })}{" "}
+                    cbBTC/WETH
+                  </strong>
+                </div>
+                <div>
+                  <span>Rango alto</span>
+                  <strong>
+                    {baseEntryPreview.rangeUpper.toLocaleString("en-US", {
+                      maximumFractionDigits: 6
+                    })}{" "}
+                    cbBTC/WETH
+                  </strong>
+                </div>
+              </div>
+            </div>
+            <div className={styles.reserveRouteActions}>
+              <a
+                className={styles.outline}
+                href="https://aerodrome.finance/swap"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Abrir swap Aerodrome
+              </a>
+              <a
+                className={styles.outline}
+                href="https://aerodrome.finance/deposit?token0=0x4200000000000000000000000000000000000006&token1=0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf&type=-1"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Crear rango WETH/cbBTC
+              </a>
             </div>
           </div>
 
