@@ -9782,6 +9782,45 @@ export default function Home() {
                 </div>
               </div>
 
+              <div className={`${styles.reserveRouteCard} ${styles.reserveRouteGas}`}>
+                <div className={styles.reserveRouteTop}>
+                  <div
+                    className={`${styles.reserveIcon} ${styles.reserveIconGas}`}
+                    aria-hidden="true"
+                  >
+                    G
+                  </div>
+                  <span>Gas por red</span>
+                </div>
+                <strong>Gas.zip</strong>
+                <p>
+                  Para operar en cada blockchain necesitás gas nativo de esa
+                  red. Base, Arbitrum, Linea, Optimism y Ethereum usan ETH;
+                  Polygon usa POL; HyperEVM usa HYPE; Robinhood usa ETH de RH.
+                  Si tenés capital pero no gas, MetaMask no puede firmar.
+                </p>
+                <div className={styles.reserveRouteFacts}>
+                  <span>Base · ETH</span>
+                  <span>Linea · ETH</span>
+                  <span>Hyper · HYPE</span>
+                  <span>Polygon · POL</span>
+                </div>
+                <small>
+                  Usalo para cargar pequeñas cantidades de gas en la red donde
+                  vas a swapear, crear LP, stakear o reclamar recompensas.
+                </small>
+                <div className={styles.reserveRouteActions}>
+                  <a
+                    className={styles.outline}
+                    href="https://www.gas.zip/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Abrir Gas.zip
+                  </a>
+                </div>
+              </div>
+
               <div className={`${styles.reserveRouteCard} ${styles.reserveRouteFeatured}`}>
                 <div className={styles.reserveRouteTop}>
                   <div

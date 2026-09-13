@@ -929,6 +929,13 @@
     rgba(8, 13, 24, 0.72);
 }
 
+.reserveRouteGas {
+  border-color: rgba(255, 184, 107, 0.26);
+  background:
+    linear-gradient(135deg, rgba(255, 184, 107, 0.1), transparent 48%),
+    rgba(8, 13, 24, 0.72);
+}
+
 .reserveIconMetaMask {
   background: rgba(246, 133, 27, 0.08);
   box-shadow: 0 0 20px rgba(246, 133, 27, 0.18);
@@ -969,6 +976,12 @@
 .reserveIconAcross {
   background: rgba(4, 208, 154, 0.08);
   box-shadow: 0 0 20px rgba(4, 208, 154, 0.18);
+}
+
+.reserveIconGas {
+  color: #120b03;
+  background: linear-gradient(135deg, #ffb86b, #facc15);
+  box-shadow: 0 0 22px rgba(255, 184, 107, 0.26);
 }
 
 .reserveIconBase {
