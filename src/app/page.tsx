@@ -443,7 +443,11 @@ const BASE_WETH_ADDRESS = "0x4200000000000000000000000000000000000006";
 const BASE_CBBTC_ADDRESS = "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf";
 const BASE_AERODROME_ROUTER = "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43";
 const BASE_AERODROME_FACTORY = "0x420DD381b31aEf6683db6B902084cB0FFECe40Da";
+const BASE_AERODROME_POSITION_MANAGER =
+  "0x827922686190790b37229fd06084350E74485b72";
+const BASE_SLIPSTREAM_TICK_SPACING = 10;
 const BASE_MAX_SWAP_GAS = BigInt(1_500_000);
+const BASE_MAX_MINT_GAS = BigInt(3_000_000);
 const BASE_WETH_PRICE_USDC = 2498.11;
 const BASE_CBBTC_PER_WETH = 0.03255;
 const BASE_CBBTC_PRICE_USDC = BASE_WETH_PRICE_USDC / BASE_CBBTC_PER_WETH;
@@ -492,6 +496,9 @@ const PREMIUM_ACCESS_ABI = [
 const AERODROME_ROUTER_ABI = [
   "function getAmountsOut(uint256 amountIn, tuple(address from,address to,bool stable,address factory)[] routes) view returns (uint256[] amounts)",
   "function swapExactTokensForTokens(uint256 amountIn,uint256 amountOutMin,tuple(address from,address to,bool stable,address factory)[] routes,address to,uint256 deadline) returns (uint256[] amounts)"
+];
+const AERODROME_POSITION_MANAGER_ABI = [
+  "function mint((address token0,address token1,int24 tickSpacing,int24 tickLower,int24 tickUpper,uint256 amount0Desired,uint256 amount1Desired,uint256 amount0Min,uint256 amount1Min,address recipient,uint256 deadline,uint160 sqrtPriceX96)) payable returns (uint256 tokenId,uint128 liquidity,uint256 amount0,uint256 amount1)"
 ];
 
 const LEGACY_V3_CONTRACTS: V3Contracts = {
@@ -1357,6 +1364,30 @@ function formatTokenInputAmount(value: number, symbol: string) {
     .toFixed(maximumFractionDigits)
     .replace(/(\.\d*?[1-9])0+$/, "$1")
     .replace(/\.0+$/, "");
+}
+
+function parseNumberToUnits(value: number, decimals: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return BigInt(0);
+  }
+
+  return ethers.parseUnits(value.toFixed(decimals), decimals);
+}
+
+function baseTickFromCbbtcPerWeth(price: number) {
+  if (!Number.isFinite(price) || price <= 0) {
+    return 0;
+  }
+
+  return Math.floor(Math.log(price / 1e10) / Math.log(1.0001));
+}
+
+function roundBaseTick(tick: number, direction: "down" | "up") {
+  const rounded =
+    direction === "down"
+      ? Math.floor(tick / BASE_SLIPSTREAM_TICK_SPACING)
+      : Math.ceil(tick / BASE_SLIPSTREAM_TICK_SPACING);
+  return rounded * BASE_SLIPSTREAM_TICK_SPACING;
 }
 
 function trimBalanceInput(value: string, maxDecimals = 8) {
@@ -2276,6 +2307,8 @@ export default function Home() {
   const [baseSwapping, setBaseSwapping] = useState<"weth" | "cbbtc" | null>(
     null
   );
+  const [baseMinting, setBaseMinting] = useState(false);
+  const [baseMintedTokenId, setBaseMintedTokenId] = useState("");
   const [baseLastTxHash, setBaseLastTxHash] = useState("");
   const [payerAddress, setPayerAddress] = useState<string | null>(null);
   const [premiumAmount, setPremiumAmount] = useState(ZUM_PREMIUM_AMOUNT);
@@ -4311,6 +4344,38 @@ export default function Home() {
     ];
   };
 
+  const ensureBaseAllowance = async (
+    tokenAddress: string,
+    spender: string,
+    amount: bigint,
+    signer: ethers.Signer,
+    label: string
+  ) => {
+    if (amount <= BigInt(0)) {
+      return;
+    }
+    const owner = await signer.getAddress();
+    const provider = signer.provider;
+    if (!provider) {
+      throw new Error("No hay provider conectado.");
+    }
+    const token = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+    const current = (await token.allowance(owner, spender)) as bigint;
+    if (current >= amount) {
+      return;
+    }
+    setBaseStatus(`Aprobando ${label} para Aerodrome Slipstream.`);
+    const approveGas = (await token.approve.estimateGas(spender, amount)) as bigint;
+    if (approveGas > BASE_MAX_SWAP_GAS) {
+      throw new Error(
+        `Approve ${label} con gas alto: ${formatGasUnits(approveGas)} unidades.`
+      );
+    }
+    const approveTx = await token.approve(spender, amount);
+    setBaseLastTxHash(approveTx.hash);
+    await waitForBaseReceipt(provider, approveTx.hash);
+  };
+
   const handleBaseSwapFromUsdc = async (target: "weth" | "cbbtc") => {
     try {
       const amount =
@@ -4462,6 +4527,159 @@ export default function Home() {
       );
     } finally {
       setBaseSwapping(null);
+    }
+  };
+
+  const handleBaseMintRange = async () => {
+    try {
+      if (baseEntryPreview.amount <= 0) {
+        setBaseStatus("Ingresá un monto USDC para calcular el rango.");
+        return;
+      }
+
+      setBaseMinting(true);
+      setBaseMintedTokenId("");
+      setBaseLastTxHash("");
+      setBaseStatus("Preparando mint WETH/cbBTC en Aerodrome.");
+      const signer = await getBaseSigner();
+      const owner = await signer.getAddress();
+      const provider = signer.provider;
+      if (!provider) {
+        throw new Error("No hay provider conectado.");
+      }
+      await assertNoPendingTx(provider, owner);
+      const ethBalance = await provider.getBalance(owner);
+      if (ethBalance <= BigInt(0)) {
+        setBaseStatus("Falta ETH nativo en Base para pagar gas.");
+        return;
+      }
+
+      const weth = new ethers.Contract(BASE_WETH_ADDRESS, ERC20_ABI, signer);
+      const cbbtc = new ethers.Contract(BASE_CBBTC_ADDRESS, ERC20_ABI, signer);
+      const [wethBalance, cbbtcBalance] = (await Promise.all([
+        weth.balanceOf(owner),
+        cbbtc.balanceOf(owner)
+      ])) as [bigint, bigint];
+      const desiredWeth = parseNumberToUnits(baseEntryPreview.wethAmount, 18);
+      const desiredCbbtc = parseNumberToUnits(baseEntryPreview.cbbtcAmount, 8);
+      const amount0Desired =
+        wethBalance < desiredWeth ? wethBalance : desiredWeth;
+      const amount1Desired =
+        cbbtcBalance < desiredCbbtc ? cbbtcBalance : desiredCbbtc;
+      if (amount0Desired <= BigInt(0) || amount1Desired <= BigInt(0)) {
+        setBaseStatus(
+          "Faltan los dos lados: hacé primero los swaps y dejá WETH + cbBTC en Base."
+        );
+        return;
+      }
+
+      const lowerTick = roundBaseTick(
+        baseTickFromCbbtcPerWeth(baseEntryPreview.rangeLower),
+        "down"
+      );
+      const upperTick = roundBaseTick(
+        baseTickFromCbbtcPerWeth(baseEntryPreview.rangeUpper),
+        "up"
+      );
+      if (lowerTick >= upperTick) {
+        setBaseStatus("El rango calculado no es válido. Cambiá el perfil.");
+        return;
+      }
+
+      await ensureBaseAllowance(
+        BASE_WETH_ADDRESS,
+        BASE_AERODROME_POSITION_MANAGER,
+        amount0Desired,
+        signer,
+        "WETH"
+      );
+      await ensureBaseAllowance(
+        BASE_CBBTC_ADDRESS,
+        BASE_AERODROME_POSITION_MANAGER,
+        amount1Desired,
+        signer,
+        "cbBTC"
+      );
+
+      const deadlineMinutes = Math.min(
+        Math.max(Number(baseDeadlineMinutes) || 30, 5),
+        90
+      );
+      const deadline = BigInt(
+        Math.floor(Date.now() / 1000) + Math.round(deadlineMinutes * 60)
+      );
+      const manager = new ethers.Contract(
+        BASE_AERODROME_POSITION_MANAGER,
+        AERODROME_POSITION_MANAGER_ABI,
+        signer
+      );
+      const params = {
+        token0: BASE_WETH_ADDRESS,
+        token1: BASE_CBBTC_ADDRESS,
+        tickSpacing: BASE_SLIPSTREAM_TICK_SPACING,
+        tickLower: lowerTick,
+        tickUpper: upperTick,
+        amount0Desired,
+        amount1Desired,
+        amount0Min: BigInt(0),
+        amount1Min: BigInt(0),
+        recipient: owner,
+        deadline,
+        sqrtPriceX96: BigInt(0)
+      };
+
+      setBaseStatus(
+        "Estimando gas para crear rango WETH/cbBTC. El mint puede dejar sobrante de un lado."
+      );
+      const gas = (await manager.mint.estimateGas(params, {
+        value: BigInt(0)
+      })) as bigint;
+      if (gas > BASE_MAX_MINT_GAS) {
+        setBaseStatus(
+          `Gas alto para mint: ${formatGasUnits(
+            gas
+          )} unidades. Operación detenida.`
+        );
+        return;
+      }
+
+      setBaseStatus("Abrí MetaMask para crear el rango WETH/cbBTC.");
+      const tx = await manager.mint(params, {
+        value: BigInt(0),
+        gasLimit: bufferedGasLimit(gas)
+      });
+      setBaseLastTxHash(tx.hash);
+      setBaseStatus(`Mint enviado: ${tx.hash.slice(0, 10)}...`);
+      const receipt = await waitForBaseReceipt(provider, tx.hash);
+      const recipientTopic = topicForAddress(owner).toLowerCase();
+      const mintedLog = receipt.logs.find((log) => {
+        const topics = log.topics ?? [];
+        return (
+          log.address.toLowerCase() ===
+            BASE_AERODROME_POSITION_MANAGER.toLowerCase() &&
+          topics[0]?.toLowerCase() === TRANSFER_TOPIC &&
+          topics[1]?.toLowerCase() === ZERO_ADDRESS_TOPIC &&
+          topics[2]?.toLowerCase() === recipientTopic
+        );
+      });
+      const mintedTokenId = mintedLog?.topics[3]
+        ? BigInt(mintedLog.topics[3]).toString()
+        : "";
+      setBaseMintedTokenId(mintedTokenId);
+      setBaseStatus(
+        mintedTokenId
+          ? `NFT Base listo #${mintedTokenId}. Ahora abrí Aerodrome para stakear 100% y buscar AERO.`
+          : "Mint confirmado. Abrí Aerodrome para ver el NFT y stakearlo."
+      );
+    } catch (error) {
+      console.error(error);
+      setBaseStatus(
+        error instanceof Error
+          ? `No se pudo crear rango Base: ${describeV4EstimateError(error)}`
+          : "No se pudo crear rango Base."
+      );
+    } finally {
+      setBaseMinting(false);
     }
   };
 
@@ -10522,7 +10740,7 @@ export default function Home() {
             <p className={styles.subtitle}>
               Zumpay prepara la entrada: divide USDC en WETH/cbBTC, sugiere el
               rango y deja el camino listo para crear la posición concentrada en
-              Aerodrome. Todavía no firma ni ejecuta swaps.
+              Aerodrome. Cada paso abre MetaMask por separado.
             </p>
             <div className={styles.field}>
               <label>Monto USDC</label>
@@ -10689,16 +10907,20 @@ export default function Home() {
                   ? "Swapeando..."
                   : "Swap USDC → cbBTC"}
               </button>
-              <a
-                className={styles.outline}
-                href="https://aerodrome.finance/deposit?token0=0x4200000000000000000000000000000000000006&token1=0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf&type=-1"
-                target="_blank"
-                rel="noreferrer"
+              <button
+                className={styles.primary}
+                onClick={handleBaseMintRange}
+                disabled={isLocked || baseSwapping !== null || baseMinting}
               >
-                Crear rango WETH/cbBTC
-              </a>
+                {baseMinting ? "Creando rango..." : "Crear rango WETH/cbBTC"}
+              </button>
             </div>
             {baseStatus ? <p className={styles.status}>{baseStatus}</p> : null}
+            {baseMintedTokenId ? (
+              <p className={styles.status}>
+                NFT Base listo #{baseMintedTokenId}
+              </p>
+            ) : null}
             {baseLastTxHash ? (
               <a
                 className={styles.outline}
@@ -10709,6 +10931,14 @@ export default function Home() {
                 Ver última tx Base
               </a>
             ) : null}
+            <a
+              className={styles.outline}
+              href="https://aerodrome.finance/deposit?token0=0x4200000000000000000000000000000000000006&token1=0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf&type=-1"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Abrir Aerodrome para stakear
+            </a>
           </div>
 
           <div className={styles.panel}>
