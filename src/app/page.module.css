@@ -1147,6 +1147,53 @@
     rgba(255, 255, 255, 0.045);
 }
 
+.baseSafetyGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.baseStepList {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.baseStepList div {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(255, 184, 107, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 184, 107, 0.045);
+}
+
+.baseStepList span {
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #120b03;
+  background: linear-gradient(135deg, #ffb86b, #facc15);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.baseStepList strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.baseStepList small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .reserveRouteActions {
   display: grid;
   gap: 8px;
@@ -2994,6 +3041,11 @@
 
   .v3SimplePreview {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .baseRangeGrid,
+  .baseSafetyGrid {
+    grid-template-columns: 1fr;
   }
 
   .v4SimpleActions {

@@ -2255,6 +2255,9 @@ export default function Home() {
   const [baseUsdcAmount, setBaseUsdcAmount] = useState("100");
   const [baseRangeProfile, setBaseRangeProfile] =
     useState<BaseRangeProfile>("balanced");
+  const [baseSwapSlippage, setBaseSwapSlippage] = useState("1.5");
+  const [baseLpSlippage, setBaseLpSlippage] = useState("1");
+  const [baseDeadlineMinutes, setBaseDeadlineMinutes] = useState("30");
   const [payerAddress, setPayerAddress] = useState<string | null>(null);
   const [premiumAmount, setPremiumAmount] = useState(ZUM_PREMIUM_AMOUNT);
   const [premiumAmountRaw, setPremiumAmountRaw] = useState(
@@ -10266,6 +10269,34 @@ export default function Home() {
                 inputMode="decimal"
               />
             </div>
+            <div className={styles.baseSafetyGrid}>
+              <div className={styles.field}>
+                <label>Slippage swap</label>
+                <input
+                  value={baseSwapSlippage}
+                  onChange={(event) => setBaseSwapSlippage(event.target.value)}
+                  inputMode="decimal"
+                />
+              </div>
+              <div className={styles.field}>
+                <label>Slippage LP</label>
+                <input
+                  value={baseLpSlippage}
+                  onChange={(event) => setBaseLpSlippage(event.target.value)}
+                  inputMode="decimal"
+                />
+              </div>
+              <div className={styles.field}>
+                <label>Deadline</label>
+                <input
+                  value={baseDeadlineMinutes}
+                  onChange={(event) =>
+                    setBaseDeadlineMinutes(event.target.value)
+                  }
+                  inputMode="numeric"
+                />
+              </div>
+            </div>
             <div className={styles.baseRangeGrid}>
               {(Object.entries(BASE_RANGE_PROFILES) as [
                 BaseRangeProfile,
@@ -10333,8 +10364,50 @@ export default function Home() {
                     cbBTC/WETH
                   </strong>
                 </div>
+                <div>
+                  <span>Tiempo de firma</span>
+                  <strong>{baseDeadlineMinutes || "30"} min</strong>
+                </div>
+                <div>
+                  <span>Tolerancia</span>
+                  <strong>
+                    Swap {baseSwapSlippage || "1.5"}% · LP{" "}
+                    {baseLpSlippage || "1"}%
+                  </strong>
+                </div>
               </div>
             </div>
+            <div className={styles.baseStepList}>
+              <div>
+                <span>1</span>
+                <strong>Chequear gas ETH Base</strong>
+                <small>Si falta gas, cargar desde Gas.zip antes de operar.</small>
+              </div>
+              <div>
+                <span>2</span>
+                <strong>Swap USDC a WETH</strong>
+                <small>Transacción separada para evitar perder el flujo.</small>
+              </div>
+              <div>
+                <span>3</span>
+                <strong>Swap USDC a cbBTC</strong>
+                <small>Si tarda Base, el deadline largo reduce reversions.</small>
+              </div>
+              <div>
+                <span>4</span>
+                <strong>Crear LP concentrada</strong>
+                <small>Usar el rango elegido y continuar con saldos reales.</small>
+              </div>
+              <div>
+                <span>5</span>
+                <strong>Stake 100%</strong>
+                <small>Después del stake empieza la búsqueda de AERO.</small>
+              </div>
+            </div>
+            <p className={styles.inlineNote}>
+              Si un paso falla después de un swap, no hay que repetirlo: Zumpay
+              debe leer los saldos actuales y continuar desde WETH/cbBTC.
+            </p>
             <div className={styles.reserveRouteActions}>
               <a
                 className={styles.outline}
