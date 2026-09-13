@@ -445,6 +445,8 @@ const BASE_AERODROME_ROUTER = "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43";
 const BASE_AERODROME_FACTORY = "0x420DD381b31aEf6683db6B902084cB0FFECe40Da";
 const BASE_AERODROME_POSITION_MANAGER =
   "0x827922686190790b37229fd06084350E74485b72";
+const BASE_AERODROME_POOL = "0x42d4a22cad0f5a49681a5715ce994af73a43b76b";
+const BASE_AERODROME_GAUGE = "0x61E0B10423a0009C3f83ab4313813d29437d0817";
 const BASE_SLIPSTREAM_TICK_SPACING = 10;
 const BASE_MAX_SWAP_GAS = BigInt(1_500_000);
 const BASE_MAX_MINT_GAS = BigInt(3_000_000);
@@ -498,7 +500,14 @@ const AERODROME_ROUTER_ABI = [
   "function swapExactTokensForTokens(uint256 amountIn,uint256 amountOutMin,tuple(address from,address to,bool stable,address factory)[] routes,address to,uint256 deadline) returns (uint256[] amounts)"
 ];
 const AERODROME_POSITION_MANAGER_ABI = [
-  "function mint((address token0,address token1,int24 tickSpacing,int24 tickLower,int24 tickUpper,uint256 amount0Desired,uint256 amount1Desired,uint256 amount0Min,uint256 amount1Min,address recipient,uint256 deadline,uint160 sqrtPriceX96)) payable returns (uint256 tokenId,uint128 liquidity,uint256 amount0,uint256 amount1)"
+  "function mint((address token0,address token1,int24 tickSpacing,int24 tickLower,int24 tickUpper,uint256 amount0Desired,uint256 amount1Desired,uint256 amount0Min,uint256 amount1Min,address recipient,uint256 deadline,uint160 sqrtPriceX96)) payable returns (uint256 tokenId,uint128 liquidity,uint256 amount0,uint256 amount1)",
+  "function ownerOf(uint256 tokenId) view returns (address)",
+  "function getApproved(uint256 tokenId) view returns (address)",
+  "function approve(address to,uint256 tokenId)"
+];
+const AERODROME_GAUGE_ABI = [
+  "function deposit(uint256 tokenId)",
+  "function stakedContains(address depositor,uint256 tokenId) view returns (bool)"
 ];
 
 const LEGACY_V3_CONTRACTS: V3Contracts = {
@@ -2309,6 +2318,8 @@ export default function Home() {
   );
   const [baseMinting, setBaseMinting] = useState(false);
   const [baseMintedTokenId, setBaseMintedTokenId] = useState("");
+  const [baseStakeTokenId, setBaseStakeTokenId] = useState("");
+  const [baseStaking, setBaseStaking] = useState(false);
   const [baseLastTxHash, setBaseLastTxHash] = useState("");
   const [payerAddress, setPayerAddress] = useState<string | null>(null);
   const [premiumAmount, setPremiumAmount] = useState(ZUM_PREMIUM_AMOUNT);
@@ -4666,10 +4677,13 @@ export default function Home() {
         ? BigInt(mintedLog.topics[3]).toString()
         : "";
       setBaseMintedTokenId(mintedTokenId);
+      if (mintedTokenId) {
+        setBaseStakeTokenId(mintedTokenId);
+      }
       setBaseStatus(
         mintedTokenId
-          ? `NFT Base listo #${mintedTokenId}. Ahora abrí Aerodrome para stakear 100% y buscar AERO.`
-          : "Mint confirmado. Abrí Aerodrome para ver el NFT y stakearlo."
+          ? `NFT Base listo #${mintedTokenId}. Ahora podés stakearlo en el gauge WETH/cbBTC para buscar AERO.`
+          : "Mint confirmado. Pegá el número de NFT para stakearlo."
       );
     } catch (error) {
       console.error(error);
@@ -4680,6 +4694,114 @@ export default function Home() {
       );
     } finally {
       setBaseMinting(false);
+    }
+  };
+
+  const handleBaseStakePosition = async () => {
+    try {
+      const tokenId = baseStakeTokenId.trim();
+      if (!/^\d+$/.test(tokenId)) {
+        setBaseStatus("Ingresá el número de NFT Base para stakear.");
+        return;
+      }
+
+      setBaseStaking(true);
+      setBaseLastTxHash("");
+      setBaseStatus("Preparando stake del NFT en el gauge WETH/cbBTC.");
+      const signer = await getBaseSigner();
+      const owner = await signer.getAddress();
+      const provider = signer.provider;
+      if (!provider) {
+        throw new Error("No hay provider conectado.");
+      }
+      await assertNoPendingTx(provider, owner);
+      const ethBalance = await provider.getBalance(owner);
+      if (ethBalance <= BigInt(0)) {
+        setBaseStatus("Falta ETH nativo en Base para pagar gas.");
+        return;
+      }
+
+      const tokenIdRaw = BigInt(tokenId);
+      const manager = new ethers.Contract(
+        BASE_AERODROME_POSITION_MANAGER,
+        AERODROME_POSITION_MANAGER_ABI,
+        signer
+      );
+      const gauge = new ethers.Contract(
+        BASE_AERODROME_GAUGE,
+        AERODROME_GAUGE_ABI,
+        signer
+      );
+      const currentOwner = ((await manager.ownerOf(tokenIdRaw)) as string).toLowerCase();
+      if (currentOwner === BASE_AERODROME_GAUGE.toLowerCase()) {
+        const staked = (await gauge.stakedContains(owner, tokenIdRaw)) as boolean;
+        setBaseStatus(
+          staked
+            ? `NFT Base #${tokenId} ya está stakeado en el gauge WETH/cbBTC.`
+            : `El NFT #${tokenId} está en la gauge, pero no figura para esta wallet.`
+        );
+        return;
+      }
+      if (currentOwner !== owner.toLowerCase()) {
+        setBaseStatus(
+          `Este NFT no está en la wallet conectada. Owner actual: ${shortAddress(
+            currentOwner
+          )}.`
+        );
+        return;
+      }
+
+      const approved = ((await manager.getApproved(tokenIdRaw)) as string).toLowerCase();
+      if (approved !== BASE_AERODROME_GAUGE.toLowerCase()) {
+        setBaseStatus("Aprobando el NFT al gauge WETH/cbBTC.");
+        const approveGas = (await manager.approve.estimateGas(
+          BASE_AERODROME_GAUGE,
+          tokenIdRaw
+        )) as bigint;
+        if (approveGas > BASE_MAX_SWAP_GAS) {
+          setBaseStatus(
+            `Approve NFT con gas alto: ${formatGasUnits(
+              approveGas
+            )} unidades. Operación detenida.`
+          );
+          return;
+        }
+        const approveTx = await manager.approve(BASE_AERODROME_GAUGE, tokenIdRaw);
+        setBaseLastTxHash(approveTx.hash);
+        setBaseStatus(`Approve NFT enviado: ${approveTx.hash.slice(0, 10)}...`);
+        await waitForBaseReceipt(provider, approveTx.hash);
+      }
+
+      setBaseStatus("Estimando gas para stakear el NFT en Aerodrome.");
+      const gas = (await gauge.deposit.estimateGas(tokenIdRaw)) as bigint;
+      if (gas > BASE_MAX_MINT_GAS) {
+        setBaseStatus(
+          `Gas alto para stake: ${formatGasUnits(
+            gas
+          )} unidades. Operación detenida.`
+        );
+        return;
+      }
+
+      setBaseStatus("Abrí MetaMask para stakear el NFT WETH/cbBTC.");
+      const tx = await gauge.deposit(tokenIdRaw, {
+        gasLimit: bufferedGasLimit(gas)
+      });
+      setBaseLastTxHash(tx.hash);
+      setBaseStatus(`Stake enviado: ${tx.hash.slice(0, 10)}...`);
+      await waitForBaseReceipt(provider, tx.hash);
+      setBaseStatus(
+        `NFT Base #${tokenId} stakeado. Desde ahora busca emisiones AERO; ya no acumula fees directas mientras esté stakeado.`
+      );
+    } catch (error) {
+      console.error(error);
+      setBaseStatus(
+        error instanceof Error
+          ? `No se pudo stakear Base: ${describeV4EstimateError(error)}`
+          : "No se pudo stakear Base."
+      );
+    } finally {
+      setBaseStaking(false);
     }
   };
 
@@ -10921,6 +11043,32 @@ export default function Home() {
                 NFT Base listo #{baseMintedTokenId}
               </p>
             ) : null}
+            <div className={styles.field}>
+              <label>NFT Base para stakear</label>
+              <input
+                value={baseStakeTokenId}
+                onChange={(event) => setBaseStakeTokenId(event.target.value)}
+                placeholder="Ej: 76643206"
+                inputMode="numeric"
+              />
+            </div>
+            <div className={styles.reserveRouteActions}>
+              <button
+                className={styles.softButton}
+                onClick={handleBaseStakePosition}
+                disabled={isLocked || baseStaking || baseSwapping !== null}
+              >
+                {baseStaking ? "Stakeando..." : "Stakear NFT en Aerodrome"}
+              </button>
+              <a
+                className={styles.outline}
+                href={`${BASE_EXPLORER_ROOT}/address/${BASE_AERODROME_GAUGE}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Ver gauge
+              </a>
+            </div>
             {baseLastTxHash ? (
               <a
                 className={styles.outline}
