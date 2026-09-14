@@ -10449,42 +10449,9 @@ export default function Home() {
                   <span>Concentrado 10</span>
                   <span>Stake AERO</span>
                 </div>
-                <div className={styles.reserveStrategySnapshot}>
-                  <div className={styles.reserveStrategyHeader}>
-                    <span>Depósito #5976367</span>
-                    <strong>Stakeado</strong>
-                  </div>
-                  <div className={styles.reserveStrategyGrid}>
-                    <div>
-                      <span>Valor</span>
-                      <strong>$72.18</strong>
-                    </div>
-                    <div>
-                      <span>Rango</span>
-                      <strong>0.026074 - 0.039092</strong>
-                    </div>
-                    <div>
-                      <span>Composición</span>
-                      <strong>0.01338 WETH + 0.00049 cbBTC</strong>
-                    </div>
-                    <div>
-                      <span>ABR</span>
-                      <strong>0.96017%</strong>
-                    </div>
-                    <div>
-                      <span>Emisiones</span>
-                      <strong>0.02185 AERO</strong>
-                    </div>
-                    <div>
-                      <span>Trading fees</span>
-                      <strong>0 WETH / 0 cbBTC</strong>
-                    </div>
-                  </div>
-                </div>
                 <small>
-                  Pool: 0x42d4...b76b · Aerodrome Slipstream. Esta card queda
-                  como modelo read-only hasta conectar lectura de posición,
-                  AERO reclamable y acciones de stake.
+                  Pool objetivo: 0x42d4...b76b · Aerodrome Slipstream. Entrá al
+                  panel Base para crear el rango, stakear el NFT y seguir AERO.
                 </small>
                 <div className={styles.reserveRouteActions}>
                   <button
@@ -10794,7 +10761,7 @@ export default function Home() {
                   <div>
                     <span>Entrada</span>
                     <strong>USDC → WETH + cbBTC</strong>
-                    <small>Split manual por ahora; automático después.</small>
+                    <small>Split guiado con firmas separadas en MetaMask.</small>
                   </div>
                 </div>
                 <div className={styles.strategyCard}>
@@ -10812,47 +10779,6 @@ export default function Home() {
                   </div>
                 </div>
               </div>
-            </div>
-
-            <div className={styles.panel}>
-              <p className={styles.kicker}>Posición modelo</p>
-              <h3>Depósito #5976367</h3>
-              <div className={styles.reserveStrategySnapshot}>
-                <div className={styles.reserveStrategyHeader}>
-                  <span>Stakeado</span>
-                  <strong>Activo</strong>
-                </div>
-                <div className={styles.reserveStrategyGrid}>
-                  <div>
-                    <span>Valor</span>
-                    <strong>$72.18</strong>
-                  </div>
-                  <div>
-                    <span>ABR</span>
-                    <strong>0.96017%</strong>
-                  </div>
-                  <div>
-                    <span>WETH</span>
-                    <strong>0.01338</strong>
-                  </div>
-                  <div>
-                    <span>cbBTC</span>
-                    <strong>0.00049</strong>
-                  </div>
-                  <div>
-                    <span>AERO</span>
-                    <strong>0.02185</strong>
-                  </div>
-                  <div>
-                    <span>Fees</span>
-                    <strong>0 WETH / 0 cbBTC</strong>
-                  </div>
-                </div>
-              </div>
-              <p className={styles.inlineNote}>
-                Estos datos son el primer modelo operativo. El siguiente paso es
-                leer depósito, rango, emisiones y fees directo desde Base.
-              </p>
             </div>
           </div>
 
@@ -10981,33 +10907,6 @@ export default function Home() {
                 </div>
               </div>
             </div>
-            <div className={styles.baseStepList}>
-              <div>
-                <span>1</span>
-                <strong>Chequear gas ETH Base</strong>
-                <small>Si falta gas, cargar desde Gas.zip antes de operar.</small>
-              </div>
-              <div>
-                <span>2</span>
-                <strong>Swap USDC a WETH</strong>
-                <small>Transacción separada para evitar perder el flujo.</small>
-              </div>
-              <div>
-                <span>3</span>
-                <strong>Swap USDC a cbBTC</strong>
-                <small>Si tarda Base, el deadline largo reduce reversions.</small>
-              </div>
-              <div>
-                <span>4</span>
-                <strong>Crear LP concentrada</strong>
-                <small>Usar el rango elegido y continuar con saldos reales.</small>
-              </div>
-              <div>
-                <span>5</span>
-                <strong>Stake 100%</strong>
-                <small>Después del stake empieza la búsqueda de AERO.</small>
-              </div>
-            </div>
             <p className={styles.inlineNote}>
               Si un paso falla después de un swap, no hay que repetirlo: Zumpay
               debe leer los saldos actuales y continuar desde WETH/cbBTC.
@@ -11048,7 +10947,7 @@ export default function Home() {
               <input
                 value={baseStakeTokenId}
                 onChange={(event) => setBaseStakeTokenId(event.target.value)}
-                placeholder="Ej: 76643206"
+                placeholder="Ej: 6053092"
                 inputMode="numeric"
               />
             </div>
@@ -11079,25 +10978,6 @@ export default function Home() {
                 Ver última tx Base
               </a>
             ) : null}
-            <a
-              className={styles.outline}
-              href="https://aerodrome.finance/deposit?token0=0x4200000000000000000000000000000000000006&token1=0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf&type=-1"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Abrir Aerodrome para stakear
-            </a>
-          </div>
-
-          <div className={styles.panel}>
-            <p className={styles.kicker}>Ruta humana</p>
-            <div className={styles.reserveRouteFacts}>
-              <span>1 · USDC en Base</span>
-              <span>2 · Swap a WETH/cbBTC</span>
-              <span>3 · Crear rango ±20%</span>
-              <span>4 · Stake 100%</span>
-              <span>5 · Reclamar AERO</span>
-            </div>
             <div className={styles.reserveRouteActions}>
               <a
                 className={styles.outline}
