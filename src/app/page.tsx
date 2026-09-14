@@ -53,7 +53,7 @@ type ReadyPositionNotice = {
   chain: V3ChainKey;
   tokenId: string;
 };
-type PortfolioFilter = "all" | "v3" | "v4" | "hyper";
+type PortfolioFilter = "all" | "v3" | "v4" | "hyper" | "base";
 type BaseRangeProfile = "active" | "balanced" | "long";
 type AppView =
   | "home"
@@ -198,10 +198,30 @@ type V4UsedPosition = V4PositionView & {
   hiddenAt: string;
 };
 
+type BasePositionView = {
+  tokenId: string;
+  owner: string;
+  managerOwner: string;
+  staked: boolean;
+  tickLower: number;
+  tickUpper: number;
+  currentTick: number;
+  inRange: boolean;
+  liquidity: string;
+  price: number;
+  rangeLower: number;
+  rangeUpper: number;
+  amountWeth: number;
+  amountCbbtc: number;
+  valueEstimate: number;
+  aeroEarned: string;
+  checkedAt: string;
+};
+
 type PortfolioPosition = {
   key: string;
-  protocol: "V3" | "V4" | "Hyper";
-  chain: V3ChainKey | "hyperliquid";
+  protocol: "V3" | "V4" | "Hyper" | "Base";
+  chain: V3ChainKey | "hyperliquid" | "base";
   tokenId: string;
   pair: string;
   fee: string;
@@ -215,7 +235,7 @@ type PortfolioPosition = {
   hasFees: boolean;
   composition: string;
   created: string;
-  raw: V3Position | V4PositionView | HyperPositionView;
+  raw: V3Position | V4PositionView | HyperPositionView | BasePositionView;
 };
 
 type V4LiquiditySimulation = {
@@ -357,6 +377,7 @@ const V3_USED_POSITION_KEY = "zumpay_v3_used_positions_v1";
 const V4_POSITION_KEY = "zumpay_v4_positions_v1";
 const V4_USED_POSITION_KEY = "zumpay_v4_used_positions_v1";
 const HYPER_POSITION_KEY = "zumpay_hyper_positions_v1";
+const BASE_POSITION_KEY = "zumpay_base_positions_v1";
 
 const NETWORKS: Network[] = [
   {
@@ -447,6 +468,7 @@ const BASE_AERODROME_POSITION_MANAGER =
   "0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53";
 const BASE_AERODROME_POOL = "0x42d4a22cad0f5a49681a5715ce994af73a43b76b";
 const BASE_AERODROME_GAUGE = "0x61E0B10423a0009C3f83ab4313813d29437d0817";
+const BASE_AERO_ADDRESS = "0x940181a94A35A4569E4529A3CDfB74e38FD98631";
 const BASE_SLIPSTREAM_TICK_SPACING = 10;
 const BASE_MAX_SWAP_GAS = BigInt(1_500_000);
 const BASE_MAX_MINT_GAS = BigInt(3_000_000);
@@ -502,12 +524,21 @@ const AERODROME_ROUTER_ABI = [
 const AERODROME_POSITION_MANAGER_ABI = [
   "function mint((address token0,address token1,int24 tickSpacing,int24 tickLower,int24 tickUpper,uint256 amount0Desired,uint256 amount1Desired,uint256 amount0Min,uint256 amount1Min,address recipient,uint256 deadline,uint160 sqrtPriceX96)) payable returns (uint256 tokenId,uint128 liquidity,uint256 amount0,uint256 amount1)",
   "function ownerOf(uint256 tokenId) view returns (address)",
+  "function positions(uint256 tokenId) view returns (uint96 nonce,address operator,address token0,address token1,int24 tickSpacing,int24 tickLower,int24 tickUpper,uint128 liquidity,uint256 feeGrowthInside0LastX128,uint256 feeGrowthInside1LastX128,uint128 tokensOwed0,uint128 tokensOwed1)",
   "function getApproved(uint256 tokenId) view returns (address)",
   "function approve(address to,uint256 tokenId)"
 ];
 const AERODROME_GAUGE_ABI = [
   "function deposit(uint256 tokenId)",
+  "function withdraw(uint256 tokenId)",
+  "function getReward(uint256 tokenId)",
+  "function earned(address account,uint256 tokenId) view returns (uint256)",
+  "function rewards(uint256 tokenId) view returns (uint256)",
+  "function rewardToken() view returns (address)",
   "function stakedContains(address depositor,uint256 tokenId) view returns (bool)"
+];
+const AERODROME_SLIPSTREAM_POOL_ABI = [
+  "function slot0() view returns (uint160 sqrtPriceX96,int24 tick,uint16 observationIndex,uint16 observationCardinality,uint16 observationCardinalityNext,bool unlocked)"
 ];
 
 const LEGACY_V3_CONTRACTS: V3Contracts = {
@@ -2320,6 +2351,13 @@ export default function Home() {
   const [baseMintedTokenId, setBaseMintedTokenId] = useState("");
   const [baseStakeTokenId, setBaseStakeTokenId] = useState("");
   const [baseStaking, setBaseStaking] = useState(false);
+  const [baseReadingPosition, setBaseReadingPosition] = useState(false);
+  const [baseClaiming, setBaseClaiming] = useState(false);
+  const [baseWithdrawing, setBaseWithdrawing] = useState(false);
+  const [basePosition, setBasePosition] = useState<BasePositionView | null>(
+    null
+  );
+  const [basePositions, setBasePositions] = useState<BasePositionView[]>([]);
   const [baseLastTxHash, setBaseLastTxHash] = useState("");
   const [payerAddress, setPayerAddress] = useState<string | null>(null);
   const [premiumAmount, setPremiumAmount] = useState(ZUM_PREMIUM_AMOUNT);
@@ -2712,14 +2750,67 @@ export default function Home() {
       };
     });
 
-    return [...hyperItems, ...v4Items, ...v3Items];
-  }, [hyperPositions, v3Positions, v4Positions]);
+    const baseItems: PortfolioPosition[] = basePositions.map((position) => {
+      const liquidityEmpty = position.liquidity === "0";
+      const aeroAmount = parseBalanceValue(position.aeroEarned);
+      const status = liquidityEmpty
+        ? "Sin liquidez"
+        : position.staked
+          ? position.inRange
+            ? "Stakeado"
+            : "Fuera de rango"
+          : position.inRange
+            ? "En rango"
+            : "Fuera de rango";
+      return {
+        key: `base-${position.tokenId}`,
+        protocol: "Base",
+        chain: "base",
+        tokenId: position.tokenId,
+        pair: "WETH/cbBTC",
+        fee: "AERO",
+        range: `${position.rangeLower.toLocaleString("en-US", {
+          maximumFractionDigits: 6
+        })} / ${position.rangeUpper.toLocaleString("en-US", {
+          maximumFractionDigits: 6
+        })} cbBTC/WETH`,
+        status,
+        statusTone: liquidityEmpty ? "neutral" : position.inRange ? "in" : "out",
+        value:
+          position.valueEstimate > 0
+            ? formatV4Value(position.valueEstimate, "USD aprox")
+            : "Sin estimación",
+        valueAmount:
+          position.valueEstimate > 0 ? position.valueEstimate : 0,
+        valueSymbol: "USD",
+        fees:
+          aeroAmount > 0
+            ? `${formatHumanTokenAmount(aeroAmount, "AERO")} AERO`
+            : position.staked
+              ? "0 AERO"
+              : "Unstakeado: fees directas en Aerodrome",
+        hasFees: aeroAmount > 0,
+        composition:
+          position.valueEstimate > 0
+            ? `${formatHumanTokenAmount(position.amountWeth, "WETH")} WETH / ${formatHumanTokenAmount(
+                position.amountCbbtc,
+                "cbBTC"
+              )} cbBTC`
+            : "Sin estimación",
+        created: position.checkedAt,
+        raw: position
+      };
+    });
+
+    return [...baseItems, ...hyperItems, ...v4Items, ...v3Items];
+  }, [basePositions, hyperPositions, v3Positions, v4Positions]);
   const visiblePortfolioPositions = useMemo(
     () =>
       portfolioPositions.filter((position) => {
         if (portfolioFilter === "v3") return position.protocol === "V3";
         if (portfolioFilter === "v4") return position.protocol === "V4";
         if (portfolioFilter === "hyper") return position.protocol === "Hyper";
+        if (portfolioFilter === "base") return position.protocol === "Base";
         return true;
       }),
     [portfolioFilter, portfolioPositions]
@@ -2796,6 +2887,23 @@ export default function Home() {
           ] satisfies EvmAsset[]
         ).filter((asset) => parseBalanceValue(asset.balance) > 0)
       : [];
+    const baseAeroEarned = basePositions.reduce(
+      (total, position) => total + parseBalanceValue(position.aeroEarned),
+      0
+    );
+    const baseRewardAssets: EvmAsset[] =
+      baseAeroEarned > 0
+        ? [
+            {
+              key: "base-aero-earned",
+              type: "token",
+              symbol: "AERO",
+              balance: baseAeroEarned.toString(),
+              decimals: 18,
+              address: BASE_AERO_ADDRESS
+            }
+          ]
+        : [];
     const otherAssets = positiveEvmAssets.filter(
       (asset) => !stableSymbols.has(asset.symbol.toUpperCase())
     );
@@ -2811,7 +2919,7 @@ export default function Home() {
       availableStable: availableStable + hyperAvailableStable,
       visibleStable: investedStable + availableStable + hyperAvailableStable,
       btcReserve: parseBalanceValue(btcBalance),
-      otherAssets: [...otherAssets, ...hyperOtherAssets],
+      otherAssets: [...otherAssets, ...hyperOtherAssets, ...baseRewardAssets],
       investedOther,
       inRange,
       outOfRange,
@@ -2819,6 +2927,7 @@ export default function Home() {
     };
   }, [
     btcBalance,
+    basePositions,
     hyperWalletBalance,
     portfolioPositions,
     positiveEvmAssets,
@@ -4679,6 +4788,12 @@ export default function Home() {
       setBaseMintedTokenId(mintedTokenId);
       if (mintedTokenId) {
         setBaseStakeTokenId(mintedTokenId);
+        const mintedPosition = await readBasePositionFromChain(
+          mintedTokenId,
+          owner
+        );
+        setBasePosition(mintedPosition);
+        saveBasePosition(mintedPosition);
       }
       setBaseStatus(
         mintedTokenId
@@ -4790,6 +4905,9 @@ export default function Home() {
       setBaseLastTxHash(tx.hash);
       setBaseStatus(`Stake enviado: ${tx.hash.slice(0, 10)}...`);
       await waitForBaseReceipt(provider, tx.hash);
+      const updated = await readBasePositionFromChain(tokenId, owner);
+      setBasePosition(updated);
+      saveBasePosition(updated);
       setBaseStatus(
         `NFT Base #${tokenId} stakeado. Desde ahora busca emisiones AERO; ya no acumula fees directas mientras esté stakeado.`
       );
@@ -4802,6 +4920,320 @@ export default function Home() {
       );
     } finally {
       setBaseStaking(false);
+    }
+  };
+
+  const loadStoredBasePositions = (ownerAddress?: string) => {
+    try {
+      const raw = localStorage.getItem(BASE_POSITION_KEY);
+      const parsed = raw
+        ? (JSON.parse(raw) as Record<string, BasePositionView[]>)
+        : {};
+      const ownerKey = ownerAddress?.toLowerCase();
+      const items = ownerKey ? parsed[ownerKey] ?? [] : [];
+      setBasePositions(items.filter((item) => item.liquidity !== "0"));
+    } catch {
+      setBasePositions([]);
+    }
+  };
+
+  const saveBasePosition = (position: BasePositionView) => {
+    const ownerKey = position.owner.toLowerCase();
+    const raw = localStorage.getItem(BASE_POSITION_KEY);
+    const parsed = raw
+      ? (JSON.parse(raw) as Record<string, BasePositionView[]>)
+      : {};
+    const existing = parsed[ownerKey] ?? [];
+    const next =
+      position.liquidity === "0"
+        ? existing.filter((item) => item.tokenId !== position.tokenId)
+        : [
+            position,
+            ...existing.filter((item) => item.tokenId !== position.tokenId)
+          ];
+    parsed[ownerKey] = next;
+    localStorage.setItem(BASE_POSITION_KEY, JSON.stringify(parsed));
+    setBasePositions(next.filter((item) => item.liquidity !== "0"));
+  };
+
+  const readBasePositionFromChain = async (
+    tokenId: string,
+    ownerHint?: string
+  ): Promise<BasePositionView> => {
+    const baseProvider = new ethers.JsonRpcProvider(
+      BASE_RPC_URL,
+      BASE_CHAIN_ID
+    );
+    const manager = new ethers.Contract(
+      BASE_AERODROME_POSITION_MANAGER,
+      AERODROME_POSITION_MANAGER_ABI,
+      baseProvider
+    );
+    const gauge = new ethers.Contract(
+      BASE_AERODROME_GAUGE,
+      AERODROME_GAUGE_ABI,
+      baseProvider
+    );
+    const pool = new ethers.Contract(
+      BASE_AERODROME_POOL,
+      AERODROME_SLIPSTREAM_POOL_ABI,
+      baseProvider
+    );
+    const tokenIdRaw = BigInt(tokenId);
+    const [managerOwner, position, slot0] = await Promise.all([
+      manager.ownerOf(tokenIdRaw),
+      manager.positions(tokenIdRaw),
+      pool.slot0()
+    ]);
+    const ownerCandidate = ownerHint ?? (managerOwner as string);
+    const ownedByGauge =
+      (managerOwner as string).toLowerCase() ===
+      BASE_AERODROME_GAUGE.toLowerCase();
+    let staked = false;
+    if (ownedByGauge && ownerCandidate) {
+      try {
+        staked = (await gauge.stakedContains(ownerCandidate, tokenIdRaw)) as boolean;
+      } catch {
+        staked = false;
+      }
+    }
+    const owner = staked ? ownerCandidate : (managerOwner as string);
+    const tickLower = Number(position[5]);
+    const tickUpper = Number(position[6]);
+    const liquidity = position[7] as bigint;
+    const currentTick = Number(slot0[1]);
+    const amounts = estimateConcentratedPositionAmounts(
+      liquidity,
+      currentTick,
+      tickLower,
+      tickUpper,
+      18,
+      8
+    );
+    const amountWeth = amounts.amount0;
+    const amountCbbtc = amounts.amount1;
+    let aeroRaw = BigInt(0);
+    if (staked) {
+      try {
+        const [earned, rewards] = (await Promise.all([
+          gauge.earned(owner, tokenIdRaw),
+          gauge.rewards(tokenIdRaw)
+        ])) as [bigint, bigint];
+        aeroRaw = earned + rewards;
+      } catch {
+        try {
+          aeroRaw = (await gauge.earned(owner, tokenIdRaw)) as bigint;
+        } catch {
+          aeroRaw = BigInt(0);
+        }
+      }
+    }
+    return {
+      tokenId,
+      owner,
+      managerOwner,
+      staked,
+      tickLower,
+      tickUpper,
+      currentTick,
+      inRange:
+        liquidity > BigInt(0) &&
+        currentTick >= tickLower &&
+        currentTick < tickUpper,
+      liquidity: liquidity.toString(),
+      price: priceFromTick(currentTick, 18, 8),
+      rangeLower: priceFromTick(tickLower, 18, 8),
+      rangeUpper: priceFromTick(tickUpper, 18, 8),
+      amountWeth,
+      amountCbbtc,
+      valueEstimate:
+        amountWeth * BASE_WETH_PRICE_USDC +
+        amountCbbtc * BASE_CBBTC_PRICE_USDC,
+      aeroEarned: ethers.formatUnits(aeroRaw, 18),
+      checkedAt: new Date().toLocaleTimeString()
+    };
+  };
+
+  const handleBaseReadPosition = async () => {
+    try {
+      const tokenId = baseStakeTokenId.trim();
+      if (!/^\d+$/.test(tokenId)) {
+        setBaseStatus("Ingresá el número de NFT Base.");
+        return;
+      }
+      setBaseReadingPosition(true);
+      setBaseStatus(`Leyendo NFT Base #${tokenId}.`);
+      const signer = await getBaseSigner();
+      const owner = await signer.getAddress();
+      const position = await readBasePositionFromChain(tokenId, owner);
+      setBasePosition(position);
+      saveBasePosition(position);
+      setBaseStatus(
+        position.staked
+          ? `NFT Base #${tokenId} leído: stakeado y buscando AERO.`
+          : `NFT Base #${tokenId} leído: no está stakeado.`
+      );
+    } catch (error) {
+      console.error(error);
+      setBaseStatus(
+        error instanceof Error
+          ? `No se pudo leer NFT Base: ${describeV4EstimateError(error)}`
+          : "No se pudo leer NFT Base."
+      );
+    } finally {
+      setBaseReadingPosition(false);
+    }
+  };
+
+  const refreshStoredBasePosition = async (tokenId: string) => {
+    try {
+      setBaseReadingPosition(true);
+      setBaseStatus(`Actualizando NFT Base #${tokenId}.`);
+      const existing = basePositions.find((item) => item.tokenId === tokenId);
+      const position = await readBasePositionFromChain(tokenId, existing?.owner);
+      setBaseStakeTokenId(tokenId);
+      setBasePosition(position);
+      saveBasePosition(position);
+      setBaseStatus(`NFT Base #${tokenId} actualizado.`);
+    } catch (error) {
+      console.error(error);
+      setBaseStatus(
+        error instanceof Error
+          ? `No se pudo actualizar NFT Base: ${describeV4EstimateError(error)}`
+          : "No se pudo actualizar NFT Base."
+      );
+    } finally {
+      setBaseReadingPosition(false);
+    }
+  };
+
+  const openStoredBasePosition = (position: BasePositionView) => {
+    setBaseStakeTokenId(position.tokenId);
+    setBasePosition(position);
+    setBaseStatus(`NFT Base #${position.tokenId} abierto desde posiciones.`);
+  };
+
+  const handleBaseClaimAero = async (tokenIdInput?: string) => {
+    try {
+      const tokenId = (tokenIdInput ?? baseStakeTokenId).trim();
+      if (!/^\d+$/.test(tokenId)) {
+        setBaseStatus("Ingresá el número de NFT Base para reclamar AERO.");
+        return;
+      }
+      setBaseClaiming(true);
+      setBaseLastTxHash("");
+      setBaseStatus("Preparando reclamo de AERO en Aerodrome.");
+      const signer = await getBaseSigner();
+      const owner = await signer.getAddress();
+      const provider = signer.provider;
+      if (!provider) {
+        throw new Error("No hay provider conectado.");
+      }
+      await assertNoPendingTx(provider, owner);
+      const gauge = new ethers.Contract(
+        BASE_AERODROME_GAUGE,
+        AERODROME_GAUGE_ABI,
+        signer
+      );
+      const tokenIdRaw = BigInt(tokenId);
+      const staked = (await gauge.stakedContains(owner, tokenIdRaw)) as boolean;
+      if (!staked) {
+        setBaseStatus("Este NFT no está stakeado para esta wallet.");
+        return;
+      }
+      const pending = (await gauge.earned(owner, tokenIdRaw)) as bigint;
+      if (pending <= BigInt(0)) {
+        setBaseStatus("No hay AERO pendiente para reclamar todavía.");
+        await refreshStoredBasePosition(tokenId);
+        return;
+      }
+      const gas = (await gauge.getReward.estimateGas(tokenIdRaw)) as bigint;
+      if (gas > BASE_MAX_MINT_GAS) {
+        setBaseStatus(
+          `Gas alto para reclamar AERO: ${formatGasUnits(
+            gas
+          )} unidades. Operación detenida.`
+        );
+        return;
+      }
+      setBaseStatus("Abrí MetaMask para reclamar AERO.");
+      const tx = await gauge.getReward(tokenIdRaw, {
+        gasLimit: bufferedGasLimit(gas)
+      });
+      setBaseLastTxHash(tx.hash);
+      await waitForBaseReceipt(provider, tx.hash);
+      await refreshStoredBasePosition(tokenId);
+      setBaseStatus(`AERO reclamado para NFT Base #${tokenId}.`);
+    } catch (error) {
+      console.error(error);
+      setBaseStatus(
+        error instanceof Error
+          ? `No se pudo reclamar AERO: ${describeV4EstimateError(error)}`
+          : "No se pudo reclamar AERO."
+      );
+    } finally {
+      setBaseClaiming(false);
+    }
+  };
+
+  const handleBaseUnstakePosition = async (tokenIdInput?: string) => {
+    try {
+      const tokenId = (tokenIdInput ?? baseStakeTokenId).trim();
+      if (!/^\d+$/.test(tokenId)) {
+        setBaseStatus("Ingresá el número de NFT Base para retirar del gauge.");
+        return;
+      }
+      setBaseWithdrawing(true);
+      setBaseLastTxHash("");
+      setBaseStatus("Preparando retiro del NFT desde el gauge.");
+      const signer = await getBaseSigner();
+      const owner = await signer.getAddress();
+      const provider = signer.provider;
+      if (!provider) {
+        throw new Error("No hay provider conectado.");
+      }
+      await assertNoPendingTx(provider, owner);
+      const gauge = new ethers.Contract(
+        BASE_AERODROME_GAUGE,
+        AERODROME_GAUGE_ABI,
+        signer
+      );
+      const tokenIdRaw = BigInt(tokenId);
+      const staked = (await gauge.stakedContains(owner, tokenIdRaw)) as boolean;
+      if (!staked) {
+        setBaseStatus("Este NFT no está stakeado para esta wallet.");
+        return;
+      }
+      const gas = (await gauge.withdraw.estimateGas(tokenIdRaw)) as bigint;
+      if (gas > BASE_MAX_MINT_GAS) {
+        setBaseStatus(
+          `Gas alto para retirar del gauge: ${formatGasUnits(
+            gas
+          )} unidades. Operación detenida.`
+        );
+        return;
+      }
+      setBaseStatus("Abrí MetaMask para retirar el NFT del gauge.");
+      const tx = await gauge.withdraw(tokenIdRaw, {
+        gasLimit: bufferedGasLimit(gas)
+      });
+      setBaseLastTxHash(tx.hash);
+      await waitForBaseReceipt(provider, tx.hash);
+      const updated = await readBasePositionFromChain(tokenId, owner);
+      setBasePosition(updated);
+      saveBasePosition(updated);
+      setBaseStatus(
+        `NFT Base #${tokenId} retirado del gauge. La liquidez sigue en el NFT para gestionarla en Aerodrome.`
+      );
+    } catch (error) {
+      console.error(error);
+      setBaseStatus(
+        error instanceof Error
+          ? `No se pudo retirar Base: ${describeV4EstimateError(error)}`
+          : "No se pudo retirar Base."
+      );
+    } finally {
+      setBaseWithdrawing(false);
     }
   };
 
@@ -5828,6 +6260,13 @@ export default function Home() {
     }
     loadStoredHyperPositions(hyperWalletBalance.address);
   }, [hyperWalletBalance?.address]);
+
+  useEffect(() => {
+    if (!payerAddress) {
+      return;
+    }
+    loadStoredBasePositions(payerAddress);
+  }, [payerAddress]);
 
   const checkPremium = async (targetAddress?: string) => {
     const target = targetAddress ?? payerAddress ?? address;
@@ -9627,7 +10066,15 @@ export default function Home() {
               </strong>
               <small>
                 {portfolioBalance.otherAssets.length > 0
-                  ? `${portfolioBalance.otherAssets.length} activo(s) no stable aparte.`
+                  ? portfolioBalance.otherAssets
+                      .slice(0, 4)
+                      .map(
+                        (asset) =>
+                          `${formatWalletBalance(asset.balance, asset.symbol)} ${
+                            asset.symbol
+                          }`
+                      )
+                      .join(" · ")
                   : "Sin otros activos EVM detectados."}
               </small>
             </div>
@@ -9647,11 +10094,11 @@ export default function Home() {
               <h3>Resumen Zumpay</h3>
               <p className={styles.muted}>
                 Este balance suma lo que Zumpay puede leer en tu navegador:
-                posiciones V3/V4/Hyper cargadas, stables de la cuenta EVM,
-                saldos Hyper leídos desde MetaMask y reserva BTC. Para medir el
-                volumen global de todas las wallets Zumpay más adelante vamos a
-                necesitar un indexador de eventos o una base de datos de
-                actividad agregada.
+                posiciones V3/V4/Hyper/Base cargadas, AERO pendiente, stables
+                de la cuenta EVM, saldos Hyper leídos desde MetaMask y reserva
+                BTC. Para medir el volumen global de todas las wallets Zumpay
+                más adelante vamos a necesitar un indexador de eventos o una
+                base de datos de actividad agregada.
               </p>
             </div>
             <div className={styles.walletCard}>
@@ -10943,7 +11390,7 @@ export default function Home() {
               </p>
             ) : null}
             <div className={styles.field}>
-              <label>NFT Base para stakear</label>
+              <label>NFT Base</label>
               <input
                 value={baseStakeTokenId}
                 onChange={(event) => setBaseStakeTokenId(event.target.value)}
@@ -10951,13 +11398,105 @@ export default function Home() {
                 inputMode="numeric"
               />
             </div>
+            {basePosition ? (
+              <div className={styles.reserveStrategySnapshot}>
+                <div className={styles.reserveStrategyHeader}>
+                  <span>
+                    {basePosition.staked ? "Stakeado en gauge" : "NFT en wallet"}
+                  </span>
+                  <strong>NFT #{basePosition.tokenId}</strong>
+                </div>
+                <div className={styles.reserveStrategyGrid}>
+                  <div>
+                    <span>Valor estimado</span>
+                    <strong>
+                      {formatV4Value(basePosition.valueEstimate, "USD aprox")}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>AERO pendiente</span>
+                    <strong>
+                      {formatHumanTokenAmount(
+                        parseBalanceValue(basePosition.aeroEarned),
+                        "AERO"
+                      )}{" "}
+                      AERO
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Estado</span>
+                    <strong>
+                      {basePosition.liquidity === "0"
+                        ? "Sin liquidez"
+                        : basePosition.inRange
+                          ? "En rango"
+                          : "Fuera de rango"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Composición</span>
+                    <strong>
+                      {formatHumanTokenAmount(basePosition.amountWeth, "WETH")}{" "}
+                      WETH /{" "}
+                      {formatHumanTokenAmount(
+                        basePosition.amountCbbtc,
+                        "cbBTC"
+                      )}{" "}
+                      cbBTC
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Rango</span>
+                    <strong>
+                      {basePosition.rangeLower.toLocaleString("en-US", {
+                        maximumFractionDigits: 6
+                      })}{" "}
+                      -{" "}
+                      {basePosition.rangeUpper.toLocaleString("en-US", {
+                        maximumFractionDigits: 6
+                      })}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Última lectura</span>
+                    <strong>{basePosition.checkedAt}</strong>
+                  </div>
+                </div>
+              </div>
+            ) : null}
             <div className={styles.reserveRouteActions}>
+              <button
+                className={styles.outline}
+                onClick={handleBaseReadPosition}
+                disabled={isLocked || baseReadingPosition}
+              >
+                {baseReadingPosition ? "Leyendo..." : "Leer NFT Base"}
+              </button>
               <button
                 className={styles.softButton}
                 onClick={handleBaseStakePosition}
-                disabled={isLocked || baseStaking || baseSwapping !== null}
+                disabled={
+                  isLocked ||
+                  baseStaking ||
+                  baseSwapping !== null ||
+                  baseReadingPosition
+                }
               >
                 {baseStaking ? "Stakeando..." : "Stakear NFT en Aerodrome"}
+              </button>
+              <button
+                className={styles.softButton}
+                onClick={() => handleBaseClaimAero()}
+                disabled={isLocked || baseClaiming || baseReadingPosition}
+              >
+                {baseClaiming ? "Reclamando..." : "Reclamar AERO"}
+              </button>
+              <button
+                className={styles.primary}
+                onClick={() => handleBaseUnstakePosition()}
+                disabled={isLocked || baseWithdrawing || baseReadingPosition}
+              >
+                {baseWithdrawing ? "Retirando..." : "Retirar del gauge"}
               </button>
               <a
                 className={styles.outline}
@@ -11726,7 +12265,8 @@ export default function Home() {
               { key: "all", label: "NFTs" },
               { key: "v3", label: "V3" },
               { key: "v4", label: "V4" },
-              { key: "hyper", label: "Hyper" }
+              { key: "hyper", label: "Hyper" },
+              { key: "base", label: "Base" }
             ].map((item) => (
               <button
                 key={item.key}
@@ -11750,8 +12290,8 @@ export default function Home() {
                 <h3>Todavía no hay posiciones cargadas</h3>
                 <p>
                   Conectá MetaMask y usá Buscar V3 / Buscar V4. Zumpay trae tus
-                  NFTs y los muestra acá en un solo lugar. Hyper se guarda al
-                  leer o crear posiciones desde su panel.
+                  NFTs y los muestra acá en un solo lugar. Hyper y Base se
+                  guardan al leer o crear posiciones desde sus paneles.
                 </p>
               </div>
             ) : (
@@ -12032,6 +12572,59 @@ export default function Home() {
                                       disabled={isLocked}
                                     >
                                       Quitar de activos
+                                    </button>
+                                  </>
+                                ) : null}
+                                {position.protocol === "Base" ? (
+                                  <>
+                                    <button
+                                      className={styles.outline}
+                                      onClick={() => {
+                                        openStoredBasePosition(
+                                          position.raw as BasePositionView
+                                        );
+                                        setActiveView("base");
+                                      }}
+                                      disabled={isLocked}
+                                    >
+                                      Abrir panel Base
+                                    </button>
+                                    <button
+                                      className={styles.outline}
+                                      onClick={() =>
+                                        refreshStoredBasePosition(position.tokenId)
+                                      }
+                                      disabled={isLocked || baseReadingPosition}
+                                    >
+                                      Actualizar Base
+                                    </button>
+                                    <button
+                                      className={styles.softButton}
+                                      onClick={() =>
+                                        handleBaseClaimAero(position.tokenId)
+                                      }
+                                      disabled={
+                                        isLocked ||
+                                        baseClaiming ||
+                                        !(position.raw as BasePositionView).staked
+                                      }
+                                    >
+                                      Reclamar AERO
+                                    </button>
+                                    <button
+                                      className={styles.primary}
+                                      onClick={() =>
+                                        handleBaseUnstakePosition(
+                                          position.tokenId
+                                        )
+                                      }
+                                      disabled={
+                                        isLocked ||
+                                        baseWithdrawing ||
+                                        !(position.raw as BasePositionView).staked
+                                      }
+                                    >
+                                      Retirar del gauge
                                     </button>
                                   </>
                                 ) : null}
