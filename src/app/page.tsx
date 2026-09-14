@@ -1289,7 +1289,7 @@ function formatWalletBalance(value: string, symbol: string) {
   }
 
   const upper = symbol.toUpperCase();
-  const maximumFractionDigits =
+  const baseMaximumFractionDigits =
     upper === "BTC"
       ? 8
       : ["ETH", "WETH", "WHYPE", "HYPE", "POL", "PAXG"].includes(upper)
@@ -1297,10 +1297,15 @@ function formatWalletBalance(value: string, symbol: string) {
         : parsed < 1
           ? 6
           : 4;
+  const minimumFractionDigits = parsed > 0 && parsed < 0.000001 ? 8 : 0;
+  const maximumFractionDigits = Math.max(
+    baseMaximumFractionDigits,
+    minimumFractionDigits
+  );
 
   return parsed.toLocaleString("en-US", {
     maximumFractionDigits,
-    minimumFractionDigits: parsed > 0 && parsed < 0.000001 ? 8 : 0
+    minimumFractionDigits
   });
 }
 
