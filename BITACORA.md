@@ -360,3 +360,78 @@ Pendiente de UX:
 - Revisar en navegador real el flujo de tabs.
 - Ajustar textos por vista si alguna tarjeta sigue quedando demasiado tecnica.
 - En una segunda pasada, acercar los mensajes de error/estado al formulario activo.
+
+## Actualizacion operativa: Director DeFi y Base/Aerodrome
+
+Fecha: 2026-09-14.
+
+Estado validado:
+
+- La app ya funciona como director DeFi por vistas: Entrada, Premium, Cuentas, Director, Posiciones, Pools V3, Robin V4, HyperEVM, Base, Actividad, ZUM y Seguridad.
+- La logica V3, V4 Robinhood, HyperEVM y Base quedo separada por modulos para reducir confusion visual.
+- El panel Base/Aerodrome quedo probado end-to-end con MetaMask:
+  - entrada desde USDC en Base;
+  - swap USDC -> WETH;
+  - swap USDC -> cbBTC;
+  - mint de NFT WETH/cbBTC en Aerodrome Slipstream;
+  - stake del NFT en gauge para buscar emisiones AERO.
+- El flujo Base validado uso el NFT `#6053092`, stakeado correctamente en la gauge WETH/cbBTC.
+- La tx de stake validada fue `0x82ef81681223d8d95aa05819b68b7a3a03f075f435fd5609825a4caf3e2b6262`.
+
+Contratos Base/Aerodrome confirmados:
+
+- Pool objetivo WETH/cbBTC: `0x42d4a22cad0f5a49681a5715ce994af73a43b76b`.
+- Gauge: `0x61E0B10423a0009C3f83ab4313813d29437d0817`.
+- Position manager stakeable para esta pool: `0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53`.
+- Factory de la pool stakeable: `0xf8f2eB4940CFE7d13603DDDD87f123820Fc061Ef`.
+
+Leccion importante:
+
+- WETH/cbBTC con `tickSpacing 10` puede existir en mas de una factory.
+- La pool `0xffa192f04b1e5f9f5124fb40a96407564492ed20` tambien es WETH/cbBTC con spacing 10, pero no tiene gauge asignado. Sirve como LP, pero no para estrategia AERO.
+- Para farmear AERO, Zumpay debe usar la pool `0x42d4...b76b` y el position manager `0xe1f8...8b53`.
+- Stakear y cobrar fees directas no es lo mismo:
+  - NFT sin stakear: busca fees WETH/cbBTC.
+  - NFT stakeado en gauge: busca emisiones AERO.
+  - No asumir que una misma posicion cobra fees directas y AERO al mismo tiempo.
+
+Limpieza UX ya aplicada:
+
+- Se quito del Director el deposito hardcodeado `#5976367`.
+- Se quito del panel Base la tarjeta de posicion modelo.
+- Se quito la seccion repetida "Ruta humana".
+- Se quito la lista de pasos repetida debajo del preview.
+- Se quito el link redundante "Abrir Aerodrome para stakear".
+- El panel Base queda enfocado en:
+  - tesis;
+  - monto USDC;
+  - slippage/deadline;
+  - perfiles de rango;
+  - preview;
+  - swap a WETH;
+  - swap a cbBTC;
+  - crear rango WETH/cbBTC;
+  - stakear NFT;
+  - links tecnicos a gauge, tx, pool y mercado.
+
+Pendientes recomendados:
+
+- Base: agregar lectura de estado del NFT stakeado:
+  - si esta stakeado o no;
+  - valor estimado;
+  - rango;
+  - composicion WETH/cbBTC;
+  - AERO reclamable;
+  - fecha/tx de creacion y stake.
+- Base: agregar acciones de gestion:
+  - reclamar AERO;
+  - unstake;
+  - retirar liquidez;
+  - decidir si reclamar fees solo cuando el NFT no este stakeado.
+- Posiciones: sumar Base/Aerodrome al tablero general junto con V3, V4 Robinhood y HyperEVM.
+- UX: ocultar o deshabilitar acciones que ya no aplican cuando el NFT cambia de estado, por ejemplo:
+  - ocultar "Stakear" cuando ya esta stakeado;
+  - mostrar "Unstake / reclamar AERO";
+  - aclarar cuando una posicion busca AERO y no fees directas.
+- Mi Balance: conectar los valores de posiciones y balances por red a una vista consolidada.
+- Mantener el principio operativo: no prometer rendimiento fijo; mostrar siempre estado, red, contrato, tx hash y accion exacta antes de firmar.
