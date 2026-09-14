@@ -218,6 +218,16 @@ type BasePositionView = {
   checkedAt: string;
 };
 
+type BaseWalletBalance = {
+  address: string;
+  nativeEth: string;
+  usdc: string;
+  weth: string;
+  cbbtc: string;
+  aero: string;
+  checkedAt: string;
+};
+
 type PortfolioPosition = {
   key: string;
   protocol: "V3" | "V4" | "Hyper" | "Base";
@@ -523,6 +533,8 @@ const AERODROME_ROUTER_ABI = [
 ];
 const AERODROME_POSITION_MANAGER_ABI = [
   "function mint((address token0,address token1,int24 tickSpacing,int24 tickLower,int24 tickUpper,uint256 amount0Desired,uint256 amount1Desired,uint256 amount0Min,uint256 amount1Min,address recipient,uint256 deadline,uint160 sqrtPriceX96)) payable returns (uint256 tokenId,uint128 liquidity,uint256 amount0,uint256 amount1)",
+  "function balanceOf(address owner) view returns (uint256)",
+  "function tokenOfOwnerByIndex(address owner,uint256 index) view returns (uint256)",
   "function ownerOf(uint256 tokenId) view returns (address)",
   "function positions(uint256 tokenId) view returns (uint96 nonce,address operator,address token0,address token1,int24 tickSpacing,int24 tickLower,int24 tickUpper,uint128 liquidity,uint256 feeGrowthInside0LastX128,uint256 feeGrowthInside1LastX128,uint128 tokensOwed0,uint128 tokensOwed1)",
   "function getApproved(uint256 tokenId) view returns (address)",
@@ -535,6 +547,8 @@ const AERODROME_GAUGE_ABI = [
   "function earned(address account,uint256 tokenId) view returns (uint256)",
   "function rewards(uint256 tokenId) view returns (uint256)",
   "function rewardToken() view returns (address)",
+  "function stakedLength(address depositor) view returns (uint256)",
+  "function stakedByIndex(address depositor,uint256 index) view returns (uint256)",
   "function stakedContains(address depositor,uint256 tokenId) view returns (bool)"
 ];
 const AERODROME_SLIPSTREAM_POOL_ABI = [
@@ -2352,12 +2366,16 @@ export default function Home() {
   const [baseStakeTokenId, setBaseStakeTokenId] = useState("");
   const [baseStaking, setBaseStaking] = useState(false);
   const [baseReadingPosition, setBaseReadingPosition] = useState(false);
+  const [baseDiscovering, setBaseDiscovering] = useState(false);
+  const [baseBalanceLoading, setBaseBalanceLoading] = useState(false);
   const [baseClaiming, setBaseClaiming] = useState(false);
   const [baseWithdrawing, setBaseWithdrawing] = useState(false);
   const [basePosition, setBasePosition] = useState<BasePositionView | null>(
     null
   );
   const [basePositions, setBasePositions] = useState<BasePositionView[]>([]);
+  const [baseWalletBalance, setBaseWalletBalance] =
+    useState<BaseWalletBalance | null>(null);
   const [baseLastTxHash, setBaseLastTxHash] = useState("");
   const [payerAddress, setPayerAddress] = useState<string | null>(null);
   const [premiumAmount, setPremiumAmount] = useState(ZUM_PREMIUM_AMOUNT);
@@ -2904,6 +2922,47 @@ export default function Home() {
             }
           ]
         : [];
+    const baseAvailableStable = baseWalletBalance
+      ? parseBalanceValue(baseWalletBalance.usdc)
+      : 0;
+    const baseOtherAssets: EvmAsset[] = baseWalletBalance
+      ? (
+          [
+            {
+              key: "base-native",
+              type: "native",
+              symbol: "ETH Base",
+              balance: baseWalletBalance.nativeEth,
+              decimals: 18,
+              address: ZERO_ADDRESS
+            },
+            {
+              key: "base-weth",
+              type: "token",
+              symbol: "WETH Base",
+              balance: baseWalletBalance.weth,
+              decimals: 18,
+              address: BASE_WETH_ADDRESS
+            },
+            {
+              key: "base-cbbtc",
+              type: "token",
+              symbol: "cbBTC Base",
+              balance: baseWalletBalance.cbbtc,
+              decimals: 8,
+              address: BASE_CBBTC_ADDRESS
+            },
+            {
+              key: "base-aero-wallet",
+              type: "token",
+              symbol: "AERO",
+              balance: baseWalletBalance.aero,
+              decimals: 18,
+              address: BASE_AERO_ADDRESS
+            }
+          ] satisfies EvmAsset[]
+        ).filter((asset) => parseBalanceValue(asset.balance) > 0)
+      : [];
     const otherAssets = positiveEvmAssets.filter(
       (asset) => !stableSymbols.has(asset.symbol.toUpperCase())
     );
@@ -2916,10 +2975,20 @@ export default function Home() {
 
     return {
       investedStable,
-      availableStable: availableStable + hyperAvailableStable,
-      visibleStable: investedStable + availableStable + hyperAvailableStable,
+      availableStable:
+        availableStable + hyperAvailableStable + baseAvailableStable,
+      visibleStable:
+        investedStable +
+        availableStable +
+        hyperAvailableStable +
+        baseAvailableStable,
       btcReserve: parseBalanceValue(btcBalance),
-      otherAssets: [...otherAssets, ...hyperOtherAssets, ...baseRewardAssets],
+      otherAssets: [
+        ...otherAssets,
+        ...hyperOtherAssets,
+        ...baseOtherAssets,
+        ...baseRewardAssets
+      ],
       investedOther,
       inRange,
       outOfRange,
@@ -2927,6 +2996,7 @@ export default function Home() {
     };
   }, [
     btcBalance,
+    baseWalletBalance,
     basePositions,
     hyperWalletBalance,
     portfolioPositions,
@@ -4956,6 +5026,59 @@ export default function Home() {
     setBasePositions(next.filter((item) => item.liquidity !== "0"));
   };
 
+  const readBaseWalletBalances = async (silent = false) => {
+    try {
+      setBaseBalanceLoading(true);
+      if (!silent) {
+        setBaseStatus("Leyendo saldos Base desde MetaMask.");
+      }
+      const signer = await getBaseSigner();
+      const owner = await signer.getAddress();
+      const provider = signer.provider;
+      if (!provider) {
+        throw new Error("No hay provider conectado.");
+      }
+      const usdc = new ethers.Contract(BASE_USDC_ADDRESS, ERC20_ABI, provider);
+      const weth = new ethers.Contract(BASE_WETH_ADDRESS, ERC20_ABI, provider);
+      const cbbtc = new ethers.Contract(BASE_CBBTC_ADDRESS, ERC20_ABI, provider);
+      const aero = new ethers.Contract(BASE_AERO_ADDRESS, ERC20_ABI, provider);
+      const [nativeEth, usdcBalance, wethBalance, cbbtcBalance, aeroBalance] =
+        (await Promise.all([
+          provider.getBalance(owner),
+          usdc.balanceOf(owner),
+          weth.balanceOf(owner),
+          cbbtc.balanceOf(owner),
+          aero.balanceOf(owner)
+        ])) as [bigint, bigint, bigint, bigint, bigint];
+      const next = {
+        address: owner,
+        nativeEth: ethers.formatEther(nativeEth),
+        usdc: ethers.formatUnits(usdcBalance, 6),
+        weth: ethers.formatUnits(wethBalance, 18),
+        cbbtc: ethers.formatUnits(cbbtcBalance, 8),
+        aero: ethers.formatUnits(aeroBalance, 18),
+        checkedAt: new Date().toLocaleTimeString()
+      };
+      setBaseWalletBalance(next);
+      if (!silent) {
+        setBaseStatus(`Saldos Base leídos para ${shortAddress(owner)}.`);
+      }
+      return next;
+    } catch (error) {
+      console.error(error);
+      if (!silent) {
+        setBaseStatus(
+          error instanceof Error
+            ? `No se pudieron leer saldos Base: ${describeV4EstimateError(error)}`
+            : "No se pudieron leer saldos Base."
+        );
+      }
+      return null;
+    } finally {
+      setBaseBalanceLoading(false);
+    }
+  };
+
   const readBasePositionFromChain = async (
     tokenId: string,
     ownerHint?: string
@@ -5076,12 +5199,87 @@ export default function Home() {
     } catch (error) {
       console.error(error);
       setBaseStatus(
-        error instanceof Error
+        error instanceof Error &&
+          error.message.includes("owner query for nonexistent token")
+          ? `Ese ID no existe en el manager WETH/cbBTC stakeable de Base. Usá "Ver NFTs Base" para que Zumpay encuentre los IDs correctos, o verificá que el NFT sea del contrato ${shortAddress(
+              BASE_AERODROME_POSITION_MANAGER
+            )}.`
+          : error instanceof Error
           ? `No se pudo leer NFT Base: ${describeV4EstimateError(error)}`
           : "No se pudo leer NFT Base."
       );
     } finally {
       setBaseReadingPosition(false);
+    }
+  };
+
+  const handleBaseDiscoverPositions = async () => {
+    try {
+      setBaseDiscovering(true);
+      setBaseStatus("Buscando NFTs Base WETH/cbBTC en wallet y gauge.");
+      const signer = await getBaseSigner();
+      const owner = await signer.getAddress();
+      const provider = signer.provider;
+      if (!provider) {
+        throw new Error("No hay provider conectado.");
+      }
+      await readBaseWalletBalances(true);
+      const manager = new ethers.Contract(
+        BASE_AERODROME_POSITION_MANAGER,
+        AERODROME_POSITION_MANAGER_ABI,
+        provider
+      );
+      const gauge = new ethers.Contract(
+        BASE_AERODROME_GAUGE,
+        AERODROME_GAUGE_ABI,
+        provider
+      );
+      const tokenIds = new Set<string>();
+      const walletBalance = (await manager.balanceOf(owner)) as bigint;
+      for (let index = BigInt(0); index < walletBalance; index += BigInt(1)) {
+        const tokenId = (await manager.tokenOfOwnerByIndex(
+          owner,
+          index
+        )) as bigint;
+        tokenIds.add(tokenId.toString());
+      }
+      const stakedLength = (await gauge.stakedLength(owner)) as bigint;
+      for (let index = BigInt(0); index < stakedLength; index += BigInt(1)) {
+        const tokenId = (await gauge.stakedByIndex(owner, index)) as bigint;
+        tokenIds.add(tokenId.toString());
+      }
+      if (tokenIds.size === 0) {
+        loadStoredBasePositions(owner);
+        setBaseStatus(
+          "No encontré NFTs Base WETH/cbBTC para esta wallet. Si MetaMask muestra otro NFT, puede ser de otro manager/pool."
+        );
+        return;
+      }
+      const discovered: BasePositionView[] = [];
+      for (const tokenId of tokenIds) {
+        const position = await readBasePositionFromChain(tokenId, owner);
+        saveBasePosition(position);
+        if (position.liquidity !== "0") {
+          discovered.push(position);
+        }
+      }
+      setBasePositions(discovered);
+      if (discovered[0]) {
+        setBasePosition(discovered[0]);
+        setBaseStakeTokenId(discovered[0].tokenId);
+      }
+      setBaseStatus(
+        `Encontrados ${discovered.length} NFT(s) Base activos de ${tokenIds.size} detectado(s).`
+      );
+    } catch (error) {
+      console.error(error);
+      setBaseStatus(
+        error instanceof Error
+          ? `No se pudieron buscar NFTs Base: ${describeV4EstimateError(error)}`
+          : "No se pudieron buscar NFTs Base."
+      );
+    } finally {
+      setBaseDiscovering(false);
     }
   };
 
@@ -11168,6 +11366,20 @@ export default function Home() {
               </p>
             </div>
             <div className={styles.positionsActions}>
+              <button
+                className={styles.outline}
+                onClick={handleBaseDiscoverPositions}
+                disabled={isLocked || baseDiscovering}
+              >
+                {baseDiscovering ? "Buscando..." : "Ver NFTs Base"}
+              </button>
+              <button
+                className={styles.outline}
+                onClick={() => readBaseWalletBalances()}
+                disabled={isLocked || baseBalanceLoading}
+              >
+                {baseBalanceLoading ? "Leyendo..." : "Leer saldos Base"}
+              </button>
               <a
                 className={styles.outline}
                 href="https://aerodrome.finance/liquidity"
@@ -11186,6 +11398,67 @@ export default function Home() {
               </a>
             </div>
           </div>
+
+          <div className={styles.positionsSummary}>
+            <div>
+              <span>Wallet</span>
+              <strong>
+                {baseWalletBalance
+                  ? shortAddress(baseWalletBalance.address)
+                  : "Base"}
+              </strong>
+            </div>
+            <div>
+              <span>Gas</span>
+              <strong>
+                {baseWalletBalance
+                  ? `${formatWalletBalance(
+                      baseWalletBalance.nativeEth,
+                      "ETH"
+                    )} ETH`
+                  : "0 ETH"}
+              </strong>
+            </div>
+            <div>
+              <span>USDC</span>
+              <strong>
+                {baseWalletBalance
+                  ? formatWalletBalance(baseWalletBalance.usdc, "USDC")
+                  : "0"}
+              </strong>
+            </div>
+            <div>
+              <span>WETH</span>
+              <strong>
+                {baseWalletBalance
+                  ? formatWalletBalance(baseWalletBalance.weth, "WETH")
+                  : "0"}
+              </strong>
+            </div>
+            <div>
+              <span>cbBTC</span>
+              <strong>
+                {baseWalletBalance
+                  ? formatWalletBalance(baseWalletBalance.cbbtc, "cbBTC")
+                  : "0"}
+              </strong>
+            </div>
+            <div>
+              <span>AERO</span>
+              <strong>
+                {baseWalletBalance
+                  ? formatWalletBalance(baseWalletBalance.aero, "AERO")
+                  : "0"}
+              </strong>
+            </div>
+          </div>
+          {baseWalletBalance ? (
+            <p className={styles.inlineNote}>
+              Base leído a las {baseWalletBalance.checkedAt}. ETH paga gas;
+              WETH + cbBTC crean la posición; AERO puede venir por wallet o por
+              recompensas pendientes del gauge.
+            </p>
+          ) : null}
 
           <div className={styles.sectionGrid}>
             <div className={styles.panel}>
@@ -12212,19 +12485,30 @@ export default function Home() {
               </button>
               <button
                 className={styles.outline}
+                onClick={handleBaseDiscoverPositions}
+                disabled={isLocked || baseDiscovering}
+              >
+                {baseDiscovering ? "Buscando Base..." : "Buscar Base"}
+              </button>
+              <button
+                className={styles.outline}
                 onClick={() => {
                   handleV3RefreshPositions();
                   handleV4RefreshPositions();
                   handleHyperRefreshPositions();
+                  handleBaseDiscoverPositions();
                 }}
                 disabled={
                   isLocked ||
                   v4ReadingPosition ||
                   hyperReadingPosition ||
                   hyperDiscovering ||
+                  baseDiscovering ||
+                  baseReadingPosition ||
                   (v3Positions.length === 0 &&
                     v4Positions.length === 0 &&
-                    hyperPositions.length === 0)
+                    hyperPositions.length === 0 &&
+                    basePositions.length === 0)
                 }
               >
                 Actualizar todo
