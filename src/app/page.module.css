@@ -998,6 +998,12 @@
   box-shadow: 0 0 22px rgba(125, 249, 255, 0.24);
 }
 
+.reserveIconArcus {
+  color: #04110b;
+  background: linear-gradient(135deg, #c7ff33, #22c55e);
+  box-shadow: 0 0 22px rgba(199, 255, 51, 0.22);
+}
+
 .reserveIconHyperliquid {
   background: rgba(0, 240, 181, 0.08);
   box-shadow: 0 0 20px rgba(0, 240, 181, 0.18);

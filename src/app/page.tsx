@@ -11244,6 +11244,70 @@ export default function Home() {
               <div className={styles.reserveRouteCard}>
                 <div className={styles.reserveRouteTop}>
                   <div
+                    className={`${styles.reserveIcon} ${styles.reserveIconArcus}`}
+                    aria-hidden="true"
+                  >
+                    A
+                  </div>
+                  <span>Robinhood vaults</span>
+                </div>
+                <strong>Arcus pTokens · read-only</strong>
+                <p>
+                  Módulo de estudio para vaults tipo ERC-4626 sobre cuentas de
+                  perps administradas en Arcus. No es lending estable ni LP:
+                  representa exposición a estrategias con derivados, NAV y
+                  riesgo de manager.
+                </p>
+                <div className={styles.reserveRouteFacts}>
+                  <span>USDG</span>
+                  <span>pTokens</span>
+                  <span>ERC-4626</span>
+                  <span>Perps</span>
+                </div>
+                <small>
+                  Ruta read-only por ahora: mirar TVL, vault shares,
+                  totalAssets, liquidez secundaria y reglas de redención antes
+                  de pensar en operar desde Zumpay.
+                </small>
+                <div className={styles.reserveRouteActions}>
+                  <a
+                    className={styles.outline}
+                    href="https://arcusdex.trade/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Abrir Arcus
+                  </a>
+                  <a
+                    className={styles.outline}
+                    href="https://defillama.com/protocol/arcus-ptokens"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Ver pTokens TVL
+                  </a>
+                  <a
+                    className={styles.outline}
+                    href="https://defillama.com/protocol/arcus"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Ver Arcus completo
+                  </a>
+                  <a
+                    className={styles.outline}
+                    href="https://docs.robinhood.com/chain/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Robinhood Chain docs
+                  </a>
+                </div>
+              </div>
+
+              <div className={styles.reserveRouteCard}>
+                <div className={styles.reserveRouteTop}>
+                  <div
                     className={`${styles.reserveIcon} ${styles.reserveIconHyperliquid}`}
                     aria-hidden="true"
                   >
