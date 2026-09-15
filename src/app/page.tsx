@@ -4865,7 +4865,8 @@ export default function Home() {
         setBaseStakeTokenId(mintedTokenId);
         const mintedPosition = await readBasePositionFromChain(
           mintedTokenId,
-          owner
+          owner,
+          provider
         );
         setBasePosition(mintedPosition);
         saveBasePosition(mintedPosition);
@@ -4980,7 +4981,7 @@ export default function Home() {
       setBaseLastTxHash(tx.hash);
       setBaseStatus(`Stake enviado: ${tx.hash.slice(0, 10)}...`);
       await waitForBaseReceipt(provider, tx.hash);
-      const updated = await readBasePositionFromChain(tokenId, owner);
+      const updated = await readBasePositionFromChain(tokenId, owner, provider);
       setBasePosition(updated);
       saveBasePosition(updated);
       setBaseStatus(
@@ -5086,12 +5087,12 @@ export default function Home() {
 
   const readBasePositionFromChain = async (
     tokenId: string,
-    ownerHint?: string
+    ownerHint?: string,
+    providerOverride?: ethers.Provider
   ): Promise<BasePositionView> => {
-    const baseProvider = new ethers.JsonRpcProvider(
-      BASE_RPC_URL,
-      BASE_CHAIN_ID
-    );
+    const baseProvider =
+      providerOverride ??
+      new ethers.JsonRpcProvider(BASE_RPC_URL, BASE_CHAIN_ID);
     const manager = new ethers.Contract(
       BASE_AERODROME_POSITION_MANAGER,
       AERODROME_POSITION_MANAGER_ABI,
@@ -5108,10 +5109,9 @@ export default function Home() {
       baseProvider
     );
     const tokenIdRaw = BigInt(tokenId);
-    const [managerOwner, position, slot0] = await Promise.all([
+    const [managerOwner, position] = await Promise.all([
       manager.ownerOf(tokenIdRaw),
-      manager.positions(tokenIdRaw),
-      pool.slot0()
+      manager.positions(tokenIdRaw)
     ]);
     const ownerCandidate = ownerHint ?? (managerOwner as string);
     const ownedByGauge =
@@ -5129,7 +5129,13 @@ export default function Home() {
     const tickLower = Number(position[5]);
     const tickUpper = Number(position[6]);
     const liquidity = position[7] as bigint;
-    const currentTick = Number(slot0[1]);
+    let currentTick = baseTickFromCbbtcPerWeth(BASE_CBBTC_PER_WETH);
+    try {
+      const slot0 = await pool.slot0();
+      currentTick = Number(slot0[1]);
+    } catch {
+      currentTick = Math.round((tickLower + tickUpper) / 2);
+    }
     const amounts = estimateConcentratedPositionAmounts(
       liquidity,
       currentTick,
@@ -5193,7 +5199,11 @@ export default function Home() {
       setBaseStatus(`Leyendo NFT Base #${tokenId}.`);
       const signer = await getBaseSigner();
       const owner = await signer.getAddress();
-      const position = await readBasePositionFromChain(tokenId, owner);
+      const position = await readBasePositionFromChain(
+        tokenId,
+        owner,
+        signer.provider ?? undefined
+      );
       setBasePosition(position);
       saveBasePosition(position);
       setBaseStatus(
@@ -5262,7 +5272,7 @@ export default function Home() {
       }
       const discovered: BasePositionView[] = [];
       for (const tokenId of tokenIds) {
-        const position = await readBasePositionFromChain(tokenId, owner);
+        const position = await readBasePositionFromChain(tokenId, owner, provider);
         saveBasePosition(position);
         if (position.liquidity !== "0") {
           discovered.push(position);
@@ -5422,7 +5432,7 @@ export default function Home() {
       });
       setBaseLastTxHash(tx.hash);
       await waitForBaseReceipt(provider, tx.hash);
-      const updated = await readBasePositionFromChain(tokenId, owner);
+      const updated = await readBasePositionFromChain(tokenId, owner, provider);
       setBasePosition(updated);
       saveBasePosition(updated);
       setBaseStatus(
@@ -12460,7 +12470,7 @@ export default function Home() {
           <div className={styles.positionsHeader}>
             <div>
               <p className={styles.kicker}>Portfolio Zumpay</p>
-              <h2>Tus posiciones</h2>
+              <h2>Tus posiciones + Base</h2>
               <p className={styles.subtitle}>
                 NFTs V3, V4 y Hyper en una sola vista: rango, valor estimado,
                 fees y acciones separadas por posición.
