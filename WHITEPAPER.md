@@ -1,6 +1,7 @@
 # ZUMPAY Whitepaper
 
-Version 1.0  
+Version 1.1
+Last updated: September 16, 2026
 Official website: https://zumpay.com.ar  
 Repository: https://github.com/ZumNova/zumpay  
 ZUM token contract on Polygon: `0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5`
@@ -59,11 +60,16 @@ ZUM is the utility token used by ZUMPAY.
 | Network | Polygon PoS |
 | Token contract | `0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5` |
 | Maximum supply | 1,000,000 ZUM |
+| Contract owner | Safe multisig: `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e` |
+| Treasury wallet | Safe multisig: `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e` |
+| Treasury allocation | 881,000 ZUM, representing 88.1% of total supply |
 | Main utility | Premium access, educational wallet usage, and liquidity learning |
 | Official website | https://zumpay.com.ar |
 | Public repository | https://github.com/ZumNova/zumpay |
 
 The token is not presented as a guaranteed investment product. It is used as part of the ZUMPAY wallet and educational experience.
+
+The ZUM contract ownership has been transferred to a Safe multisig wallet on Polygon. The `owner()` method currently returns `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e`. The same Safe multisig also holds 881,000 ZUM as treasury reserves, reducing single-EOA concentration risk and improving operational transparency.
 
 ## 6. Premium Access
 
@@ -88,6 +94,8 @@ The initial liquidity model is intentionally small and controlled. The pool is i
 This controlled liquidity approach is used because the project is currently designed for a small number of users, approximately ten users in the first stage. As more users join, the liquidity pool can be increased gradually to reduce price instability and avoid uncontrolled price movement.
 
 There are currently no third-party user funds deposited into ZUMPAY-controlled liquidity pools. The liquidity currently used to support the project is owned and managed by the founder.
+
+The main ZUM treasury reserve is held in the Polygon Safe multisig wallet `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e`. This treasury currently contains 881,000 ZUM out of the 1,000,000 ZUM maximum supply.
 
 ## 8. Fees and Fund Handling
 
@@ -134,10 +142,34 @@ Current security practices include:
 - Foundry tests for the premium access contract.
 - Transparent token, amount, network, and destination information in the user interface.
 - Gradual liquidity growth using founder-provided liquidity.
+- ZUM contract ownership transferred to a Safe multisig wallet on Polygon.
+- 88.1% of the maximum token supply moved into the Safe multisig treasury.
 
 The project welcomes technical review and is willing to provide additional documentation or implementation details to security providers and ecosystem partners.
 
-## 11. Educational Roadmap
+## 11. Treasury, Multisig, and Vesting Roadmap
+
+ZUMPAY has moved its main token reserve into a Safe multisig treasury wallet:
+
+- Safe multisig treasury: `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e`
+- ZUM held by treasury: 881,000 ZUM
+- Share of maximum supply: 88.1%
+- Contract owner: the same Safe multisig wallet
+
+This change is intended to reduce single-wallet concentration risk and make the token administration model easier to verify on-chain.
+
+As an additional security and transparency improvement, ZUMPAY plans to deploy a custom timelock and vesting contract for the treasury allocation.
+
+Planned vesting schedule:
+
+- First unlock: 10% on March 21, 2027.
+- Ongoing unlocks: 10% every three months.
+- Total tranches: 10 quarterly unlocks.
+- Final result: 100% unlocked only after the full vesting schedule completes.
+
+Until the vesting contract is deployed, reviewers should treat this schedule as a stated roadmap commitment rather than an enforced on-chain restriction.
+
+## 12. Educational Roadmap
 
 ZUMPAY is planned to become more educational over time.
 
@@ -150,7 +182,7 @@ Future improvements include:
 - More transparent examples showing how a small liquidity pool works.
 - Continued improvements to the premium contract flow and public documentation.
 
-## 12. Current Stage and Limitations
+## 13. Current Stage and Limitations
 
 ZUMPAY is an early-stage, founder-funded project.
 
@@ -161,10 +193,11 @@ Because the project is still young, users and reviewers should understand that:
 - External audit is still pending.
 - Liquidity is limited.
 - The project is founder-led.
+- Treasury vesting is planned but not yet enforced by a deployed vesting contract.
 - Documentation and educational material are still being expanded.
 - The product is being improved gradually.
 
-## 13. Contact
+## 14. Contact
 
 Founder / Developer: PABLO AMODIO 
 Email: wikerportal@gmail.com  
@@ -173,7 +206,7 @@ GitHub: https://github.com/polwiker1
 Official repository: https://github.com/ZumNova/zumpay  
 Official website: https://zumpay.com.ar
 
-## 14. Conclusion
+## 15. Conclusion
 
 ZUMPAY is a non-custodial wallet and educational DeFi project built around transparency, small-scale learning, and user-controlled transactions.
 
