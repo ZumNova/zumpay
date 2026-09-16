@@ -96,7 +96,7 @@ This controlled liquidity approach is used because the project is currently desi
 
 There are currently no third-party user funds deposited into ZUMPAY-controlled liquidity pools. The liquidity currently used to support the project is owned and managed by the founder.
 
-The main ZUM treasury reserve is held in the Polygon Safe multisig wallet `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e`. This treasury currently contains 881,000 ZUM out of the 1,000,000 ZUM maximum supply.
+The main ZUM treasury reserve has been transferred from the Polygon Safe multisig wallet `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e` into the deployed treasury vesting contract `0x76A26C670adF0D4CE676e78C38E686d9BaAa6Fc1`. The vesting contract holds 881,000 ZUM out of the 1,000,000 ZUM maximum supply.
 
 ## 8. Fees and Fund Handling
 
@@ -163,7 +163,7 @@ ZUMPAY has moved its main token reserve into a Safe multisig treasury wallet:
 
 This change is intended to reduce single-wallet concentration risk and make the token administration model easier to verify on-chain.
 
-As an additional security and transparency improvement, ZUMPAY has implemented and deployed a strict treasury vesting contract. Treasury funding from the Safe multisig is the next operational step.
+As an additional security and transparency improvement, ZUMPAY has implemented, deployed, and funded a strict treasury vesting contract with the main treasury allocation.
 
 The vesting contract is designed with no owner, no pause function, no early withdrawal function, and no rescue path for the vested ZUM allocation. Once funded, the only intended release path is the public `release()` function, which sends vested ZUM directly to the Safe multisig beneficiary according to the schedule below.
 
@@ -175,7 +175,7 @@ Planned vesting schedule:
 - Amount per tranche for an 881,000 ZUM allocation: 88,100 ZUM.
 - Final result: 100% unlocked only after the full vesting schedule completes.
 
-Until the vesting contract is funded, reviewers should treat this schedule as deployed but not yet enforced over the treasury allocation.
+The vesting contract has been funded with the treasury allocation, so this schedule is now enforced over the 881,000 ZUM treasury reserve.
 
 ## 12. Educational Roadmap
 
@@ -201,7 +201,7 @@ Because the project is still young, users and reviewers should understand that:
 - External audit is still pending.
 - Liquidity is limited.
 - The project is founder-led.
-- Treasury vesting is planned but not yet enforced by a deployed vesting contract.
+- Treasury vesting is deployed and funded, but external audit is still pending.
 - Documentation and educational material are still being expanded.
 - The product is being improved gradually.
 

@@ -470,11 +470,20 @@ Deploy ejecutado:
   - `totalAllocation()`: `881,000 ZUM`.
   - `trancheAmount()`: `88,100 ZUM`.
   - `releasable()`: `0`.
-  - balance ZUM del vesting: `0`, pendiente de fondeo desde Safe.
+  - balance ZUM del vesting antes del fondeo: `0`.
 - Verificacion de source:
   - Sourcify: exact match.
   - Blockscout: `Pass - Verified`.
   - PolygonScan API requiere API key para verificar/consultar estado por API.
+
+Fondeo ejecutado:
+
+- Funding tx: `0xc3eaa6373d61a17d0403ed05e8c90e788b6629bd1f5392a1a52b3a8032b34775`.
+- Bloque: `93928745`.
+- Safe `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e` transfirio `881,000 ZUM` al vesting `0x76A26C670adF0D4CE676e78C38E686d9BaAa6Fc1`.
+- Balance ZUM del vesting despues del fondeo: `881,000 ZUM`.
+- Balance ZUM de Safe despues del fondeo: `0 ZUM`.
+- `releasable()` despues del fondeo y antes del primer unlock: `0`.
 
 ## Actualizacion operativa: paquete Blockaid / seguridad
 

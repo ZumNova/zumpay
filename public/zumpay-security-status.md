@@ -14,6 +14,7 @@ This document summarizes the current ZUM token risk posture, completed mitigatio
 | Safe multisig treasury | `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e` |
 | Treasury vesting contract | `0x76A26C670adF0D4CE676e78C38E686d9BaAa6Fc1` |
 | Vesting deploy tx | `0x6c6084960c6bb0d19d966d9843d76a625c046a680f756a810d85c719a71a27fe` |
+| Treasury funding tx | `0xc3eaa6373d61a17d0403ed05e8c90e788b6629bd1f5392a1a52b3a8032b34775` |
 | Sourcify verification | Exact match |
 | Blockscout verification | Pass - Verified |
 | Maximum supply | 1,000,000 ZUM |
@@ -40,7 +41,8 @@ The following values were read from Polygon RPC on September 16, 2026:
 | Vesting `totalAllocation()` | `881,000 ZUM` |
 | Vesting `trancheAmount()` | `88,100 ZUM` |
 | Vesting `releasable()` before first unlock | `0 ZUM` |
-| ZUM balance of vesting contract | `0 ZUM`, funding pending |
+| ZUM balance of vesting contract | `881,000 ZUM` |
+| ZUM balance of Safe treasury after funding | `0 ZUM` |
 
 The token exposes administrative functions such as pause/unpause, blocked-address controls, transaction-limit controls, internal-price controls, ownership transfer, ownership renunciation, and mint. The mint function is capped: because `totalSupply()` already equals `cap()`, simulated additional minting reverts with `ERC20ExceededCap(uint256,uint256)`.
 
@@ -52,6 +54,7 @@ The token exposes administrative functions such as pause/unpause, blocked-addres
 4. The vesting contract has no owner, no pause function, no early withdrawal function, and no rescue path for vested ZUM.
 5. Foundry tests verify the unlock schedule and release behavior.
 6. The vesting contract was deployed on Polygon at `0x76A26C670adF0D4CE676e78C38E686d9BaAa6Fc1`.
+7. The Safe multisig transferred 881,000 ZUM into the vesting contract.
 
 ## Vesting Design
 
@@ -69,12 +72,8 @@ No account can release ZUM before the defined timestamps. Once funded, the contr
 
 ## Remaining On-Chain Actions
 
-1. Transfer 881,000 ZUM from the Safe multisig treasury into the deployed vesting contract.
-2. Confirm the vesting contract balance equals 881,000 ZUM.
-3. Confirm `beneficiary()` points to the Safe multisig treasury.
-4. Confirm `releasable()` is `0` before March 21, 2027.
-5. Optionally repeat source verification directly on PolygonScan with a PolygonScan/Etherscan API key.
-6. Decide the final admin-control posture for the ZUM token: ownership renunciation or administrative timelock.
+1. Optionally repeat source verification directly on PolygonScan with a PolygonScan/Etherscan API key.
+2. Decide the final admin-control posture for the ZUM token: ownership renunciation or administrative timelock.
 
 ## Ownership Renunciation Checklist
 
