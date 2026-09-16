@@ -435,3 +435,26 @@ Pendientes recomendados:
   - aclarar cuando una posicion busca AERO y no fees directas.
 - Mi Balance: conectar los valores de posiciones y balances por red a una vista consolidada.
 - Mantener el principio operativo: no prometer rendimiento fijo; mostrar siempre estado, red, contrato, tx hash y accion exacta antes de firmar.
+
+## Actualizacion operativa: ZUM Treasury Vesting
+
+Fecha: 2026-09-16.
+
+Estado:
+
+- Se implemento `ZumpayTreasuryVesting`, un contrato estricto para bloquear la tesoreria ZUM.
+- El contrato no tiene owner, no tiene pausa, no tiene retiro anticipado y no tiene rescue path para el ZUM bloqueado.
+- La unica salida prevista es `release()`, que envia ZUM liberado directamente a la Safe multisig beneficiaria.
+- Allocation objetivo: `881,000 ZUM`.
+- Tramos: 10 liberaciones trimestrales.
+- Monto por tramo: `88,100 ZUM`.
+- Primer unlock: 2027-03-21 00:00:00 UTC.
+- Ultimo unlock: 2029-06-21 00:00:00 UTC.
+- Beneficiario previsto: Safe multisig `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e`.
+
+Pendiente antes de comunicarlo como on-chain enforcement:
+
+- Deploy del contrato en Polygon.
+- Verificacion del contrato en PolygonScan.
+- Transferencia de los `881,000 ZUM` desde la Safe hacia el contrato de vesting.
+- Actualizacion final del whitepaper con la direccion real del contrato desplegado.

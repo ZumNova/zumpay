@@ -158,16 +158,19 @@ ZUMPAY has moved its main token reserve into a Safe multisig treasury wallet:
 
 This change is intended to reduce single-wallet concentration risk and make the token administration model easier to verify on-chain.
 
-As an additional security and transparency improvement, ZUMPAY plans to deploy a custom timelock and vesting contract for the treasury allocation.
+As an additional security and transparency improvement, ZUMPAY has implemented a strict treasury vesting contract in the public repository. Deployment and treasury funding are the next operational steps.
+
+The vesting contract is designed with no owner, no pause function, no early withdrawal function, and no rescue path for the vested ZUM allocation. Once funded, the only intended release path is the public `release()` function, which sends vested ZUM directly to the Safe multisig beneficiary according to the schedule below.
 
 Planned vesting schedule:
 
 - First unlock: 10% on March 21, 2027.
 - Ongoing unlocks: 10% every three months.
 - Total tranches: 10 quarterly unlocks.
+- Amount per tranche for an 881,000 ZUM allocation: 88,100 ZUM.
 - Final result: 100% unlocked only after the full vesting schedule completes.
 
-Until the vesting contract is deployed, reviewers should treat this schedule as a stated roadmap commitment rather than an enforced on-chain restriction.
+Until the vesting contract is deployed and funded, reviewers should treat this schedule as implemented in code but not yet enforced on-chain.
 
 ## 12. Educational Roadmap
 
