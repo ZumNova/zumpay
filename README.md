@@ -167,6 +167,14 @@ npm start
 - Validación de direcciones BTC y EVM.  
 - Código abierto para auditoría comunitaria.
 
+### Documentación de transparencia
+
+- Whitepaper: [`WHITEPAPER.md`](WHITEPAPER.md)
+- Public whitepaper: `https://zumpay.com.ar/zumpay-whitepaper.md`
+- Blockaid / security remediation plan: [`BLOCKAID_REMEDIATION.md`](BLOCKAID_REMEDIATION.md)
+- Public security status: `https://zumpay.com.ar/zumpay-security-status.md`
+- Treasury vesting contract: [`contracts/ZumpayTreasuryVesting.sol`](contracts/ZumpayTreasuryVesting.sol)
+
 ---
 
 ## 🗺️ Roadmap

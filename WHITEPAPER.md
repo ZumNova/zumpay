@@ -147,6 +147,10 @@ Current security practices include:
 
 The project welcomes technical review and is willing to provide additional documentation or implementation details to security providers and ecosystem partners.
 
+The current security remediation plan for wallet-risk providers is published at:
+
+https://zumpay.com.ar/zumpay-security-status.md
+
 ## 11. Treasury, Multisig, and Vesting Roadmap
 
 ZUMPAY has moved its main token reserve into a Safe multisig treasury wallet:

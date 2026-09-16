@@ -458,3 +458,38 @@ Pendiente antes de comunicarlo como on-chain enforcement:
 - Verificacion del contrato en PolygonScan.
 - Transferencia de los `881,000 ZUM` desde la Safe hacia el contrato de vesting.
 - Actualizacion final del whitepaper con la direccion real del contrato desplegado.
+
+## Actualizacion operativa: paquete Blockaid / seguridad
+
+Fecha: 2026-09-16.
+
+Se agrego una estructura publica para reevaluacion de riesgo:
+
+- `BLOCKAID_REMEDIATION.md`: documento principal del repo para explicar riesgos, mitigaciones y pasos on-chain pendientes.
+- `public/zumpay-security-status.md`: version publica servida desde `https://zumpay.com.ar/zumpay-security-status.md`.
+- Whitepaper actualizado con link al security status publico.
+
+Estado on-chain documentado:
+
+- Owner ZUM: Safe `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e`.
+- Supply: `1,000,000 ZUM`.
+- Safe treasury: `881,000 ZUM`.
+- `paused()`: `false`.
+- `maxTxAmount()`: `0`.
+- `internalPrice()`: `0`.
+- `blocked(Safe)`: `false`.
+- `cap()`: `1,000,000 ZUM`.
+
+Riesgo reconocido:
+
+- El token todavia conserva funciones administrativas: pause/unpause, bloqueo de wallets, limite por transaccion, precio interno, transfer/renounce ownership y mint.
+- El mint esta limitado por cap porque `totalSupply == cap`, pero la funcion existe.
+
+Ruta profesional recomendada:
+
+1. Desplegar y verificar `ZumpayTreasuryVesting`.
+2. Fondear el vesting con `881,000 ZUM` desde la Safe.
+3. Confirmar que `releasable()` es cero antes del primer unlock.
+4. Confirmar transferencias normales y estado no pausado/no bloqueado.
+5. Decidir entre renunciar ownership o transferir ownership a un timelock administrativo.
+6. Enviar a Blockaid hashes y links de evidencia, no solo explicaciones.
