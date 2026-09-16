@@ -29,7 +29,7 @@ The following values were read from Polygon RPC on September 16, 2026:
 | --- | --- |
 | `owner()` | `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e` |
 | `totalSupply()` | `1,000,000 ZUM` |
-| `balanceOf(Safe)` | `881,000 ZUM` |
+| `balanceOf(Safe)` | `0 ZUM` |
 | `paused()` | `false` |
 | `maxTxAmount()` | `0` |
 | `internalPrice()` | `0` |
