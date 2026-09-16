@@ -519,3 +519,66 @@ Ruta profesional recomendada:
 4. Confirmar transferencias normales y estado no pausado/no bloqueado.
 5. Decidir entre renunciar ownership o transferir ownership a un timelock administrativo.
 6. Enviar a Blockaid hashes y links de evidencia, no solo explicaciones.
+
+## Preparacion: lock de liquidez Uniswap V3 ZUM/USDC
+
+Fecha: 2026-09-16.
+
+Pool identificada:
+
+- Pool Uniswap V3 Polygon: `0x5dc16e4149Af1362a80C319383565AAeaB82D415`.
+- Par: `USDC/ZUM`.
+- Fee tier: `1%`.
+- Token0 USDC: `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359`.
+- Token1 ZUM: `0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5`.
+
+NFTs LP identificados:
+
+- `#2945303`.
+- `#2945455`.
+- Owner actual verificado: `0x521125be95c5679539aB07582F55F0040975A047`.
+
+Implementacion preparada:
+
+- `ZumpayV3LiquidityLock` bloquea los NFT LP seleccionados.
+- No tiene owner.
+- No permite retirar antes del `unlockTimestamp`.
+- Permite cobrar fees hacia la Safe multisig sin liberar la liquidez.
+- Acepta solo los tokenId configurados al deploy.
+
+Estado:
+
+- Tests locales pasando.
+- Unlock definido: 2027-06-21 00:00:00 UTC (`1813536000`).
+- Lock contract desplegado en Polygon: `0x6D68B52c1618371e06BF81F88Dc200d028B27294`.
+- Deploy tx: `0x42d7fa8d8267d3ed62c064982480387433cb543cf7a4d6b35e1ebc086572c0c7`.
+- Source verification: Sourcify `exact_match`.
+- Verificado por RPC:
+  - `positionManager()`: `0xC36442b4a4522E871399CD717aBDD847Ab11FE88`.
+  - `beneficiary()`: `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e`.
+  - `unlockTimestamp()`: `1813536000`.
+  - `allowedTokenId(2945303)`: `true`.
+  - `allowedTokenId(2945455)`: `true`.
+- Pendiente: transferir los NFTs `#2945303` y `#2945455` desde `0x521125be95c5679539aB07582F55F0040975A047` al lock.
+
+Transferencia de NFTs ejecutada:
+
+- NFT `#2945455` transfer tx: `0xc9a5b717af5edeee059d44092c8abe4baeb154f862003351b73d1ad9ae8c3c0d`.
+- NFT `#2945303` transfer tx: `0x6d6dcfde6869024a34cf87331fcd2ebf52b91f063895d64d13133c942d8303e2`.
+- `ownerOf(2945303)`: `0x6D68B52c1618371e06BF81F88Dc200d028B27294`.
+- `ownerOf(2945455)`: `0x6D68B52c1618371e06BF81F88Dc200d028B27294`.
+
+Nota operativa:
+
+- Los NFTs fueron transferidos con transferencia ERC721 directa hacia el lock.
+- La liquidez quedo inmovilizada fuera de la wallet humana.
+- Como la transferencia no ejecuto `onERC721Received`, el contrato no marco `depositedTokenId` en `true`.
+- Consecuencia: estos dos NFTs deben comunicarse como liquidez inmovilizada/permanentemente bloqueada en el contrato, no como lock operativo con fee collection y retiro programado.
+- Para futuros locks de NFT se debe usar un flujo que garantice `safeTransferFrom` o un lock v2 que valide `ownerOf(tokenId)` directamente.
+
+Mensaje destacado para Blockaid:
+
+- La concentracion de tesoreria ya no esta en la Safe: `881,000 ZUM` estan en vesting ownerless.
+- Los NFTs LP `#2945303` y `#2945455` ya no estan bajo control humano.
+- `ownerOf()` de ambos NFTs devuelve el contrato `0x6D68B52c1618371e06BF81F88Dc200d028B27294`.
+- La liquidez debe tratarse como permanentemente inmovilizada, sin retiro discrecional del fundador.
