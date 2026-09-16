@@ -62,6 +62,7 @@ ZUM is the utility token used by ZUMPAY.
 | Maximum supply | 1,000,000 ZUM |
 | Contract owner | Safe multisig: `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e` |
 | Treasury wallet | Safe multisig: `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e` |
+| Treasury vesting contract | `0x76A26C670adF0D4CE676e78C38E686d9BaAa6Fc1` |
 | Treasury allocation | 881,000 ZUM, representing 88.1% of total supply |
 | Main utility | Premium access, educational wallet usage, and liquidity learning |
 | Official website | https://zumpay.com.ar |
@@ -162,7 +163,7 @@ ZUMPAY has moved its main token reserve into a Safe multisig treasury wallet:
 
 This change is intended to reduce single-wallet concentration risk and make the token administration model easier to verify on-chain.
 
-As an additional security and transparency improvement, ZUMPAY has implemented a strict treasury vesting contract in the public repository. Deployment and treasury funding are the next operational steps.
+As an additional security and transparency improvement, ZUMPAY has implemented and deployed a strict treasury vesting contract. Treasury funding from the Safe multisig is the next operational step.
 
 The vesting contract is designed with no owner, no pause function, no early withdrawal function, and no rescue path for the vested ZUM allocation. Once funded, the only intended release path is the public `release()` function, which sends vested ZUM directly to the Safe multisig beneficiary according to the schedule below.
 
@@ -174,7 +175,7 @@ Planned vesting schedule:
 - Amount per tranche for an 881,000 ZUM allocation: 88,100 ZUM.
 - Final result: 100% unlocked only after the full vesting schedule completes.
 
-Until the vesting contract is deployed and funded, reviewers should treat this schedule as implemented in code but not yet enforced on-chain.
+Until the vesting contract is funded, reviewers should treat this schedule as deployed but not yet enforced over the treasury allocation.
 
 ## 12. Educational Roadmap
 

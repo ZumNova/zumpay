@@ -459,6 +459,23 @@ Pendiente antes de comunicarlo como on-chain enforcement:
 - Transferencia de los `881,000 ZUM` desde la Safe hacia el contrato de vesting.
 - Actualizacion final del whitepaper con la direccion real del contrato desplegado.
 
+Deploy ejecutado:
+
+- Vesting contract: `0x76A26C670adF0D4CE676e78C38E686d9BaAa6Fc1`.
+- Deploy tx: `0x6c6084960c6bb0d19d966d9843d76a625c046a680f756a810d85c719a71a27fe`.
+- Deployer: `0xdD6cB8f731B6ABbAEE5839d2e45Fe2319a8572e4`.
+- Verificado por RPC:
+  - `zum()`: `0xa6d942CFd1662A3FD84bce76fb6c1391ea593CB5`.
+  - `beneficiary()`: `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e`.
+  - `totalAllocation()`: `881,000 ZUM`.
+  - `trancheAmount()`: `88,100 ZUM`.
+  - `releasable()`: `0`.
+  - balance ZUM del vesting: `0`, pendiente de fondeo desde Safe.
+- Verificacion de source:
+  - Sourcify: exact match.
+  - Blockscout: `Pass - Verified`.
+  - PolygonScan API requiere API key para verificar/consultar estado por API.
+
 ## Actualizacion operativa: paquete Blockaid / seguridad
 
 Fecha: 2026-09-16.
