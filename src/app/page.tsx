@@ -7190,7 +7190,7 @@ export default function Home() {
         const tx = await premium.payPremium();
         await tx.wait();
       } else {
-        setPremiumStatus(`Enviando ${premiumAmount} ZUM al owner.`);
+        setPremiumStatus(`Enviando ${premiumAmount} ZUM al destino premium.`);
         const tx = await zum.transfer(ZUM_OWNER, premiumAmountRaw);
         await tx.wait();
       }
@@ -10421,10 +10421,17 @@ export default function Home() {
                   className={styles.primary}
                   onClick={payPremium}
                   disabled={
-                    payingPremium || checkingPremium || !premiumTermsAccepted
+                    payingPremium ||
+                    checkingPremium ||
+                    premiumPaid ||
+                    !premiumTermsAccepted
                   }
                 >
-                  {payingPremium ? "Pagando..." : `Pagar ${premiumAmount} ZUM`}
+                  {premiumPaid
+                    ? "Premium activo"
+                    : payingPremium
+                      ? "Pagando..."
+                      : `Pagar ${premiumAmount} ZUM`}
                 </button>
                 <button className={styles.outline} onClick={() => checkPremium()}>
                   Verificar pago
