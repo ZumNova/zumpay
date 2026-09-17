@@ -1,6 +1,6 @@
 # ZUMPAY Security Status and Blockaid Remediation Plan
 
-Last updated: September 16, 2026
+Last updated: September 17, 2026
 
 This document summarizes the current ZUM token risk posture, completed mitigations, and remaining on-chain actions planned for Blockaid/security-provider reevaluation.
 
@@ -24,8 +24,12 @@ The following on-chain actions are complete and externally verifiable:
    `ownerOf(2945303)` returns `0x6D68B52c1618371e06BF81F88Dc200d028B27294`.
    `ownerOf(2945455)` returns `0x6D68B52c1618371e06BF81F88Dc200d028B27294`.
 
-5. **This liquidity should be treated as permanently immobilized.**
-   The lock contract has no owner and no discretionary founder withdrawal path. The project will not represent these NFT positions as liquid, discretionary, fee-collectable, or withdrawable founder-held liquidity.
+5. **The LP NFTs are held outside direct human-wallet custody, with non-standard lock disclosure.**
+   The LP NFTs are held by the lock contract, but they were transferred through a standard ERC721 transfer rather than the intended safe deposit flow. The project will not describe this as a standard operational LP lock, permanent burn, or non-withdrawable liquidity. Future LP locks should use the intended safe deposit flow or audited locking infrastructure so the lock state is reflected accurately on-chain.
+
+6. **ZUM ownership has been renounced.**
+   Ownership renunciation tx: `0x22a11b6fc6e24d98f97e73a0fb9845db8a2996955962567af592f4c5e0211d04`.
+   `owner()` now returns `0x0000000000000000000000000000000000000000`.
 
 ## Scope
 
@@ -48,11 +52,12 @@ The following on-chain actions are complete and externally verifiable:
 
 ## Current On-Chain Status
 
-The following values were read from Polygon RPC on September 16, 2026:
+The following values were read from Polygon RPC on September 17, 2026:
 
 | Check | Current result |
 | --- | --- |
-| `owner()` | `0xF482058a1f3e2cDF819B76b760c433f0C7d9E78e` |
+| `owner()` | `0x0000000000000000000000000000000000000000` |
+| Ownership renunciation tx | `0x22a11b6fc6e24d98f97e73a0fb9845db8a2996955962567af592f4c5e0211d04` |
 | `totalSupply()` | `1,000,000 ZUM` |
 | `balanceOf(Safe)` | `0 ZUM` |
 | `paused()` | `false` |
@@ -89,6 +94,7 @@ The token exposes administrative functions such as pause/unpause, blocked-addres
 9. The liquidity-lock source was verified on Sourcify with exact match.
 10. Uniswap V3 LP NFT `2945455` was transferred into the liquidity-lock contract in tx `0xc9a5b717af5edeee059d44092c8abe4baeb154f862003351b73d1ad9ae8c3c0d`.
 11. Uniswap V3 LP NFT `2945303` was transferred into the liquidity-lock contract in tx `0x6d6dcfde6869024a34cf87331fcd2ebf52b91f063895d64d13133c942d8303e2`.
+12. ZUM ownership was renounced in tx `0x22a11b6fc6e24d98f97e73a0fb9845db8a2996955962567af592f4c5e0211d04`; `owner()` now returns the zero address.
 
 ## Vesting Design
 
@@ -107,7 +113,8 @@ No account can release ZUM before the defined timestamps. Once funded, the contr
 ## Remaining On-Chain Actions
 
 1. Optionally repeat source verification directly on PolygonScan with a PolygonScan/Etherscan API key.
-2. Decide the final admin-control posture for the ZUM token: ownership renunciation or administrative timelock.
+2. Increase ZUM/USDC liquidity progressively as project funding and organic user participation allow.
+3. For future LP locks, use the intended safe deposit flow or audited locking infrastructure so the lock state is reflected accurately on-chain.
 
 ## Ownership Renunciation Checklist
 
@@ -123,7 +130,7 @@ Before calling `renounceOwnership()` on the ZUM token, the following checks must
 - Treasury allocation is already locked in the vesting contract.
 - No further token-admin action is required for product operation.
 
-Renouncing ownership is expected to remove the administrative ability to pause transfers, block wallets, modify transfer limits, update internal token parameters, transfer ownership, or perform owner-only token actions. This action should be treated as irreversible.
+Ownership renunciation has been executed. This removed the administrative ability to pause transfers, block wallets, modify transfer limits, update internal token parameters, transfer ownership, or perform owner-only token actions. This action should be treated as irreversible.
 
 ## Liquidity Disclosure
 
@@ -142,4 +149,4 @@ The deployed liquidity-lock contract:
 - does not expose an early withdrawal or liquidity-decrease path;
 - unlocks withdrawal only after June 21, 2027 at 00:00:00 UTC.
 
-Operational note: the NFTs were transferred into the contract with a direct ERC721 transfer. As a result, they are held by the lock contract and removed from human-wallet control. They should be treated as immobilized liquidity in the lock contract. The project will not represent these positions as liquid, discretionary, fee-collectable, or withdrawable founder-held liquidity.
+Operational note: the NFTs were transferred into the contract with a direct ERC721 transfer rather than the intended safe deposit flow. As a result, they are held by the lock contract and removed from direct human-wallet custody, but the contract did not mark them as deposited in its internal state. The project will not describe the current LP state as a standard operational LP lock, permanent burn, or non-withdrawable liquidity. Future LP locks should use `safeTransferFrom` or audited locking infrastructure so the lock state is accurately reflected on-chain.

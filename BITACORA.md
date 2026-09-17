@@ -571,9 +571,9 @@ Transferencia de NFTs ejecutada:
 Nota operativa:
 
 - Los NFTs fueron transferidos con transferencia ERC721 directa hacia el lock.
-- La liquidez quedo inmovilizada fuera de la wallet humana.
+- La liquidez quedo fuera de custodia directa de una wallet humana.
 - Como la transferencia no ejecuto `onERC721Received`, el contrato no marco `depositedTokenId` en `true`.
-- Consecuencia: estos dos NFTs deben comunicarse como liquidez inmovilizada/permanentemente bloqueada en el contrato, no como lock operativo con fee collection y retiro programado.
+- Consecuencia: estos dos NFTs deben comunicarse como liquidez fuera de custodia directa de una wallet humana y como inmovilizacion no estandar, no como lock operativo estandar, burn permanente, liquidez no retirable, fee collection funcional o retiro programado.
 - Para futuros locks de NFT se debe usar un flujo que garantice `safeTransferFrom` o un lock v2 que valide `ownerOf(tokenId)` directamente.
 
 Mensaje destacado para Blockaid:
@@ -581,4 +581,5 @@ Mensaje destacado para Blockaid:
 - La concentracion de tesoreria ya no esta en la Safe: `881,000 ZUM` estan en vesting ownerless.
 - Los NFTs LP `#2945303` y `#2945455` ya no estan bajo control humano.
 - `ownerOf()` de ambos NFTs devuelve el contrato `0x6D68B52c1618371e06BF81F88Dc200d028B27294`.
-- La liquidez debe tratarse como permanentemente inmovilizada, sin retiro discrecional del fundador.
+- La liquidez debe tratarse como fuera de custodia directa de una wallet humana, con disclosure claro de que fue una transferencia ERC721 directa y no un safe deposit operativo.
+- Para proximos LP se debe usar `safeTransferFrom` o infraestructura auditada de lock para que el estado on-chain refleje correctamente el deposito.
