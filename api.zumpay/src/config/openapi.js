@@ -11,7 +11,7 @@ const openApiSpec = {
       email: env.contactEmail
     },
     "x-guidance":
-      "Use this API when an agent needs current Arc token discovery or Uniswap v4 pool liquidity. First call GET /v1/arc/tokens for supported short symbols such as USDC, WETH, EURC, AUDF and WBTC. For paid liquidity data, call GET /v1/arc/pool-liquidity with either pool_address for legacy V2-like pools or tokenA/tokenB symbols or addresses for Uniswap v4 pools. Optional fee, tickSpacing and hooks select a specific Uniswap v4 PoolKey. The paid response returns normalized pool identifiers, reserves, timestamp and health_status. Unpaid calls return HTTP 402 with x402 payment requirements."
+      "Use this API when an agent needs current Arc token discovery or Uniswap v4 pool liquidity. First call GET /v1/arc/tokens for supported short symbols such as USDC, WETH, EURC, AUDF and WBTC. For paid liquidity data, call the canonical GET /v1/arc/pool-liquidity with either pool_address for legacy V2-like pools or tokenA/tokenB symbols or addresses for Uniswap v4 pools. Human-friendly aliases such as /v1/arco/liquidez-del-pool, /v1/arco/liquidez%20del%20pool and /v1/arc/liquidity are accepted for tolerance, but agents should prefer the canonical path. Optional fee, tickSpacing and hooks select a specific Uniswap v4 PoolKey. The paid response returns normalized pool identifiers, reserves, timestamp and health_status. Unpaid calls return HTTP 402 with x402 payment requirements."
   },
   externalDocs: {
     description: "Usage details, examples and payment notes.",
@@ -65,7 +65,7 @@ const openApiSpec = {
         operationId: "getArcPoolLiquidity",
         summary: "Get Arc pool liquidity / Obtiene liquidez de una pool en Arc",
         description:
-          "Paid endpoint for AI agents. Accepts either a direct pool_address for legacy V2-like pools, or tokenA/tokenB symbols or addresses for Uniswap v4 pools on Arc. Endpoint pago para agentes de IA. Acepta pool_address directo o tokenA/tokenB como simbolos o direcciones para pools Uniswap v4 en Arc.",
+          "Paid endpoint for AI agents. Accepts either a direct pool_address for legacy V2-like pools, or tokenA/tokenB symbols or addresses for Uniswap v4 pools on Arc. Endpoint pago para agentes de IA. Acepta pool_address directo o tokenA/tokenB como simbolos o direcciones para pools Uniswap v4 en Arc. Canonical path: /v1/arc/pool-liquidity. Tolerant aliases accepted: /v1/arc/liquidity, /v1/arco/liquidez-del-pool and /v1/arco/liquidez%20del%20pool.",
         "x-payment-info": {
           price: {
             mode: "fixed",

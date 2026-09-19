@@ -8,6 +8,18 @@ const { getUniswapV4PoolLiquidity } = require("../services/uniswapV4Service");
 
 const router = express.Router();
 
+const poolLiquidityPaths = [
+  "/pool-liquidity",
+  "/liquidity",
+  "/pool_liquidity",
+  "/pool/liquidity",
+  "/liquidez",
+  "/liquidez-pool",
+  "/liquidez-del-pool",
+  "/liquidez del pool",
+  "/líquidez del pool"
+];
+
 router.get("/tokens", (_req, res) => {
   const tokens = getSupportedTokens();
 
@@ -22,7 +34,9 @@ router.get("/tokens", (_req, res) => {
   });
 });
 
-router.get("/pool-liquidity", requireCirclePayment, async (req, res, next) => {
+router.get(poolLiquidityPaths, requireCirclePayment, handlePoolLiquidity);
+
+async function handlePoolLiquidity(req, res, next) {
   try {
     const {
       pool_address: poolAddress,
@@ -64,6 +78,6 @@ router.get("/pool-liquidity", requireCirclePayment, async (req, res, next) => {
   } catch (err) {
     return next(err);
   }
-});
+}
 
 module.exports = router;

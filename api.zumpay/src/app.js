@@ -44,7 +44,9 @@ app.get("/openapi.json", (_req, res) => {
   res.json(openApiSpec);
 });
 
+app.use(humanFriendlyArcAliases);
 app.use("/v1/arc", arcRoutes);
+app.use("/v1/arco", arcRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
@@ -52,6 +54,43 @@ app.use((req, res) => {
     message: `Route ${req.method} ${req.path} was not found.`
   });
 });
+
+function humanFriendlyArcAliases(req, _res, next) {
+  if (req.method !== "GET") return next();
+
+  const normalizedPath = normalizePath(req.path);
+  const isPoolLiquidityAlias =
+    normalizedPath === "/v1/arco/liquidez del pool" ||
+    normalizedPath === "/v1/arco/liquidez-del-pool" ||
+    normalizedPath === "/v1/arco/liquidez-pool" ||
+    normalizedPath === "/v1/arco/liquidez" ||
+    normalizedPath === "/v1/arc/liquidez del pool" ||
+    normalizedPath === "/v1/arc/liquidez-del-pool" ||
+    normalizedPath === "/v1/arc/liquidity" ||
+    normalizedPath === "/v1/arc/pool liquidity";
+
+  if (isPoolLiquidityAlias) {
+    req.url = `/v1/arc/pool-liquidity${getQueryString(req.originalUrl)}`;
+  }
+
+  return next();
+}
+
+function normalizePath(path) {
+  try {
+    return decodeURIComponent(path)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+  } catch (_err) {
+    return path.toLowerCase();
+  }
+}
+
+function getQueryString(originalUrl) {
+  const queryStart = originalUrl.indexOf("?");
+  return queryStart === -1 ? "" : originalUrl.slice(queryStart);
+}
 
 app.use((err, _req, res, _next) => {
   const statusCode = err.statusCode || 500;
