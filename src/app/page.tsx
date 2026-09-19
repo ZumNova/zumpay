@@ -1,7 +1,15 @@
 ﻿"use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
+import {
+  BridgeKit,
+  BridgeChain,
+  TransferSpeed,
+  type BridgeParams
+} from "@circle-fin/bridge-kit";
+import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2/next";
 import { ethers } from "ethers";
+import type { EIP1193Provider } from "viem";
 import QRCode from "qrcode";
 import * as bip39 from "bip39";
 import { BIP32Factory } from "bip32";
@@ -376,13 +384,15 @@ type InjectedEthereum = {
     event: "accountsChanged",
     handler: (accounts: string[]) => void
   ) => void;
-};
+} & EIP1193Provider;
 
 const STORAGE_KEY = "zumpay_wallet_v1";
 const TOKEN_KEY = "zumpay_tokens_v1";
 const TERMS_KEY = "zumpay_terms_accepted_v1";
 const TX_KEY = "zumpay_txs_v1";
 const V3_POSITION_KEY = "zumpay_v3_positions_v1";
+const ARC_BRIDGE_DEFAULT_AMOUNT = "10";
+const ARC_BRIDGE_MAX_PROVIDER_FEE_USDC = 0.1;
 const V3_USED_POSITION_KEY = "zumpay_v3_used_positions_v1";
 const V4_POSITION_KEY = "zumpay_v4_positions_v1";
 const V4_USED_POSITION_KEY = "zumpay_v4_used_positions_v1";
@@ -2383,6 +2393,13 @@ export default function Home() {
     useState<BaseWalletBalance | null>(null);
   const [baseLastTxHash, setBaseLastTxHash] = useState("");
   const [payerAddress, setPayerAddress] = useState<string | null>(null);
+  const [arcBridgeAmount, setArcBridgeAmount] = useState(
+    ARC_BRIDGE_DEFAULT_AMOUNT
+  );
+  const [arcBridgeEstimating, setArcBridgeEstimating] = useState(false);
+  const [arcBridgeExecuting, setArcBridgeExecuting] = useState(false);
+  const [arcBridgeEstimate, setArcBridgeEstimate] = useState("");
+  const [arcBridgeStatus, setArcBridgeStatus] = useState("");
   const [premiumAmount, setPremiumAmount] = useState(ZUM_PREMIUM_AMOUNT);
   const [premiumAmountRaw, setPremiumAmountRaw] = useState(
     ZUM_PREMIUM_AMOUNT_RAW
@@ -7100,6 +7117,174 @@ export default function Home() {
     }
   };
 
+  const ensureArbitrumNetwork = async (ethereum: InjectedEthereum) => {
+    const target = "0xa4b1";
+    try {
+      await ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: target }]
+      });
+    } catch (error) {
+      const code = (error as { code?: number })?.code;
+      if (code !== 4902) {
+        throw error;
+      }
+      await ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [
+          {
+            chainId: target,
+            chainName: "Arbitrum One",
+            nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+            rpcUrls: ["https://arb1.arbitrum.io/rpc"],
+            blockExplorerUrls: ["https://arbiscan.io"]
+          }
+        ]
+      });
+    }
+  };
+
+  const getArcBridgeParams = async (
+    ethereum: InjectedEthereum,
+    amount: string
+  ): Promise<BridgeParams> => {
+    const adapter = await createViemAdapterFromProvider({
+      provider: ethereum
+    });
+
+    return {
+      from: { adapter, chain: BridgeChain.Arbitrum },
+      to: { adapter, chain: BridgeChain.Arc },
+      amount,
+      token: "USDC",
+      config: {
+        transferSpeed: TransferSpeed.SLOW,
+        batchTransactions: false
+      }
+    };
+  };
+
+  const getBridgeProviderFee = (estimate: unknown) => {
+    const fees = (estimate as { fees?: { type?: string; amount?: string }[] })
+      ?.fees;
+    return fees?.find((fee) => fee.type === "provider")?.amount;
+  };
+
+  const formatBridgeFees = (estimate: unknown) => {
+    const fees = (estimate as { fees?: { type?: string; amount?: string }[] })
+      ?.fees;
+    if (!fees?.length) {
+      return "Sin fee de proveedor detectada en la estimación.";
+    }
+    return fees
+      .map((fee) => `${fee.type ?? "fee"}: ${fee.amount ?? "0"} USDC`)
+      .join(" · ");
+  };
+
+  const estimateArcBridge = async () => {
+    try {
+      setArcBridgeEstimating(true);
+      setArcBridgeStatus("");
+      setArcBridgeEstimate("");
+
+      const amount = arcBridgeAmount.trim();
+      if (!amount || Number(amount) <= 0) {
+        setArcBridgeStatus("Ingresá un monto válido de USDC.");
+        return;
+      }
+
+      const ethereum = await getInjectedEthereum();
+      if (!ethereum) {
+        setArcBridgeStatus("Instalá o abrí MetaMask para estimar el puente.");
+        return;
+      }
+
+      await connectMetaMask();
+      await ensureArbitrumNetwork(ethereum);
+
+      const kit = new BridgeKit();
+      const params = await getArcBridgeParams(ethereum, amount);
+      const estimate = await kit.estimate(params);
+      const providerFee = getBridgeProviderFee(estimate);
+
+      setArcBridgeEstimate(formatBridgeFees(estimate));
+
+      if (
+        providerFee != null &&
+        Number(providerFee) >= ARC_BRIDGE_MAX_PROVIDER_FEE_USDC
+      ) {
+        setArcBridgeStatus(
+          `Fee estimada alta (${providerFee} USDC). Conviene esperar o bajar monto.`
+        );
+        return;
+      }
+
+      setArcBridgeStatus(
+        "Ruta estimada: Arbitrum -> Arc usando CCTP estándar, priorizando menor costo."
+      );
+    } catch (error) {
+      console.error(error);
+      setArcBridgeStatus("No se pudo estimar el puente hacia Arc.");
+    } finally {
+      setArcBridgeEstimating(false);
+    }
+  };
+
+  const executeArcBridge = async () => {
+    try {
+      setArcBridgeExecuting(true);
+      setArcBridgeStatus("");
+
+      const amount = arcBridgeAmount.trim();
+      if (!amount || Number(amount) <= 0) {
+        setArcBridgeStatus("Ingresá un monto válido de USDC.");
+        return;
+      }
+
+      const ethereum = await getInjectedEthereum();
+      if (!ethereum) {
+        setArcBridgeStatus("Instalá o abrí MetaMask para usar el puente.");
+        return;
+      }
+
+      await connectMetaMask();
+      await ensureArbitrumNetwork(ethereum);
+
+      const kit = new BridgeKit();
+      const params = await getArcBridgeParams(ethereum, amount);
+      const estimate = await kit.estimate(params);
+      const providerFee = getBridgeProviderFee(estimate);
+
+      if (
+        providerFee != null &&
+        Number(providerFee) >= ARC_BRIDGE_MAX_PROVIDER_FEE_USDC
+      ) {
+        setArcBridgeEstimate(formatBridgeFees(estimate));
+        setArcBridgeStatus(
+          `No ejecuto: fee estimada ${providerFee} USDC, por encima del límite.`
+        );
+        return;
+      }
+
+      let result = await kit.bridge(params);
+      if ((result as { state?: string }).state === "error") {
+        const adapter = params.from.adapter;
+        result = await kit.retry(result, {
+          from: adapter,
+          to: adapter
+        });
+      }
+
+      const state = (result as { state?: string }).state ?? "submitted";
+      setArcBridgeStatus(`Puente enviado. Estado: ${state}. Revisá MetaMask y el historial.`);
+    } catch (error) {
+      console.error(error);
+      setArcBridgeStatus("No se pudo ejecutar el puente hacia Arc.");
+    } finally {
+      setArcBridgeExecuting(false);
+    }
+  };
+
   const openMetaMaskPortfolio = async (path = "") => {
     const connectedAccount = await connectMetaMask();
     if (!connectedAccount) {
@@ -11054,6 +11239,65 @@ export default function Home() {
                     Abrir Across desde Arbitrum
                   </a>
                 </div>
+              </div>
+
+              <div className={`${styles.reserveRouteCard} ${styles.reserveRouteFeatured}`}>
+                <div className={styles.reserveRouteTop}>
+                  <div
+                    className={`${styles.reserveIcon} ${styles.reserveIconBase}`}
+                    aria-hidden="true"
+                  >
+                    A
+                  </div>
+                  <span>Puente Circle CCTP</span>
+                </div>
+                <strong>Arbitrum → Arc USDC</strong>
+                <p>
+                  Ruta nativa de Circle para mover USDC hacia Arc con burn/mint
+                  1:1. Usa modo estándar para priorizar menor costo y estima
+                  fees antes de pedir firma.
+                </p>
+                <div className={styles.reserveRouteFacts}>
+                  <span>CCTP estándar</span>
+                  <span>USDC nativo</span>
+                  <span>Sin custodia Zumpay</span>
+                </div>
+                <div className={styles.field}>
+                  <label>Monto USDC</label>
+                  <input
+                    value={arcBridgeAmount}
+                    onChange={(event) => setArcBridgeAmount(event.target.value)}
+                    placeholder="10"
+                    inputMode="decimal"
+                  />
+                </div>
+                {arcBridgeEstimate ? (
+                  <small>{arcBridgeEstimate}</small>
+                ) : (
+                  <small>
+                    Requiere USDC y ETH para gas en Arbitrum. El destino usa la
+                    misma dirección EVM en Arc.
+                  </small>
+                )}
+                <div className={styles.reserveRouteActions}>
+                  <button
+                    className={styles.softButton}
+                    onClick={estimateArcBridge}
+                    disabled={arcBridgeEstimating || arcBridgeExecuting}
+                  >
+                    {arcBridgeEstimating ? "Estimando..." : "Estimar costo"}
+                  </button>
+                  <button
+                    className={styles.outline}
+                    onClick={executeArcBridge}
+                    disabled={arcBridgeEstimating || arcBridgeExecuting}
+                  >
+                    {arcBridgeExecuting ? "Firmando..." : "Puente a Arc"}
+                  </button>
+                </div>
+                {arcBridgeStatus ? (
+                  <p className={styles.status}>{arcBridgeStatus}</p>
+                ) : null}
               </div>
 
               <div className={`${styles.reserveRouteCard} ${styles.reserveRouteGas}`}>
