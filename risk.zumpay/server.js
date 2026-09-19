@@ -14,6 +14,52 @@ const NETWORKS = ["arc", "base"];
 let gatewayMiddlewarePromise;
 
 app.use(express.json());
+app.use(humanFriendlyRiskAliases);
+
+const riskCheckPaths = [
+  "/v1/arc/risk-check",
+  "/v1/arc/risk",
+  "/v1/arc/risk-assessment",
+  "/v1/arc/anti-rugpull",
+  "/v1/arco/riesgo",
+  "/v1/arco/chequeo-riesgo",
+  "/v1/arco/chequeo-de-riesgo",
+  "/v1/arco/chequeo de riesgo",
+  "/v1/arco/analisis-riesgo",
+  "/v1/arco/analisis de riesgo",
+  "/v1/arco/anti-rugpull"
+];
+
+function humanFriendlyRiskAliases(req, _res, next) {
+  if (req.method !== "GET") return next();
+
+  const normalizedPath = normalizePath(req.path);
+  const isRiskAlias =
+    normalizedPath === "/v1/arco/chequeo de riesgo" ||
+    normalizedPath === "/v1/arco/analisis de riesgo";
+
+  if (isRiskAlias) {
+    req.url = `/v1/arc/risk-check${getQueryString(req.originalUrl)}`;
+  }
+
+  return next();
+}
+
+function normalizePath(path) {
+  try {
+    return decodeURIComponent(path)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+  } catch (_err) {
+    return path.toLowerCase();
+  }
+}
+
+function getQueryString(originalUrl) {
+  const queryStart = originalUrl.indexOf("?");
+  return queryStart === -1 ? "" : originalUrl.slice(queryStart);
+}
 
 app.get("/", (_req, res) => {
   res.status(200).json({
@@ -48,7 +94,9 @@ app.get("/openapi.json", (_req, res) => {
   res.status(200).json(openapi);
 });
 
-app.get("/v1/arc/risk-check", requireCirclePayment, (req, res) => {
+app.get(riskCheckPaths, requireCirclePayment, handleRiskCheck);
+
+function handleRiskCheck(req, res) {
   const { address } = req.query;
 
   if (!address || !ethers.isAddress(address)) {
@@ -62,7 +110,7 @@ app.get("/v1/arc/risk-check", requireCirclePayment, (req, res) => {
   const assessment = buildRiskAssessment(targetAddress);
 
   return res.status(200).json(assessment);
-});
+}
 
 app.use((req, res) => {
   res.status(404).json({

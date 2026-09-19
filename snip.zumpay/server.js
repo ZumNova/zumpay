@@ -16,6 +16,54 @@ const NETWORKS = ["arc", "base"];
 let gatewayMiddlewarePromise;
 
 app.use(express.json());
+app.use(humanFriendlyNewPairsAliases);
+
+const newPairsPaths = [
+  "/v1/arc/new-pairs",
+  "/v1/arc/new-pools",
+  "/v1/arc/pairs",
+  "/v1/arc/sniping-feed",
+  "/v1/arc/sniping",
+  "/v1/arc/launches",
+  "/v1/arco/nuevos-pares",
+  "/v1/arco/nuevos pares",
+  "/v1/arco/nuevas-pools",
+  "/v1/arco/nuevas pools",
+  "/v1/arco/feed-sniping",
+  "/v1/arco/lanzamientos",
+  "/v1/arco/monitor-lanzamientos"
+];
+
+function humanFriendlyNewPairsAliases(req, _res, next) {
+  if (req.method !== "GET") return next();
+
+  const normalizedPath = normalizePath(req.path);
+  const isNewPairsAlias =
+    normalizedPath === "/v1/arco/nuevos pares" ||
+    normalizedPath === "/v1/arco/nuevas pools";
+
+  if (isNewPairsAlias) {
+    req.url = `/v1/arc/new-pairs${getQueryString(req.originalUrl)}`;
+  }
+
+  return next();
+}
+
+function normalizePath(path) {
+  try {
+    return decodeURIComponent(path)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+  } catch (_err) {
+    return path.toLowerCase();
+  }
+}
+
+function getQueryString(originalUrl) {
+  const queryStart = originalUrl.indexOf("?");
+  return queryStart === -1 ? "" : originalUrl.slice(queryStart);
+}
 
 app.get("/", (_req, res) => {
   res.status(200).json({
@@ -52,7 +100,9 @@ app.get("/openapi.json", (_req, res) => {
   res.status(200).json(openapi);
 });
 
-app.get("/v1/arc/new-pairs", paymentGate, async (req, res, next) => {
+app.get(newPairsPaths, paymentGate, handleNewPairs);
+
+async function handleNewPairs(req, res, next) {
   try {
     const filters = parseFilters(req.query);
     const latestBlock = await getLatestBlock();
@@ -72,7 +122,7 @@ app.get("/v1/arc/new-pairs", paymentGate, async (req, res, next) => {
   } catch (err) {
     return next(err);
   }
-});
+}
 
 app.use((req, res) => {
   res.status(404).json({
