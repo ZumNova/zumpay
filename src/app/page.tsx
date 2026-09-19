@@ -393,6 +393,9 @@ const TX_KEY = "zumpay_txs_v1";
 const V3_POSITION_KEY = "zumpay_v3_positions_v1";
 const ARC_BRIDGE_DEFAULT_AMOUNT = "10";
 const ARC_BRIDGE_MAX_PROVIDER_FEE_USDC = 0.1;
+const ARBITRUM_USDT_ADDRESS = "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9";
+const ARBITRUM_USDC_ADDRESS = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
+const ARBITRUM_USDT_TO_USDC_SWAP_URL = `https://app.uniswap.org/swap?chain=arbitrum&inputCurrency=${ARBITRUM_USDT_ADDRESS}&outputCurrency=${ARBITRUM_USDC_ADDRESS}`;
 const V3_USED_POSITION_KEY = "zumpay_v3_used_positions_v1";
 const V4_POSITION_KEY = "zumpay_v4_positions_v1";
 const V4_USED_POSITION_KEY = "zumpay_v4_used_positions_v1";
@@ -7285,6 +7288,26 @@ export default function Home() {
     }
   };
 
+  const openArbitrumUsdtToUsdcSwap = async () => {
+    try {
+      const ethereum = await getInjectedEthereum();
+      if (!ethereum) {
+        setArcBridgeStatus("Instalá o abrí MetaMask para preparar el swap.");
+        return;
+      }
+
+      await connectMetaMask();
+      await ensureArbitrumNetwork(ethereum);
+      window.open(ARBITRUM_USDT_TO_USDC_SWAP_URL, "_blank", "noreferrer");
+      setArcBridgeStatus(
+        "Paso 1 abierto: cambiá USDT por USDC nativo en Arbitrum. Después volvé y puenteá el USDC a Arc."
+      );
+    } catch (error) {
+      console.error(error);
+      setArcBridgeStatus("No se pudo preparar el swap USDT -> USDC en Arbitrum.");
+    }
+  };
+
   const openMetaMaskPortfolio = async (path = "") => {
     const connectedAccount = await connectMetaMask();
     if (!connectedAccount) {
@@ -11249,21 +11272,22 @@ export default function Home() {
                   >
                     A
                   </div>
-                  <span>Puente Circle CCTP</span>
+                  <span>Swap + Puente Circle</span>
                 </div>
-                <strong>Arbitrum → Arc USDC</strong>
+                <strong>USDT Arbitrum → Arc USDC</strong>
                 <p>
-                  Ruta nativa de Circle para mover USDC hacia Arc con burn/mint
-                  1:1. Usa modo estándar para priorizar menor costo y estima
-                  fees antes de pedir firma.
+                  Primero cambiá USDT por USDC nativo en Arbitrum. Después
+                  Zumpay usa CCTP estándar para mover ese USDC hacia Arc con
+                  burn/mint 1:1 y estimación antes de pedir firma.
                 </p>
                 <div className={styles.reserveRouteFacts}>
+                  <span>USDT → USDC</span>
                   <span>CCTP estándar</span>
                   <span>USDC nativo</span>
                   <span>Sin custodia Zumpay</span>
                 </div>
                 <div className={styles.field}>
-                  <label>Monto USDC</label>
+                  <label>Monto USDC a puentear</label>
                   <input
                     value={arcBridgeAmount}
                     onChange={(event) => setArcBridgeAmount(event.target.value)}
@@ -11275,11 +11299,19 @@ export default function Home() {
                   <small>{arcBridgeEstimate}</small>
                 ) : (
                   <small>
-                    Requiere USDC y ETH para gas en Arbitrum. El destino usa la
-                    misma dirección EVM en Arc.
+                    Requiere USDT para el swap, USDC nativo para el puente y ETH
+                    para gas en Arbitrum. El destino usa la misma dirección EVM
+                    en Arc.
                   </small>
                 )}
                 <div className={styles.reserveRouteActions}>
+                  <button
+                    className={styles.softButton}
+                    onClick={openArbitrumUsdtToUsdcSwap}
+                    disabled={arcBridgeEstimating || arcBridgeExecuting}
+                  >
+                    Cambiar USDT a USDC
+                  </button>
                   <button
                     className={styles.softButton}
                     onClick={estimateArcBridge}
