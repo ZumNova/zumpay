@@ -2,13 +2,15 @@ const { env } = require("./env");
 
 const paymentMetadata = {
   error: "payment_required",
-  message: "This endpoint requires a payment header.",
-  accepted_headers: ["x-payment", "authorization"],
+  message: "This endpoint requires an x402 payment.",
+  accepted_headers: ["x-payment"],
+  protocols: [{ x402: {} }],
   payment: {
-    amount: "0.002",
+    mode: "fixed",
+    amount: env.paymentPriceUsd,
     currency: "USDC",
     destination: env.paymentWalletAddress,
-    network: "arc",
+    networks: ["Arc", "Base", "Polygon", "Arbitrum", "Ethereum"],
     asset_contract: env.usdcContractAddress
   }
 };

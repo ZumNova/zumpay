@@ -1,7 +1,7 @@
 const express = require("express");
 const { ethers } = require("ethers");
 
-const { requirePayment } = require("../middleware/requirePayment");
+const { requireCirclePayment } = require("../middleware/circleGateway");
 const { getSupportedTokens } = require("../config/tokens");
 const { getPoolLiquidityByAddress } = require("../services/arcPoolService");
 const { getUniswapV4PoolLiquidity } = require("../services/uniswapV4Service");
@@ -22,7 +22,7 @@ router.get("/tokens", (_req, res) => {
   });
 });
 
-router.get("/pool-liquidity", requirePayment, async (req, res, next) => {
+router.get("/pool-liquidity", requireCirclePayment, async (req, res, next) => {
   try {
     const {
       pool_address: poolAddress,

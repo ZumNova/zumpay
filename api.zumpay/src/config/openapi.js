@@ -1,13 +1,21 @@
 const { env } = require("./env");
-const { paymentMetadata } = require("./payment");
 
 const openApiSpec = {
-  openapi: "3.0.3",
+  openapi: "3.1.0",
   info: {
     title: "Zumpay Arc Financial Data API",
     version: "0.1.0",
     description:
-      "Paid financial data API for AI agents on Arc. API de datos financieros pagos para agentes de IA en Arc."
+      "Paid financial data API for AI agents on Arc. API de datos financieros pagos para agentes de IA en Arc.",
+    contact: {
+      email: env.contactEmail
+    },
+    "x-guidance":
+      "Use this API when an agent needs current Arc token discovery or Uniswap v4 pool liquidity. First call GET /v1/arc/tokens for supported short symbols such as USDC, WETH, EURC, AUDF and WBTC. For paid liquidity data, call GET /v1/arc/pool-liquidity with either pool_address for legacy V2-like pools or tokenA/tokenB symbols or addresses for Uniswap v4 pools. Optional fee, tickSpacing and hooks select a specific Uniswap v4 PoolKey. The paid response returns normalized pool identifiers, reserves, timestamp and health_status. Unpaid calls return HTTP 402 with x402 payment requirements."
+  },
+  externalDocs: {
+    description: "Usage details, examples and payment notes.",
+    url: env.docsUrl
   },
   servers: [
     {
@@ -58,6 +66,18 @@ const openApiSpec = {
         summary: "Get Arc pool liquidity / Obtiene liquidez de una pool en Arc",
         description:
           "Paid endpoint for AI agents. Accepts either a direct pool_address for legacy V2-like pools, or tokenA/tokenB symbols or addresses for Uniswap v4 pools on Arc. Endpoint pago para agentes de IA. Acepta pool_address directo o tokenA/tokenB como simbolos o direcciones para pools Uniswap v4 en Arc.",
+        "x-payment-info": {
+          price: {
+            mode: "fixed",
+            currency: "USDC",
+            amount: "0.010000"
+          },
+          protocols: [
+            {
+              x402: {}
+            }
+          ]
+        },
         parameters: [
           {
             name: "pool_address",
@@ -140,9 +160,27 @@ const openApiSpec = {
             content: {
               "application/json": {
                 schema: {
-                  $ref: "#/components/schemas/PaymentRequired"
+                  $ref: "#/components/schemas/X402PaymentRequired"
                 },
-                example: paymentMetadata
+                example: {
+                  accepts: [
+                    {
+                      scheme: "exact",
+                      network: "eip155:5042",
+                      maxAmountRequired: "10000",
+                      asset: env.usdcContractAddress,
+                      payTo: env.paymentWalletAddress
+                    },
+                    {
+                      scheme: "exact",
+                      network: "eip155:8453",
+                      maxAmountRequired: "10000",
+                      payTo: env.paymentWalletAddress
+                    }
+                  ],
+                  x402Version: 1,
+                  error: "X-PAYMENT header is required"
+                }
               }
             }
           },
@@ -251,6 +289,28 @@ const openApiSpec = {
             }
           }
         }
+      },
+      X402PaymentRequired: {
+        type: "object",
+        properties: {
+          accepts: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: true,
+              properties: {
+                scheme: { type: "string" },
+                network: { type: "string" },
+                maxAmountRequired: { type: "string" },
+                asset: { type: "string" },
+                payTo: { type: "string" }
+              }
+            }
+          },
+          x402Version: { type: "integer" },
+          error: { type: "string" }
+        },
+        additionalProperties: true
       }
     }
   }

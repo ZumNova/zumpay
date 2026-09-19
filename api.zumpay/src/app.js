@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 
 const { openApiSpec } = require("./config/openapi");
+const { env } = require("./config/env");
 const arcRoutes = require("./routes/arc");
 
 const app = express();
@@ -13,7 +14,29 @@ app.get("/", (_req, res) => {
   res.json({
     name: "Zumpay Arc API",
     status: "ok",
-    openapi: "/openapi.json"
+    openapi: "/openapi.json",
+    docs: "/docs"
+  });
+});
+
+app.get("/docs", (_req, res) => {
+  res.json({
+    name: "Zumpay Arc API Docs",
+    description:
+      "Paid Arc liquidity API for AI agents. API paga de liquidez en Arc para agentes de IA.",
+    openapi: `${openApiSpec.servers[0].url}/openapi.json`,
+    discovery: `${openApiSpec.servers[0].url}/v1/arc/tokens`,
+    paid_endpoint: `${openApiSpec.servers[0].url}/v1/arc/pool-liquidity?tokenA=USDC&tokenB=WETH`,
+    payment: {
+      protocol: "x402",
+      price: "$0.01 USDC",
+      seller: env.paymentWalletAddress
+    },
+    examples: [
+      "GET /v1/arc/tokens",
+      "GET /v1/arc/pool-liquidity?tokenA=USDC&tokenB=WETH",
+      "GET /v1/arc/pool-liquidity?tokenA=USDC&tokenB=WBTC&fee=3000&tickSpacing=60"
+    ]
   });
 });
 

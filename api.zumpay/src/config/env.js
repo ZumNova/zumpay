@@ -6,6 +6,9 @@ const env = {
   arcRpcUrl: process.env.ARC_RPC_URL || "https://rpc.mainnet.arc.io",
   paymentWalletAddress:
     process.env.PAYMENT_WALLET_ADDRESS || "0xF3aAD2304F711ad5f400Ad322442D67DeD3E8A25",
+  paymentPriceUsd: process.env.PAYMENT_PRICE_USD || "0.010000",
+  contactEmail: process.env.CONTACT_EMAIL || "contacto@zumnova.com.ar",
+  docsUrl: process.env.DOCS_URL || "https://api.zumpay.com.ar/docs",
   usdcContractAddress:
     process.env.USDC_CONTRACT_ADDRESS || "0x3600000000000000000000000000000000000000",
   uniswapV4PoolManager:
