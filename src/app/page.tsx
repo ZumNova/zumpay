@@ -5,7 +5,8 @@ import {
   BridgeKit,
   BridgeChain,
   TransferSpeed,
-  type BridgeParams
+  type BridgeParams,
+  type BridgeResult
 } from "@circle-fin/bridge-kit";
 import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2/next";
 import { ethers } from "ethers";
@@ -393,6 +394,8 @@ const TX_KEY = "zumpay_txs_v1";
 const V3_POSITION_KEY = "zumpay_v3_positions_v1";
 const ARC_BRIDGE_DEFAULT_AMOUNT = "10";
 const ARC_BRIDGE_MAX_PROVIDER_FEE_USDC = 0.1;
+const ARC_BRIDGE_ESTIMATE_TIMEOUT_MS = 25000;
+const ARC_BRIDGE_EXECUTE_TIMEOUT_MS = 120000;
 const ARBITRUM_USDT_ADDRESS = "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9";
 const ARBITRUM_USDC_ADDRESS = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
 const ARBITRUM_USDT_TO_USDC_SWAP_URL = `https://app.uniswap.org/swap?chain=arbitrum&inputCurrency=${ARBITRUM_USDT_ADDRESS}&outputCurrency=${ARBITRUM_USDC_ADDRESS}`;
@@ -7157,7 +7160,7 @@ export default function Home() {
 
     return {
       from: { adapter, chain: BridgeChain.Arbitrum },
-      to: { adapter, chain: BridgeChain.Arc },
+      to: { adapter, chain: BridgeChain.Arc, useForwarder: true },
       amount,
       token: "USDC",
       config: {
@@ -7184,6 +7187,67 @@ export default function Home() {
       .join(" · ");
   };
 
+  const formatBridgeResult = (result: BridgeResult<string>) => {
+    const state = result.state ?? "submitted";
+    const steps = result.steps
+      ?.map((step) => {
+        const hash = step.txHash
+          ? ` ${step.txHash.slice(0, 10)}...${step.txHash.slice(-6)}`
+          : "";
+        return `${step.name}: ${step.state}${hash}`;
+      })
+      .join(" · ");
+
+    if (state === "success") {
+      return steps
+        ? `Puente completado. ${steps}`
+        : "Puente completado. USDC recibido en Arc.";
+    }
+
+    if (state === "pending") {
+      return steps
+        ? `Puente pendiente de confirmación. ${steps}`
+        : "Puente enviado. Circle está completando la atestación y mint en Arc.";
+    }
+
+    return steps
+      ? `Puente con estado ${state}. ${steps}`
+      : `Puente enviado. Estado: ${state}. Revisá MetaMask y el historial.`;
+  };
+
+  const withTimeout = async <T,>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    message: string
+  ) => {
+    let timeoutId: number | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    });
+
+    try {
+      return await Promise.race([promise, timeout]);
+    } finally {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    }
+  };
+
+  const getArcBridgeErrorMessage = (error: unknown, fallback: string) => {
+    const message = error instanceof Error ? error.message : String(error ?? "");
+    if (message.toLowerCase().includes("timeout")) {
+      return "La consulta tardó demasiado. Probá de nuevo o usá primero el bridge oficial de Circle.";
+    }
+    if (message.toLowerCase().includes("unsupported")) {
+      return "La ruta Arbitrum -> Arc no apareció disponible en este momento.";
+    }
+    if (message.toLowerCase().includes("user rejected")) {
+      return "Operación cancelada desde la wallet.";
+    }
+    return fallback;
+  };
+
   const estimateArcBridge = async () => {
     try {
       setArcBridgeEstimating(true);
@@ -7207,7 +7271,11 @@ export default function Home() {
 
       const kit = new BridgeKit();
       const params = await getArcBridgeParams(ethereum, amount);
-      const estimate = await kit.estimate(params);
+      const estimate = await withTimeout(
+        kit.estimate(params),
+        ARC_BRIDGE_ESTIMATE_TIMEOUT_MS,
+        "estimate timeout"
+      );
       const providerFee = getBridgeProviderFee(estimate);
 
       setArcBridgeEstimate(formatBridgeFees(estimate));
@@ -7227,7 +7295,9 @@ export default function Home() {
       );
     } catch (error) {
       console.error(error);
-      setArcBridgeStatus("No se pudo estimar el puente hacia Arc.");
+      setArcBridgeStatus(
+        getArcBridgeErrorMessage(error, "No se pudo estimar el puente hacia Arc.")
+      );
     } finally {
       setArcBridgeEstimating(false);
     }
@@ -7255,7 +7325,11 @@ export default function Home() {
 
       const kit = new BridgeKit();
       const params = await getArcBridgeParams(ethereum, amount);
-      const estimate = await kit.estimate(params);
+      const estimate = await withTimeout(
+        kit.estimate(params),
+        ARC_BRIDGE_ESTIMATE_TIMEOUT_MS,
+        "estimate timeout"
+      );
       const providerFee = getBridgeProviderFee(estimate);
 
       if (
@@ -7269,20 +7343,29 @@ export default function Home() {
         return;
       }
 
-      let result = await kit.bridge(params);
+      let result = await withTimeout(
+        kit.bridge(params),
+        ARC_BRIDGE_EXECUTE_TIMEOUT_MS,
+        "bridge timeout"
+      );
       if ((result as { state?: string }).state === "error") {
         const adapter = params.from.adapter;
-        result = await kit.retry(result, {
-          from: adapter,
-          to: adapter
-        });
+        result = await withTimeout(
+          kit.retry(result, {
+            from: adapter,
+            to: adapter
+          }),
+          ARC_BRIDGE_EXECUTE_TIMEOUT_MS,
+          "bridge retry timeout"
+        );
       }
 
-      const state = (result as { state?: string }).state ?? "submitted";
-      setArcBridgeStatus(`Puente enviado. Estado: ${state}. Revisá MetaMask y el historial.`);
+      setArcBridgeStatus(formatBridgeResult(result));
     } catch (error) {
       console.error(error);
-      setArcBridgeStatus("No se pudo ejecutar el puente hacia Arc.");
+      setArcBridgeStatus(
+        getArcBridgeErrorMessage(error, "No se pudo ejecutar el puente hacia Arc.")
+      );
     } finally {
       setArcBridgeExecuting(false);
     }
