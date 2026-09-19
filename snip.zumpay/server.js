@@ -16,6 +16,7 @@ const NETWORKS = ["arc", "base"];
 let gatewayMiddlewarePromise;
 
 app.use(express.json());
+app.use(requestTelemetry("zumpay-snip-api"));
 app.use(humanFriendlyNewPairsAliases);
 
 const newPairsPaths = [
@@ -63,6 +64,42 @@ function normalizePath(path) {
 function getQueryString(originalUrl) {
   const queryStart = originalUrl.indexOf("?");
   return queryStart === -1 ? "" : originalUrl.slice(queryStart);
+}
+
+function requestTelemetry(serviceName) {
+  return (req, res, next) => {
+    const startedAt = Date.now();
+
+    res.on("finish", () => {
+      const hasXPayment = Boolean(req.headers["x-payment"]);
+      const hasAuthorization = Boolean(req.headers.authorization);
+      const statusCode = res.statusCode;
+      const paymentState =
+        statusCode === 402
+          ? "payment_required_402"
+          : statusCode >= 200 && statusCode < 300 && (hasXPayment || hasAuthorization)
+            ? "paid_or_authorized_success"
+            : "other";
+
+      console.log(
+        JSON.stringify({
+          event: "agent_api_request",
+          service: serviceName,
+          method: req.method,
+          path: req.path,
+          status_code: statusCode,
+          payment_state: paymentState,
+          has_x_payment: hasXPayment,
+          has_authorization: hasAuthorization,
+          user_agent: req.headers["user-agent"] || "unknown",
+          duration_ms: Date.now() - startedAt,
+          timestamp: new Date().toISOString()
+        })
+      );
+    });
+
+    next();
+  };
 }
 
 app.get("/", (_req, res) => {

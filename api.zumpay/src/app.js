@@ -9,6 +9,7 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+app.use(requestTelemetry("zumpay-arc-api"));
 
 app.get("/", (_req, res) => {
   res.json({
@@ -74,6 +75,55 @@ function humanFriendlyArcAliases(req, _res, next) {
   }
 
   return next();
+}
+
+function requestTelemetry(serviceName) {
+  return (req, res, next) => {
+    const startedAt = Date.now();
+    const hasXPayment = Boolean(req.headers["x-payment"]);
+    const hasAuthorization = Boolean(req.headers.authorization);
+
+    console.log(
+      JSON.stringify({
+        event: "agent_api_request_start",
+        service: serviceName,
+        method: req.method,
+        path: req.path,
+        has_x_payment: hasXPayment,
+        has_authorization: hasAuthorization,
+        user_agent: req.headers["user-agent"] || "unknown",
+        timestamp: new Date().toISOString()
+      })
+    );
+
+    res.on("finish", () => {
+      const statusCode = res.statusCode;
+      const paymentState =
+        statusCode === 402
+          ? "payment_required_402"
+          : statusCode >= 200 && statusCode < 300 && (hasXPayment || hasAuthorization)
+            ? "paid_or_authorized_success"
+            : "other";
+
+      console.log(
+        JSON.stringify({
+          event: "agent_api_request",
+          service: serviceName,
+          method: req.method,
+          path: req.path,
+          status_code: statusCode,
+          payment_state: paymentState,
+          has_x_payment: hasXPayment,
+          has_authorization: hasAuthorization,
+          user_agent: req.headers["user-agent"] || "unknown",
+          duration_ms: Date.now() - startedAt,
+          timestamp: new Date().toISOString()
+        })
+      );
+    });
+
+    next();
+  };
 }
 
 function normalizePath(path) {
